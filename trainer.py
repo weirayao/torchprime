@@ -36,10 +36,9 @@ from torch_xla.distributed.fsdp.utils import apply_xla_patch_to_nn_linear
 
 from transformers import (
     CONFIG_MAPPING,
-    MODEL_FOR_MASKED_LM_MAPPING,
     AutoConfig,
     AutoModelForMaskedLM,
-    EsmForMaskedLM,
+    LlamaForCausalLM,
     AutoTokenizer,
     DataCollatorForLanguageModeling,
     HfArgumentParser,
@@ -69,7 +68,7 @@ class ModelArguments:
     """
 
     model_id: Optional[str] = field(
-        default="facebook/esm2_t33_650M_UR50D", metadata={"help": "Pretrained config name or path if not the same as model_name"}
+        default="meta-llama/Llama-2-7b-hf", metadata={"help": "Pretrained config name or path if not the same as model_name"}
     )
     tokenizer_name: Optional[str] = field(
         default=None, metadata={"help": "Name of the tokenizer if different from model_id"}
@@ -102,23 +101,32 @@ class MoreTrainingArguments(TrainingArguments):
         default="20000", metadata={"help": "Duration (ms) to capture profile"}
     )
 
-
 @dataclass
 class DataTrainingArguments:
     """
-    Arguments pertaining to what data we are going to input our model for training and eval.
+    Arguments pertaining to what data we are going to input our model for training.
     """
 
-    dataset_dir: str = field(
-        metadata={"help": "The input training data folder (a dir)."}
+    dataset_name: Optional[str] = field(
+        default=None, metadata={"help": "The name of the dataset to use (via the datasets library)."}
     )
-
-    mlm_probability: float = field(
-        default=0.15,
+    dataset_config_name: Optional[str] = field(
+        default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
+    )
+    block_size: Optional[int] = field(
+        default=None,
         metadata={
-            "help": "Ratio of tokens to mask for masked language modeling loss"},
+            "help": (
+                "Optional input sequence length after tokenization. "
+                "The training dataset will be truncated in block of this size for training. "
+                "Default to the model max input length for single sentence inputs (take into account special tokens)."
+            )
+        },
     )
 
+    def __post_init__(self):
+        if self.dataset_name is None and self.train_file is None and self.validation_file is None:
+            raise ValueError("Need either a dataset name or a training/validation file.")
 
 class PoorsManTrainer:
     """Poor's man trainer."""
@@ -233,7 +241,7 @@ class PoorsManTrainer:
                     else:
                         transformer_cls_to_wrap.add(transformer_cls)
                 logger.info(
-                    f"ESM2 classes to wrap: {transformer_cls_to_wrap}")
+                    f"Llama classes to wrap: {transformer_cls_to_wrap}")
                 auto_wrap_policy = functools.partial(
                     transformer_auto_wrap_policy,
                     # Transformer layer class to wrap
@@ -411,7 +419,7 @@ def main():
         vocab_size=len(tokenizer),
         torch_dtype=model_args.torch_dtype,
     )
-    model = EsmForMaskedLM(config)
+    model = LlamaForCausalLM(config)
     logger.info(f"Loaded model: {model_args.model_id}")
     logger.info(f"Model parameters: {model.num_parameters}")
 
@@ -440,8 +448,14 @@ def main():
         mlm_probability=data_args.mlm_probability
     )
 
-    # Load datasets
-    raw_datasets = datasets.load_from_disk(data_args.dataset_dir)
+    # Downloading and loading a dataset from the hub.
+    raw_datasets = load_dataset(
+        data_args.dataset_name,
+        data_args.dataset_config_name,
+        cache_dir=model_args.cache_dir,
+        token=model_args.token,
+        streaming=data_args.streaming,
+    )
     train_dataset = raw_datasets["train"]
     eval_dataset = raw_datasets["validation"]
 
