@@ -9,8 +9,6 @@ import torch
 import transformers
 from timeit import default_timer as timer
 
-import torch_xla
-
 import torch_xla.runtime as xr
 import torch_xla.core.xla_model as xm
 import torch_xla.debug.metrics as met
@@ -73,11 +71,9 @@ class ModelArguments:
     model_id: Optional[str] = field(
         default="facebook/esm2_t33_650M_UR50D", metadata={"help": "Pretrained config name or path if not the same as model_name"}
     )
-
-    model_dimension: Optional[int] = field(
-        default=1, metadata={"help": "The dimension of the model axis"}
+    tokenizer_name: Optional[str] = field(
+        default=None, metadata={"help": "Name of the tokenizer if different from model_id"}
     )
-
     torch_dtype: Optional[str] = field(
         default="bfloat16",
         metadata={
@@ -92,6 +88,18 @@ class ModelArguments:
         default=None,
         metadata={
             "help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
+    )
+
+@dataclass
+class MoreTrainingArguments(TrainingArguments):
+    profile_step: Optional[int] = field(
+        default=-1, metadata={"help": "Step to profile"}
+    )
+    profile_logdir: Optional[str] = field(
+        default=".", metadata={"help": "Directory to store the profile"}
+    )
+    profile_duration: Optional[int] = field(
+        default="20000", metadata={"help": "Duration (ms) to capture profile"}
     )
 
 
@@ -118,8 +126,7 @@ class PoorsManTrainer:
     def __init__(
         self,
         model: nn.Module,
-        model_dimension: int,
-        args: TrainingArguments,
+        args: MoreTrainingArguments,
         data_collator: Optional[DataCollatorForLanguageModeling],
         train_dataset: Optional[Union[Dataset, IterableDataset]],
         eval_dataset: Optional[Union[Dataset, Dict[str, Dataset]]],
@@ -136,16 +143,17 @@ class PoorsManTrainer:
         self.train_dataset = train_dataset
         self.eval_dataset = eval_dataset
         self.data_collator = data_collator
-        self.model_dimension = model_dimension
+
+        self.use_fsdp = True if args.fsdp else False
 
         # Set up SPMD mesh
-
+        num_devices = xr.global_runtime_device_count()
+        xs.set_global_mesh(xs.Mesh(np.array(range(num_devices)),
+                           (num_devices, 1), axis_names=("fsdp", "tensor")))
         self.input_sharding_spec = xs.ShardingSpec(
-            xs.get_global_mesh(), ("data", None))
+            xs.get_global_mesh(), ("fsdp", None))
         logger.info(f"Logical mesh shape: {xs.get_global_mesh().shape()}")
         logger.info(f"Input sharding: {self.input_sharding_spec}")
-
-        self.wrapped_model = self._wrap_model(self.model)
 
     def _check_model_optimizer_placement(self, model, optimizer):
         for param in model.parameters():
@@ -199,43 +207,78 @@ class PoorsManTrainer:
         return loader
 
     def _wrap_model(self, model):
-        mesh = xs.get_global_mesh()
 
-        for name, param in model.named_parameters():
-            if len(param.shape) == 1:
-                continue
+        if self.use_fsdp:
+            auto_wrap_policy = None
+            auto_wrapper_callable = None
+            default_transformer_cls_names_to_wrap = getattr(
+                model, "_no_split_modules", None)
+            default_transformer_cls_names_to_wrap = None
+            fsdp_transformer_layer_cls_to_wrap = self.args.fsdp_config.get(
+                "transformer_layer_cls_to_wrap", default_transformer_cls_names_to_wrap
+            )
+            if self.args.fsdp_config["min_num_params"] > 0:
+                auto_wrap_policy = functools.partial(
+                    size_based_auto_wrap_policy, min_num_params=self.args.fsdp_config[
+                        "min_num_params"]
+                )
+            elif fsdp_transformer_layer_cls_to_wrap is not None:
+                transformer_cls_to_wrap = set()
+                for layer_class in fsdp_transformer_layer_cls_to_wrap:
+                    transformer_cls = get_module_class_from_name(
+                        model, layer_class)
+                    if transformer_cls is None:
+                        raise Exception(
+                            "Could not find the transformer layer class to wrap in the model.")
+                    else:
+                        transformer_cls_to_wrap.add(transformer_cls)
+                logger.info(
+                    f"ESM2 classes to wrap: {transformer_cls_to_wrap}")
+                auto_wrap_policy = functools.partial(
+                    transformer_auto_wrap_policy,
+                    # Transformer layer class to wrap
+                    transformer_layer_cls=transformer_cls_to_wrap,
+                )
 
-            if 'word_embeddings' in name or 'position_embeddings' in name:
-                xs.mark_sharding(param, mesh,
-                                 ('model', 'data')
-                                 )
+            if self.args.fsdp_config["xla_fsdp_grad_ckpt"]:
+                # Apply gradient checkpointing to auto-wrapped sub-modules if specified
+                logger.info("Enabling gradient checkpointing")
 
-            if 'query' in name or 'key' in name or 'value' in name:
-                xs.mark_sharding(param, mesh,
-                                 ('model', 'data')
-                                 )
+                def auto_wrapper_callable(m, *args, **kwargs):
+                    target_cls = FSDPv2
+                    return target_cls(checkpoint_module(m), *args, **kwargs)
 
-            if 'attention.output.dense' in name:
-                xs.mark_sharding(param, mesh,
-                                 ('data', 'model')
-                                 )
+            def shard_output(output, mesh):
+                real_output = None
+                if isinstance(output, torch.Tensor):
+                    real_output = output
+                elif isinstance(output, tuple):
+                    real_output = output[0]
+                elif isinstance(output, CausalLMOutputWithPast):
+                    real_output = output.logits
+                elif isinstance(output, MaskedLMOutput):
+                    real_output = output.logits
+                if real_output is None:
+                    raise ValueError(
+                        "Something went wrong, the output of the model shouldn't be `None`")
+                xs.mark_sharding(real_output, mesh, ("fsdp", None, None))
 
-            if 'intermediate.dense' in name:
-                xs.mark_sharding(param, mesh,
-                                 ('data', 'model')
-                                 )
+            model = FSDPv2(
+                model,
+                shard_output=shard_output,
+                auto_wrap_policy=auto_wrap_policy,
+                auto_wrapper_callable=auto_wrapper_callable,
+            )
 
-            if 'output.dense' in name and not 'attention.output.dense' in name:
-                xs.mark_sharding(param, mesh,
-                                 ('model', 'data')
-                                 )
-            if 'lm_head.dense' in name or 'lm_head.decoder' in name:
-                xs.mark_sharding(param, mesh,
-                                 ('data', 'model'))
+            def patched_optimizer_step(optimizer, barrier=False, optimizer_args={}):
+                loss = optimizer.step(**optimizer_args)
+                if barrier:
+                    xm.mark_step()
+                return loss
 
-            print(f'{name} {torch_xla._XLAC._get_xla_sharding_spec(param)}')
-
-        print("Sharding model complete", flush=True)
+            xm.optimizer_step = patched_optimizer_step
+        else:
+            logger.info("Using DDP. Model not wrapped")
 
         return model
 
@@ -269,20 +312,22 @@ class PoorsManTrainer:
         max_step = self.args.max_steps
         train_loader = self._get_train_dataloader()
         train_iterator = iter(train_loader)
-        model = self.wrapped_model
+        model = self._wrap_model(self.model)
 
         logger.info("Starting training")
+        logger.info(f"    Using {'FSDP' if self.use_fsdp else 'DDP'}")
         logger.info(f"    Start step: {start_step}")
         logger.info(f"    Max step: {max_step}")
+        logger.info(f"    Global batch size: {self.train_batch_size}")
 
         self.run_history = {
             "step_history": [],
             "elapsed_time": 0.0
         }
         sample_count = self.train_batch_size * self.args.logging_steps
-        start_time = timer()
         total_steps = 0
-        adjusted_total_steps = -5
+        start_time = timer()
+        adjusted_total_steps = -10
         for step in range(start_step, max_step + 1):
             try:
                 batch = next(train_iterator)
@@ -310,6 +355,14 @@ class PoorsManTrainer:
             total_steps += 1
             adjusted_total_steps += 1
 
+            # Capture profile at the prefer step
+            if step == self.args.profile_step:
+                # Wait until device execution catches up to tracing before triggering the profile. This will
+                # interrupt training slightly on the hosts which are capturing, but by waiting after tracing
+                # for the step, the interruption will be minimal.
+                xm.wait_device_ops()
+                xp.trace_detached('127.0.0.1:9012', self.args.profile_logdir, self.args.profile_duration)
+
         adjusted_elapsed_time = timer() - adjusted_start_time
 
         logger.info("Finished training run")
@@ -325,7 +378,7 @@ class PoorsManTrainer:
 def main():
     # Parse CLI arguments
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments))
+        (ModelArguments, DataTrainingArguments, MoreTrainingArguments))
 
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
@@ -334,9 +387,6 @@ def main():
             json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-    num_devices = xr.global_runtime_device_count()
-    xs.set_global_mesh(xs.Mesh(np.array(range(num_devices)),
-                               (num_devices//model_args.model_dimension, model_args.model_dimension), axis_names=("data", "model")))
 
     # Configure logging
     if training_args.should_log:
@@ -351,27 +401,23 @@ def main():
     transformers.utils.logging.enable_explicit_format()
 
     set_seed(training_args.seed)
-    # server = xp.start_server(9012)
-    # logger.info(f'Profiling server started: {str(server)}')
+    server = xp.start_server(9012)
+    logger.info(f'Profiling server started: {str(server)}')
 
-    # Create the model
-    # TBD
-    # Currently we intialize all model weights at once on a host. Since v5e has a limited CPU memory
-    # we may need to modify this process for larger models
-    # We also need to add loading the existing checkpoint
-
-    tokenizer = AutoTokenizer.from_pretrained(model_args.model_id)
+    tokenizer_name = model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_id
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     config = AutoConfig.from_pretrained(
         model_args.model_id,
         vocab_size=len(tokenizer),
         torch_dtype=model_args.torch_dtype,
     )
     model = EsmForMaskedLM(config)
+    logger.info(f"Loaded model: {model_args.model_id}")
+    logger.info(f"Model parameters: {model.num_parameters}")
 
     model = apply_xla_patch_to_nn_linear(
         model, xs.xla_patched_nn_linear_forward)
 
-    logger.info(f"Number of model parameters: {model.num_parameters()}")
     model = model.to(xm.xla_device(), dtype=getattr(
         torch, model_args.torch_dtype))
 
@@ -401,7 +447,6 @@ def main():
 
     trainer = PoorsManTrainer(
         model=model,
-        model_dimension=model_args.model_dimension,
         args=training_args,
         data_collator=data_collator,
         train_dataset=train_dataset,
