@@ -90,6 +90,7 @@ class ModelArguments:
             "help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
     )
 
+
 @dataclass
 class MoreTrainingArguments(TrainingArguments):
     profile_step: Optional[int] = field(
@@ -101,6 +102,7 @@ class MoreTrainingArguments(TrainingArguments):
     profile_duration: Optional[int] = field(
         default="20000", metadata={"help": "Duration (ms) to capture profile"}
     )
+
 
 @dataclass
 class DataTrainingArguments:
@@ -129,14 +131,14 @@ class DataTrainingArguments:
         if self.dataset_name is None and self.train_file is None and self.validation_file is None:
             raise ValueError("Need either a dataset name or a training/validation file.")
 
-class PoorsManTrainer:
-    """Poor's man trainer."""
+
+class Trainer:
+    """The trainer."""
 
     def __init__(
         self,
         model: nn.Module,
         args: MoreTrainingArguments,
-        data_collator: Optional[DataCollatorForLanguageModeling],
         train_dataset: Optional[Union[Dataset, IterableDataset]],
         optimizers: Tuple[torch.optim.Optimizer,
                           torch.optim.lr_scheduler.LambdaLR],
@@ -148,7 +150,6 @@ class PoorsManTrainer:
         self.device = xm.xla_device()
         self.train_batch_size = args.per_device_train_batch_size
         self.train_dataset = train_dataset
-        self.data_collator = data_collator
 
         self.use_fsdp = True if args.fsdp else False
 
@@ -423,11 +424,6 @@ def main():
         num_training_steps=steps
     )
 
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer,
-        mlm=False
-    )
-
     # Downloading and loading a dataset from the hub.
     data = load_dataset(
         data_args.dataset_name,
@@ -438,7 +434,7 @@ def main():
     data = data.map(lambda samples: tokenizer(samples["text"]), batched=True, remove_columns=column_names)
 
     # Taken from run_clm.py. It's important to group texts evenly to avoid recompilations in TPU.
-    block_size = 1024
+    block_size = data_args.block_size
     def group_texts(examples):
         from itertools import chain
         # Concatenate all texts.
@@ -457,10 +453,9 @@ def main():
 
     data = data.map(group_texts, batched=True)
 
-    trainer = PoorsManTrainer(
+    trainer = Trainer(
         model=model,
         args=training_args,
-        data_collator=data_collator,
         train_dataset=data,
         optimizers=(optimizer, lr_scheduler)
     )
