@@ -44,9 +44,9 @@ TorchPrime is a reference model implementation for PyTorch/XLA, designed to show
 
 Contributions to TorchPrime are welcome! Please feel free to submit a Pull Request.
 
-## License [Placeholder]
+## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the New BSD License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgements
 
