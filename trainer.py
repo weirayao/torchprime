@@ -151,8 +151,6 @@ class Trainer:
         self.train_batch_size = args.per_device_train_batch_size
         self.train_dataset = train_dataset
 
-        self.use_fsdp = True if args.fsdp else False
-
         # Set up SPMD mesh
         num_devices = xr.global_runtime_device_count()
         xs.set_global_mesh(xs.Mesh(np.array(range(num_devices)),
@@ -195,79 +193,56 @@ class Trainer:
                                    device_prefetch_size=4)
         return loader
 
-    def _wrap_model(self, model):
+    def _shard_model(self, model):
+        default_transformer_cls_names_to_wrap = None
+        fsdp_transformer_layer_cls_to_wrap = self.args.fsdp_config.get(
+            "transformer_layer_cls_to_wrap", default_transformer_cls_names_to_wrap
+        )
 
-        if self.use_fsdp:
-            auto_wrap_policy = None
-            auto_wrapper_callable = None
-            default_transformer_cls_names_to_wrap = getattr(
-                model, "_no_split_modules", None)
-            default_transformer_cls_names_to_wrap = None
-            fsdp_transformer_layer_cls_to_wrap = self.args.fsdp_config.get(
-                "transformer_layer_cls_to_wrap", default_transformer_cls_names_to_wrap
-            )
-            if self.args.fsdp_config["min_num_params"] > 0:
-                auto_wrap_policy = functools.partial(
-                    size_based_auto_wrap_policy, min_num_params=self.args.fsdp_config[
-                        "min_num_params"]
-                )
-            elif fsdp_transformer_layer_cls_to_wrap is not None:
-                transformer_cls_to_wrap = set()
-                for layer_class in fsdp_transformer_layer_cls_to_wrap:
-                    transformer_cls = get_module_class_from_name(
-                        model, layer_class)
-                    if transformer_cls is None:
-                        raise Exception(
-                            "Could not find the transformer layer class to wrap in the model.")
-                    else:
-                        transformer_cls_to_wrap.add(transformer_cls)
-                logger.info(
-                    f"Llama classes to wrap: {transformer_cls_to_wrap}")
-                auto_wrap_policy = functools.partial(
-                    transformer_auto_wrap_policy,
-                    # Transformer layer class to wrap
-                    transformer_layer_cls=transformer_cls_to_wrap,
-                )
+        transformer_cls_to_wrap = set()
+        for layer_class in fsdp_transformer_layer_cls_to_wrap:
+            transformer_cls = get_module_class_from_name(
+                model, layer_class)
+            if transformer_cls is None:
+                raise Exception(
+                    "Could not find the transformer layer class to wrap in the model.")
+            else:
+                transformer_cls_to_wrap.add(transformer_cls)
+        logger.info(
+            f"Llama classes to wrap: {transformer_cls_to_wrap}")
+        auto_wrap_policy = functools.partial(
+            transformer_auto_wrap_policy,
+            # Transformer layer class to wrap
+            transformer_layer_cls=transformer_cls_to_wrap,
+        )
 
-            if self.args.fsdp_config["xla_fsdp_grad_ckpt"]:
-                # Apply gradient checkpointing to auto-wrapped sub-modules if specified
-                logger.info("Enabling gradient checkpointing")
+        if self.args.fsdp_config["xla_fsdp_grad_ckpt"]:
+            # Apply gradient checkpointing to auto-wrapped sub-modules if specified
+            logger.info("Enabling gradient checkpointing")
 
-                def auto_wrapper_callable(m, *args, **kwargs):
-                    target_cls = FSDPv2
-                    return target_cls(checkpoint_module(m), *args, **kwargs)
+            def auto_wrapper_callable(m, *args, **kwargs):
+                target_cls = FSDPv2
+                return target_cls(checkpoint_module(m), *args, **kwargs)
 
-            def shard_output(output, mesh):
-                real_output = None
-                if isinstance(output, torch.Tensor):
-                    real_output = output
-                elif isinstance(output, tuple):
-                    real_output = output[0]
-                elif isinstance(output, CausalLMOutputWithPast):
-                    real_output = output.logits
-                elif isinstance(output, MaskedLMOutput):
-                    real_output = output.logits
-                if real_output is None:
-                    raise ValueError(
-                        "Something went wrong, the output of the model shouldn't be `None`")
-                xs.mark_sharding(real_output, mesh, ("fsdp", None, None))
+        def shard_output(output, mesh):
+            real_output = None
+            if isinstance(output, torch.Tensor):
+                real_output = output
+            elif isinstance(output, tuple):
+                real_output = output[0]
+            elif isinstance(output, CausalLMOutputWithPast):
+                real_output = output.logits
+            if real_output is None:
+                raise ValueError(
+                    "Something went wrong, the output of the model shouldn't be `None`")
+            xs.mark_sharding(real_output, mesh, ("fsdp", None, None))
 
-            model = FSDPv2(
-                model,
-                shard_output=shard_output,
-                auto_wrap_policy=auto_wrap_policy,
-                auto_wrapper_callable=auto_wrapper_callable,
-            )
-
-            def patched_optimizer_step(optimizer, barrier=False, optimizer_args={}):
-                loss = optimizer.step(**optimizer_args)
-                if barrier:
-                    xm.mark_step()
-                return loss
-
-            xm.optimizer_step = patched_optimizer_step
-        else:
-            logger.info("Using DDP. Model not wrapped")
+        model = FSDPv2(
+            model,
+            shard_output=shard_output,
+            auto_wrap_policy=auto_wrap_policy,
+            auto_wrapper_callable=auto_wrapper_callable,
+        )
 
         return model
 
@@ -301,10 +276,9 @@ class Trainer:
         max_step = self.args.max_steps
         train_loader = self._get_train_dataloader()
         train_iterator = iter(train_loader)
-        model = self._wrap_model(self.model)
+        model = self._shard_model(self.model)
 
         logger.info("Starting training")
-        logger.info(f"    Using {'FSDP' if self.use_fsdp else 'DDP'}")
         logger.info(f"    Start step: {start_step}")
         logger.info(f"    Max step: {max_step}")
         logger.info(f"    Global batch size: {self.train_batch_size}")
@@ -400,6 +374,7 @@ def main():
         vocab_size=len(tokenizer),
         torch_dtype=model_args.torch_dtype,
     )
+    config.flash_attention = True
     model = LlamaForCausalLM(config)
     logger.info(f"Loaded model: {model_args.model_id}")
     logger.info(f"Model parameters: {model.num_parameters}")
