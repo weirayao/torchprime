@@ -379,9 +379,6 @@ def main():
     logger.info(f"Loaded model: {model_args.model_id}")
     logger.info(f"Model parameters: {model.num_parameters}")
 
-    model = apply_xla_patch_to_nn_linear(
-        model, xs.xla_patched_nn_linear_forward)
-
     model = model.to(xm.xla_device(), dtype=getattr(
         torch, model_args.torch_dtype))
 
