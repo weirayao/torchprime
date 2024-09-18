@@ -102,6 +102,9 @@ class MoreTrainingArguments(TrainingArguments):
     profile_duration: Optional[int] = field(
         default="20000", metadata={"help": "Duration (ms) to capture profile"}
     )
+    global_batch_size: Optional[int] = field(
+        default=None, metadata={"help": "Global batch size"}
+    )
 
 
 @dataclass
@@ -148,7 +151,7 @@ class Trainer:
         self.model = model
         self._check_model_optimizer_placement(self.model, self.optimizer)
         self.device = xm.xla_device()
-        self.train_batch_size = args.per_device_train_batch_size
+        self.global_batch_size = args.global_batch_size
         self.train_dataset = train_dataset
 
         # Set up SPMD mesh
@@ -156,7 +159,7 @@ class Trainer:
         xs.set_global_mesh(xs.Mesh(np.array(range(num_devices)),
                            (num_devices, 1), axis_names=("fsdp", "tensor")))
         self.input_sharding_spec = xs.ShardingSpec(
-            xs.get_global_mesh(), ("fsdp", None))
+            xs.get_global_mesh(), ("fsdp", None), minibatch=True)
         logger.info(f"Logical mesh shape: {xs.get_global_mesh().shape()}")
         logger.info(f"Input sharding: {self.input_sharding_spec}")
 
@@ -177,20 +180,20 @@ class Trainer:
         if self.train_dataset is None:
             raise ValueError("Trainer: training requires a train_dataset.")
 
+        num_replicas = xr.process_count()
+        sampler = torch.utils.data.DistributedSampler(self.train_dataset, num_replicas = num_replicas, rank = xr.process_index())
         dataloader = DataLoader(
             self.train_dataset,
             # Data collator will default to DataCollatorWithPadding, so we change it.
             collate_fn=default_data_collator,
-            batch_size=self.train_batch_size,
-            num_workers=self.args.dataloader_num_workers,
-            pin_memory=self.args.dataloader_pin_memory,
-            drop_last=self.args.dataloader_drop_last
+            # This is the host batch size.
+            batch_size=self.global_batch_size // num_replicas,
+            sampler=sampler,
+            drop_last=True,
         )
         loader = pl.MpDeviceLoader(dataloader,
                                    self.device,
-                                   input_sharding=self.input_sharding_spec,
-                                   loader_prefetch_size=self.train_batch_size,
-                                   device_prefetch_size=4)
+                                   input_sharding=self.input_sharding_spec)
         return loader
 
     def _shard_model(self, model):
@@ -281,13 +284,13 @@ class Trainer:
         logger.info("Starting training")
         logger.info(f"    Start step: {start_step}")
         logger.info(f"    Max step: {max_step}")
-        logger.info(f"    Global batch size: {self.train_batch_size}")
+        logger.info(f"    Global batch size: {self.global_batch_size}")
 
         self.run_history = {
             "step_history": [],
             "elapsed_time": 0.0
         }
-        sample_count = self.train_batch_size * self.args.logging_steps
+        sample_count = self.global_batch_size * self.args.logging_steps
         total_steps = 0
         start_time = timer()
         adjusted_total_steps = -10
