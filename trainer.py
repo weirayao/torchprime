@@ -74,16 +74,6 @@ class ModelArguments:
     tokenizer_name: Optional[str] = field(
         default=None, metadata={"help": "Name of the tokenizer if different from model_id"}
     )
-    torch_dtype: Optional[str] = field(
-        default="bfloat16",
-        metadata={
-            "help": (
-                "Override the default `torch.dtype` and load the model under this dtype. If `auto` is passed, the "
-                "dtype will be automatically derived from the model's weights."
-            ),
-            "choices": ["auto", "bfloat16", "float16", "float32"],
-        },
-    )
     cache_dir: Optional[str] = field(
         default=None,
         metadata={
@@ -377,18 +367,14 @@ def main():
 
     tokenizer_name = model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_id
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-    config = AutoConfig.from_pretrained(
-        model_args.model_id,
-        vocab_size=len(tokenizer),
-        torch_dtype=model_args.torch_dtype,
-    )
+    config = AutoConfig.from_pretrained(model_args.model_id)
     config.flash_attention = True
     model = LlamaForCausalLM(config)
     logger.info(f"Loaded model: {model_args.model_id}")
     logger.info(f"Model parameters: {model.num_parameters}")
 
-    model = model.to(xm.xla_device(), dtype=getattr(
-        torch, model_args.torch_dtype))
+    # Set the model dtype to bfloat16
+    model = model.to(torch.bfloat16)
 
     # Downloading and loading a dataset from the hub.
     data = load_dataset(
