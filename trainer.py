@@ -1,65 +1,51 @@
 import logging
-import numpy as np
 import os
 import sys
 import functools
+from timeit import default_timer as timer
 
 import datasets
 import torch
 import transformers
-from timeit import default_timer as timer
+import numpy as np
 
 import torch_xla.runtime as xr
 import torch_xla.core.xla_model as xm
-import torch_xla.debug.metrics as met
 import torch_xla.distributed.spmd as xs
 import torch_xla.distributed.parallel_loader as pl
 import torch_xla.debug.profiler as xp
-import torch_xla.debug.metrics as met
 
 from dataclasses import dataclass, field
-from itertools import chain
-from typing import Optional, Union, List, Dict, Tuple
+from typing import Optional, Union
 
 from datasets import load_dataset
 from torch import nn
 from torch.optim import AdamW
-from torch.utils.data import DataLoader, Dataset, IterableDataset, RandomSampler, SequentialSampler
+from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch_xla.experimental.spmd_fully_sharded_data_parallel import SpmdFullyShardedDataParallel as FSDPv2
-from torch_xla.distributed.fsdp.wrap import (
-    size_based_auto_wrap_policy,
-    transformer_auto_wrap_policy,
-)
+from torch_xla.distributed.fsdp.wrap import transformer_auto_wrap_policy
 from torch_xla.distributed.fsdp import checkpoint_module
-from torch_xla.amp.syncfree import AdamW as AdamWXLA
-from torch_xla.distributed.fsdp.utils import apply_xla_patch_to_nn_linear
 
 from transformers import (
-    CONFIG_MAPPING,
     AutoConfig,
-    AutoModelForMaskedLM,
     LlamaForCausalLM,
     AutoTokenizer,
-    DataCollatorForLanguageModeling,
     HfArgumentParser,
     TrainingArguments,
-    is_torch_xla_available,
     set_seed,
     get_scheduler,
-    SchedulerType,
     default_data_collator
 )
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version, send_example_telemetry
-from transformers.utils.versions import require_version
+from transformers.utils import check_min_version
 from transformers.trainer_pt_utils import get_module_class_from_name
-from transformers.modeling_outputs import CausalLMOutputWithPast, MaskedLMOutput, BaseModelOutputWithPastAndCrossAttentions
+from transformers.modeling_outputs import CausalLMOutputWithPast
 
 check_min_version("4.39.3")
 logger = logging.getLogger(__name__)
 
 xr.use_spmd()
-assert xr.is_spmd() == True
+assert xr.is_spmd() is True
 
 
 @dataclass
@@ -69,7 +55,8 @@ class ModelArguments:
     """
 
     model_id: Optional[str] = field(
-        default="meta-llama/Llama-2-7b-hf", metadata={"help": "Pretrained config name or path if not the same as model_name"}
+        default="meta-llama/Llama-2-7b-hf",
+        metadata={"help": "Pretrained config name or path if not the same as model_name"}
     )
     tokenizer_name: Optional[str] = field(
         default=None, metadata={"help": "Name of the tokenizer if different from model_id"}
@@ -77,7 +64,8 @@ class ModelArguments:
     cache_dir: Optional[str] = field(
         default=None,
         metadata={
-            "help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
+            "help": "Where do you want to store the pretrained models downloaded from huggingface.co"
+        },
     )
 
 
@@ -176,7 +164,7 @@ class Trainer:
             raise ValueError("Trainer: training requires a train_dataset.")
 
         num_replicas = xr.process_count()
-        sampler = torch.utils.data.DistributedSampler(self.train_dataset, num_replicas = num_replicas, rank = xr.process_index())
+        sampler = torch.utils.data.DistributedSampler(self.train_dataset, num_replicas=num_replicas, rank=xr.process_index())
         dataloader = DataLoader(
             self.train_dataset,
             # Data collator will default to DataCollatorWithPadding, so we change it.
@@ -368,7 +356,7 @@ def main():
         train_dataset=data,
     )
 
-    results = trainer.train_loop()
+    trainer.train_loop()
 
 
 if __name__ == "__main__":
