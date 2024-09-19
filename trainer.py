@@ -1,45 +1,47 @@
+# Standard library imports
+import functools
 import logging
 import os
 import sys
-import functools
-from timeit import default_timer as timer
-
-import datasets
-import torch
-import transformers
-import numpy as np
-
-import torch_xla.runtime as xr
-import torch_xla.core.xla_model as xm
-import torch_xla.distributed.spmd as xs
-import torch_xla.distributed.parallel_loader as pl
-import torch_xla.debug.profiler as xp
-
 from dataclasses import dataclass, field
+from timeit import default_timer as timer
 from typing import Optional, Union
 
+# Third-party library imports
+import datasets
+import numpy as np
+import torch
+import transformers
 from datasets import load_dataset
 from torch import nn
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset, IterableDataset
-from torch_xla.experimental.spmd_fully_sharded_data_parallel import SpmdFullyShardedDataParallel as FSDPv2
-from torch_xla.distributed.fsdp.wrap import transformer_auto_wrap_policy
-from torch_xla.distributed.fsdp import checkpoint_module
 
+# PyTorch XLA imports
+import torch_xla.core.xla_model as xm
+import torch_xla.debug.profiler as xp
+import torch_xla.distributed.parallel_loader as pl
+import torch_xla.distributed.spmd as xs
+import torch_xla.runtime as xr
+from torch_xla.distributed.fsdp import checkpoint_module
+from torch_xla.distributed.fsdp.wrap import transformer_auto_wrap_policy
+from torch_xla.experimental.spmd_fully_sharded_data_parallel import SpmdFullyShardedDataParallel as FSDPv2
+
+# Transformers imports
 from transformers import (
     AutoConfig,
-    LlamaForCausalLM,
     AutoTokenizer,
     HfArgumentParser,
+    LlamaForCausalLM,
     TrainingArguments,
-    set_seed,
+    default_data_collator,
     get_scheduler,
-    default_data_collator
+    set_seed,
 )
+from transformers.modeling_outputs import CausalLMOutputWithPast
+from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
-from transformers.trainer_pt_utils import get_module_class_from_name
-from transformers.modeling_outputs import CausalLMOutputWithPast
 
 check_min_version("4.39.3")
 logger = logging.getLogger(__name__)
