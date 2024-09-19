@@ -139,14 +139,13 @@ class Trainer:
         self.global_batch_size = args.global_batch_size
         self.train_dataset = train_dataset
 
-        # Set up SPMD mesh
+        # Set up SPMD mesh and shard the model
         num_devices = xr.global_runtime_device_count()
         xs.set_global_mesh(xs.Mesh(np.array(range(num_devices)),
                            (num_devices, 1), axis_names=("fsdp", "tensor")))
+        logger.info(f"Logical mesh shape: {xs.get_global_mesh().shape()}")
         self.input_sharding_spec = xs.ShardingSpec(
             xs.get_global_mesh(), ("fsdp", None), minibatch=True)
-        logger.info(f"Logical mesh shape: {xs.get_global_mesh().shape()}")
-        logger.info(f"Input sharding: {self.input_sharding_spec}")
         self.model = self._shard_model(model)
 
         # Set up optimizers
@@ -263,9 +262,6 @@ class Trainer:
             }
         )
 
-    def _save_checkpoint(self):
-        pass
-
     def train_loop(self):
         self.model.train()
         self.model.zero_grad()
@@ -370,8 +366,8 @@ def main():
     config = AutoConfig.from_pretrained(model_args.model_id)
     config.flash_attention = True
     model = LlamaForCausalLM(config)
-    logger.info(f"Loaded model: {model_args.model_id}")
-    logger.info(f"Model parameters: {model.num_parameters}")
+    n_params = sum([p.numel() for p in model.parameters()])
+    logger.info(f"Training new model from scratch - Total size={n_params} params")
 
     # Set the model dtype to bfloat16
     model = model.to(torch.bfloat16)
