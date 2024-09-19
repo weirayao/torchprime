@@ -244,55 +244,28 @@ class Trainer:
 
         return model
 
-    def _log_metrics(self, step, start_time, loss,  sample_count):
-        xm.mark_step()
-        loss = loss.item()
-        now = timer()
-        elapsed_time = now - start_time
-        samples_per_sec = sample_count / elapsed_time
-        logger.info(
-            f"Step: {step}, loss: {loss:0.4f}, Step time: {elapsed_time:0.2f} Samples: {sample_count} Samples/sec: {samples_per_sec:0.4f}"
-        )
-        self.run_history["step_history"].append(
-            {
-                "step": step,
-                "loss": loss,
-                "elapsed_time": elapsed_time,
-                "sample_count": sample_count,
-            }
-        )
-
     def train_loop(self):
         self.model.train()
         self.model.zero_grad()
-        # TBD restart from a given step. May skip the x number of batches
         # For now we assume that we wil never train for mor than one epoch
-        start_step = 1
         max_step = self.args.max_steps
         train_loader = self._get_train_dataloader()
         train_iterator = iter(train_loader)
 
         logger.info("Starting training")
-        logger.info(f"    Start step: {start_step}")
         logger.info(f"    Max step: {max_step}")
         logger.info(f"    Global batch size: {self.global_batch_size}")
 
-        self.run_history = {
-            "step_history": [],
-            "elapsed_time": 0.0
-        }
-        sample_count = self.global_batch_size * self.args.logging_steps
-        total_steps = 0
-        start_time = timer()
-        adjusted_total_steps = -10
-        for step in range(start_step, max_step + 1):
+        for step in range(max_step):
             try:
                 batch = next(train_iterator)
             except StopIteration:
                 break
 
-            if adjusted_total_steps == 0:
-                adjusted_start_time = timer()
+            # For logging step, we expcliity isolate this step from tracing and execution overlapping.
+            if step % self.args.logging_steps == 0:
+                xm.wait_device_ops()
+            trace_start_time = timer()
 
             outputs = self.model(**batch)
             loss = outputs.loss
@@ -300,17 +273,14 @@ class Trainer:
             self.optimizer.step()
             self.lr_scheduler.step()
             self.model.zero_grad()
-
+            xm.mark_step()
+            trace_end_time = timer()
             if step % self.args.logging_steps == 0:
-                # xm.add_step_closure(
-                #    self._log_metrics,
-                #    args=(step, start_time, loss, sample_count),
-                #    run_async=False,
-                # )
-                self._log_metrics(step, start_time, loss, sample_count)
-                start_time = timer()
-            total_steps += 1
-            adjusted_total_steps += 1
+                xm.wait_device_ops()
+                execute_end_time = timer()
+                logger.info(
+                    f"Step: {step}, loss: {loss:0.4f}, trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms, step time: {(execute_end_time - trace_end_time) * 1000:0.2f} ms"
+                )
 
             # Capture profile at the prefer step
             if step == self.args.profile_step:
@@ -320,16 +290,7 @@ class Trainer:
                 xm.wait_device_ops()
                 xp.trace_detached('127.0.0.1:9012', self.args.profile_logdir, self.args.profile_duration)
 
-        adjusted_elapsed_time = timer() - adjusted_start_time
-
         logger.info("Finished training run")
-        logger.info(self.run_history)
-
-        logger.info("Performance summary")
-        logger.info(f"  Number of steps: {adjusted_total_steps}")
-        logger.info(f"  Elapsed time: {adjusted_elapsed_time:0.2f}")
-        logger.info(
-            f"  Steps per second: {adjusted_total_steps/adjusted_elapsed_time:0.2f}")
 
 
 def main():
@@ -408,8 +369,6 @@ def main():
     )
 
     results = trainer.train_loop()
-    logger.info("Training results:")
-    logger.info(results)
 
 
 if __name__ == "__main__":
