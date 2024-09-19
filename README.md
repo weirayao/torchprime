@@ -15,30 +15,27 @@ TorchPrime is a reference model implementation for PyTorch/XLA, designed to show
 - Transformers library
 - Datasets library
 
-## Usage [Placeholder]
+## Usage
 
 1. Clone the repository:
    ```
-   git clone https://github.com/your-username/TorchPrime.git
+   git clone https://github.com/pytorch-tpu/TorchPrime.git
    cd TorchPrime
    ```
 
-2. Install the required dependencies:
+2. [Placeholder] Install the required dependencies:
    ```
    pip install -r requirements.txt
    ```
 
 3. Run the training script:
    ```
-   python trainer.py --model_id facebook/esm2_t33_650M_UR50D --model_dimension 1
+   XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python trainer.py configs/run.json
    ```
 
 ## Key Components [Placeholder]
 
 - `trainer.py`: Main training script that sets up the model, data, and training loop
-- `ModelArguments`: Dataclass for model-specific arguments
-- SPMD and FSDP implementations for efficient distributed training
-- Integration with Hugging Face's Transformers library for easy model and tokenizer loading
 
 ## Contributing
 
