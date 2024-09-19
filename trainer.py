@@ -58,33 +58,32 @@ class ModelArguments:
 
     model_id: Optional[str] = field(
         default="meta-llama/Llama-2-7b-hf",
-        metadata={"help": "Pretrained config name or path if not the same as model_name"}
-    )
+        metadata={
+            "help":
+            "Pretrained config name or path if not the same as model_name"
+        })
     tokenizer_name: Optional[str] = field(
-        default=None, metadata={"help": "Name of the tokenizer if different from model_id"}
-    )
+        default=None,
+        metadata={"help": "Name of the tokenizer if different from model_id"})
     cache_dir: Optional[str] = field(
         default=None,
         metadata={
-            "help": "Where do you want to store the pretrained models downloaded from huggingface.co"
+            "help":
+            "Where do you want to store the pretrained models downloaded from huggingface.co"
         },
     )
 
 
 @dataclass
 class MoreTrainingArguments(TrainingArguments):
-    profile_step: Optional[int] = field(
-        default=-1, metadata={"help": "Step to profile"}
-    )
+    profile_step: Optional[int] = field(default=-1,
+                                        metadata={"help": "Step to profile"})
     profile_logdir: Optional[str] = field(
-        default=".", metadata={"help": "Directory to store the profile"}
-    )
+        default=".", metadata={"help": "Directory to store the profile"})
     profile_duration: Optional[int] = field(
-        default="20000", metadata={"help": "Duration (ms) to capture profile"}
-    )
+        default="20000", metadata={"help": "Duration (ms) to capture profile"})
     global_batch_size: Optional[int] = field(
-        default=None, metadata={"help": "Global batch size"}
-    )
+        default=None, metadata={"help": "Global batch size"})
 
 
 @dataclass
@@ -94,30 +93,36 @@ class DataTrainingArguments:
     """
 
     dataset_name: Optional[str] = field(
-        default=None, metadata={"help": "The name of the dataset to use (via the datasets library)."}
-    )
+        default=None,
+        metadata={
+            "help":
+            "The name of the dataset to use (via the datasets library)."
+        })
     dataset_config_name: Optional[str] = field(
-        default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
-    )
+        default=None,
+        metadata={
+            "help":
+            "The configuration name of the dataset to use (via the datasets library)."
+        })
     block_size: Optional[int] = field(
         default=None,
         metadata={
-            "help": (
-                "Optional input sequence length after tokenization. "
-                "The training dataset will be truncated in block of this size for training. "
-                "Default to the model max input length for single sentence inputs (take into account special tokens)."
-            )
+            "help":
+            ("Optional input sequence length after tokenization. "
+             "The training dataset will be truncated in block of this size for training. "
+             "Default to the model max input length for single sentence inputs (take into account special tokens)."
+             )
         },
     )
 
     def __post_init__(self):
         if self.dataset_name is None and self.train_file is None and self.validation_file is None:
-            raise ValueError("Need either a dataset name or a training/validation file.")
+            raise ValueError(
+                "Need either a dataset name or a training/validation file.")
 
 
 class Trainer:
     """The trainer."""
-
     def __init__(
         self,
         model: nn.Module,
@@ -131,27 +136,26 @@ class Trainer:
 
         # Set up SPMD mesh and shard the model
         num_devices = xr.global_runtime_device_count()
-        xs.set_global_mesh(xs.Mesh(np.array(range(num_devices)),
-                           (num_devices, 1), axis_names=("fsdp", "tensor")))
+        xs.set_global_mesh(
+            xs.Mesh(np.array(range(num_devices)), (num_devices, 1),
+                    axis_names=("fsdp", "tensor")))
         logger.info(f"Logical mesh shape: {xs.get_global_mesh().shape()}")
-        self.input_sharding_spec = xs.ShardingSpec(
-            xs.get_global_mesh(), ("fsdp", None), minibatch=True)
+        self.input_sharding_spec = xs.ShardingSpec(xs.get_global_mesh(),
+                                                   ("fsdp", None),
+                                                   minibatch=True)
         self.model = self._shard_model(model)
 
         # Set up optimizers
-        self.optimizer = AdamW(
-            params=model.parameters(),
-            lr=args.learning_rate,
-            betas=(args.adam_beta1, args.adam_beta2),
-            eps=args.adam_epsilon)
+        self.optimizer = AdamW(params=model.parameters(),
+                               lr=args.learning_rate,
+                               betas=(args.adam_beta1, args.adam_beta2),
+                               eps=args.adam_epsilon)
         self._prime_optimizer()
 
-        self.lr_scheduler = get_scheduler(
-            name=args.lr_scheduler_type,
-            optimizer=self.optimizer,
-            num_warmup_steps=args.warmup_steps,
-            num_training_steps=args.max_steps
-        )
+        self.lr_scheduler = get_scheduler(name=args.lr_scheduler_type,
+                                          optimizer=self.optimizer,
+                                          num_warmup_steps=args.warmup_steps,
+                                          num_training_steps=args.max_steps)
 
     def _prime_optimizer(self):
         for group in self.optimizer.param_groups:
@@ -166,7 +170,10 @@ class Trainer:
             raise ValueError("Trainer: training requires a train_dataset.")
 
         num_replicas = xr.process_count()
-        sampler = torch.utils.data.DistributedSampler(self.train_dataset, num_replicas=num_replicas, rank=xr.process_index())
+        sampler = torch.utils.data.DistributedSampler(
+            self.train_dataset,
+            num_replicas=num_replicas,
+            rank=xr.process_index())
         dataloader = DataLoader(
             self.train_dataset,
             # Data collator will default to DataCollatorWithPadding, so we change it.
@@ -184,20 +191,19 @@ class Trainer:
     def _shard_model(self, model):
         default_transformer_cls_names_to_wrap = None
         fsdp_transformer_layer_cls_to_wrap = self.args.fsdp_config.get(
-            "transformer_layer_cls_to_wrap", default_transformer_cls_names_to_wrap
-        )
+            "transformer_layer_cls_to_wrap",
+            default_transformer_cls_names_to_wrap)
 
         transformer_cls_to_wrap = set()
         for layer_class in fsdp_transformer_layer_cls_to_wrap:
-            transformer_cls = get_module_class_from_name(
-                model, layer_class)
+            transformer_cls = get_module_class_from_name(model, layer_class)
             if transformer_cls is None:
                 raise Exception(
-                    "Could not find the transformer layer class to wrap in the model.")
+                    "Could not find the transformer layer class to wrap in the model."
+                )
             else:
                 transformer_cls_to_wrap.add(transformer_cls)
-        logger.info(
-            f"Llama classes to wrap: {transformer_cls_to_wrap}")
+        logger.info(f"Llama classes to wrap: {transformer_cls_to_wrap}")
         auto_wrap_policy = functools.partial(
             transformer_auto_wrap_policy,
             # Transformer layer class to wrap
@@ -222,7 +228,8 @@ class Trainer:
                 real_output = output.logits
             if real_output is None:
                 raise ValueError(
-                    "Something went wrong, the output of the model shouldn't be `None`")
+                    "Something went wrong, the output of the model shouldn't be `None`"
+                )
             xs.mark_sharding(real_output, mesh, ("fsdp", None, None))
 
         model = FSDPv2(
@@ -278,7 +285,8 @@ class Trainer:
                 # interrupt training slightly on the hosts which are capturing, but by waiting after tracing
                 # for the step, the interruption will be minimal.
                 xm.wait_device_ops()
-                xp.trace_detached('127.0.0.1:9012', self.args.profile_logdir, self.args.profile_duration)
+                xp.trace_detached('127.0.0.1:9012', self.args.profile_logdir,
+                                  self.args.profile_duration)
 
         logger.info("Finished training run")
 
@@ -294,7 +302,8 @@ def main():
         model_args, data_args, training_args = parser.parse_json_file(
             json_file=os.path.abspath(sys.argv[1]))
     else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+        model_args, data_args, training_args = parser.parse_args_into_dataclasses(
+        )
 
     # Configure logging
     if training_args.should_log:
@@ -318,7 +327,8 @@ def main():
     config.flash_attention = True
     model = LlamaForCausalLM(config)
     n_params = sum([p.numel() for p in model.parameters()])
-    logger.info(f"Training new model from scratch - Total size={n_params} params")
+    logger.info(
+        f"Training new model from scratch - Total size={n_params} params")
 
     # Set the model dtype to bfloat16
     model = model.to(torch.bfloat16)
@@ -330,21 +340,28 @@ def main():
         cache_dir=model_args.cache_dir,
     )["train"]
     column_names = list(data.features)
-    data = data.map(lambda samples: tokenizer(samples["text"]), batched=True, remove_columns=column_names)
+    data = data.map(lambda samples: tokenizer(samples["text"]),
+                    batched=True,
+                    remove_columns=column_names)
 
     # Taken from run_clm.py. It's important to group texts evenly to avoid recompilations in TPU.
     block_size = data_args.block_size
+
     def group_texts(examples):
         from itertools import chain
         # Concatenate all texts.
-        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+        concatenated_examples = {
+            k: list(chain(*examples[k]))
+            for k in examples.keys()
+        }
         total_length = len(concatenated_examples[list(examples.keys())[0]])
         # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
         # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
         total_length = (total_length // block_size) * block_size
         # Split by chunks of max_len.
         result = {
-            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+            k:
+            [t[i:i + block_size] for i in range(0, total_length, block_size)]
             for k, t in concatenated_examples.items()
         }
         result["labels"] = result["input_ids"].copy()
