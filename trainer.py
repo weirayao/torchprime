@@ -143,13 +143,8 @@ class Trainer:
         model: nn.Module,
         args: MoreTrainingArguments,
         train_dataset: Optional[Union[Dataset, IterableDataset]],
-        optimizers: Tuple[torch.optim.Optimizer,
-                          torch.optim.lr_scheduler.LambdaLR],
     ):
         self.args = args
-        self.optimizer, self.lr_scheduler = optimizers
-        self.model = model
-        self._check_model_optimizer_placement(self.model, self.optimizer)
         self.device = xm.xla_device()
         self.global_batch_size = args.global_batch_size
         self.train_dataset = train_dataset
@@ -162,19 +157,30 @@ class Trainer:
             xs.get_global_mesh(), ("fsdp", None), minibatch=True)
         logger.info(f"Logical mesh shape: {xs.get_global_mesh().shape()}")
         logger.info(f"Input sharding: {self.input_sharding_spec}")
+        self.model = self._shard_model(model)
 
-    def _check_model_optimizer_placement(self, model, optimizer):
-        for param in model.parameters():
-            model_device = param.device
-            break
-        for param_group in optimizer.param_groups:
-            if len(param_group["params"]) > 0:
-                optimizer_device = param_group["params"][0].device
-                break
-        if model_device != optimizer_device:
-            raise ValueError(
-                "The model and the optimizer parameters are not on the same device."
-            )
+        # Set up optimizers
+        self.optimizer = AdamW(
+            params=model.parameters(),
+            lr=args.learning_rate,
+            betas=(args.adam_beta1, args.adam_beta2),
+            eps=args.adam_epsilon)
+        self._prime_optimizer()
+
+        self.lr_scheduler = get_scheduler(
+            name=args.lr_scheduler_type,
+            optimizer=self.optimizer,
+            num_warmup_steps=args.warmup_steps,
+            num_training_steps=args.max_steps
+        )
+
+    def _prime_optimizer(self):
+        for group in self.optimizer.param_groups:
+            for p in group['params']:
+                p.grad = torch.zeros_like(p)
+                p.grad.requires_grad_(False)
+        self.optimizer.step()
+        xm.mark_step()
 
     def _get_train_dataloader(self):
         if self.train_dataset is None:
@@ -279,7 +285,6 @@ class Trainer:
         max_step = self.args.max_steps
         train_loader = self._get_train_dataloader()
         train_iterator = iter(train_loader)
-        model = self._shard_model(self.model)
 
         logger.info("Starting training")
         logger.info(f"    Start step: {start_step}")
@@ -303,12 +308,12 @@ class Trainer:
             if adjusted_total_steps == 0:
                 adjusted_start_time = timer()
 
-            outputs = model(**batch)
+            outputs = self.model(**batch)
             loss = outputs.loss
             loss.backward()
             self.optimizer.step()
             self.lr_scheduler.step()
-            model.zero_grad()
+            self.model.zero_grad()
 
             if step % self.args.logging_steps == 0:
                 # xm.add_step_closure(
@@ -385,20 +390,6 @@ def main():
     model = model.to(xm.xla_device(), dtype=getattr(
         torch, model_args.torch_dtype))
 
-    optimizer = AdamW(
-        params=model.parameters(),
-        lr=training_args.learning_rate,
-        betas=(training_args.adam_beta1, training_args.adam_beta2),
-        eps=training_args.adam_epsilon)
-
-    steps = training_args.max_steps
-    lr_scheduler = get_scheduler(
-        name=training_args.lr_scheduler_type,
-        optimizer=optimizer,
-        num_warmup_steps=training_args.warmup_steps,
-        num_training_steps=steps
-    )
-
     # Downloading and loading a dataset from the hub.
     data = load_dataset(
         data_args.dataset_name,
@@ -432,7 +423,6 @@ def main():
         model=model,
         args=training_args,
         train_dataset=data,
-        optimizers=(optimizer, lr_scheduler)
     )
 
     results = trainer.train_loop()
