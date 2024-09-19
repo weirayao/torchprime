@@ -81,7 +81,7 @@ class MoreTrainingArguments(TrainingArguments):
     profile_logdir: Optional[str] = field(
         default=".", metadata={"help": "Directory to store the profile"})
     profile_duration: Optional[int] = field(
-        default="20000", metadata={"help": "Duration (ms) to capture profile"})
+        default=20000, metadata={"help": "Duration (ms) to capture profile"})
     global_batch_size: Optional[int] = field(
         default=None, metadata={"help": "Global batch size"})
 

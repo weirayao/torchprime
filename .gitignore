@@ -30,7 +30,6 @@ pip-wheel-metadata/
 
 # Ignore data files (customize as needed)
 *.csv
-*.json
 *.pkl
 
 # Ignore build and distribution directories
