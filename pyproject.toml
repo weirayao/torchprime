@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "torchprime"
+version = "0.1.0"
+description = "TorchPrime, reference model implementations for torch-xla."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Jiewen Tan", email = "jwtan@google.com"},
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["torchprime", "torchprime.*"]
+
+[tool.setuptools.package-data]
+"torchprime" = ["py.typed"]

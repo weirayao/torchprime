@@ -1,25 +1,38 @@
 import unittest
 
+from transformers import AutoConfig, LlamaForCausalLM as HfLlamaForCausalLM
+
+import torch
+import torch_xla.core.xla_model as xm
+
+from torchprime.models.llama import LlamaForCausalLM
+
 class TestYourModule(unittest.TestCase):
-    def setUp(self):
-        # Set up any necessary test fixtures
-        pass
+    def test_forward(self):
+        config = AutoConfig.from_pretrained(
+            "meta-llama/Meta-Llama-3-8B",
+            num_hidden_layers=1,
+            num_attention_heads=8,
+            hidden_size=8,
+            intermediate_size=16,
+        )
+        print(config)
 
-    def tearDown(self):
-        # Clean up after each test
-        pass
+        device = xm.xla_device()
+        hf_model = HfLlamaForCausalLM(config).to(device)
+        model = LlamaForCausalLM(config).to(device)
 
-    def test_example_function(self):
-        # Test case for an example function
-        expected = None
-        result = None
-        self.assertEqual(expected, result)
+        input_sizes = [8, 128, 256]
+        for input_size in input_sizes:
+            input = torch.randint(128, ((2, input_size // 2))).to(device)
+            hf_output = hf_model(input).logits
+            print(hf_output.shape)
+            # print(static_output.logits)
+            llama_output = model(input).logits
+            print(llama_output.shape)
+            # print(dynamic_output.logits)
+            assert torch.allclose(hf_output, llama_output, atol=1e-6), "logits are not equal"
 
-    def test_another_function(self):
-        # Another test case
-        self.assertTrue(True)  # Replace with actual test logic
-
-    # Add more test methods as needed
 
 if __name__ == '__main__':
     unittest.main()
