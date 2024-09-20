@@ -266,7 +266,6 @@ class Trainer:
                 xm.wait_device_ops()
             trace_start_time = timer()
 
-            print(batch["attention_mask"].shape)
             outputs = self.model(**batch)
             loss = outputs.loss
             loss.backward()
