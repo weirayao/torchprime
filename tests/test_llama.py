@@ -29,7 +29,7 @@ class TestYourModule(unittest.TestCase):
         for input_size in input_sizes:
             input = torch.randint(128, ((2, input_size // 2))).to(device)
             hf_output = hf_model(input).logits
-            llama_output = model(input).logits
+            llama_output = model(input)
             self.assertTrue(torch.allclose(hf_output, llama_output, atol=1e-6), "logits are not equal")
 
 
