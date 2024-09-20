@@ -24,11 +24,13 @@ from typing import Optional
 
 import torch
 from torch import nn
+from torch.nn import CrossEntropyLoss
 
 from transformers.activations import ACT2FN
 from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
 from transformers.models.llama.configuration_llama import LlamaConfig
+from transformers.models.llama.modeling_llama import CausalLMOutputWithPast
 
 import torch_xla.debug.profiler as xp
 
@@ -413,10 +415,27 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
     def forward(
         self,
         input_ids: torch.LongTensor = None,
+        labels: torch.LongTensor = None,
     ) -> torch.FloatTensor:
         hidden_states = self.model(input_ids=input_ids, )
 
         logits = self.lm_head(hidden_states)
         logits = logits.float()
 
-        return logits
+        loss = None
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            loss_fct = CrossEntropyLoss()
+            shift_logits = shift_logits.view(-1, self.config.vocab_size)
+            shift_labels = shift_labels.view(-1)
+            # Enable model parallelism
+            shift_labels = shift_labels.to(shift_logits.device)
+            loss = loss_fct(shift_logits, shift_labels)
+
+        return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+        )
