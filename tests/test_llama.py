@@ -15,23 +15,22 @@ class TestYourModule(unittest.TestCase):
             num_attention_heads=8,
             hidden_size=8,
             intermediate_size=16,
+            vocab_size=128,
         )
-        print(config)
+        config.flash_attention = False
 
         device = xm.xla_device()
+        torch.manual_seed(42)  # Such that the two models are initialized the same way
         hf_model = HfLlamaForCausalLM(config).to(device)
+        torch.manual_seed(42)  # Such that the two models are initialized the same way
         model = LlamaForCausalLM(config).to(device)
 
         input_sizes = [8, 128, 256]
         for input_size in input_sizes:
             input = torch.randint(128, ((2, input_size // 2))).to(device)
             hf_output = hf_model(input).logits
-            print(hf_output.shape)
-            # print(static_output.logits)
             llama_output = model(input).logits
-            print(llama_output.shape)
-            # print(dynamic_output.logits)
-            assert torch.allclose(hf_output, llama_output, atol=1e-6), "logits are not equal"
+            self.assertTrue(torch.allclose(hf_output, llama_output, atol=1e-6), "logits are not equal")
 
 
 if __name__ == '__main__':

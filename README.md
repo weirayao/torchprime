@@ -23,9 +23,9 @@ TorchPrime is a reference model implementation for PyTorch/XLA, designed to show
    cd TorchPrime
    ```
 
-2. [Placeholder] Install the required dependencies:
+2. Install the package:
    ```
-   pip install -r requirements.txt
+   pip install -e .
    ```
 
 3. Run the training script:
@@ -33,9 +33,12 @@ TorchPrime is a reference model implementation for PyTorch/XLA, designed to show
    XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python trainer.py configs/run.json
    ```
 
-## Key Components [Placeholder]
+## Key Components
 
 - `trainer.py`: Main training script that sets up the model, data, and training loop
+- `configs/run.json`: Configuration file for the training script
+- `configs/fsdp_config.json`: Configuration file for FSDPv2
+- `torchprime/models/llama.py`: Implementation of the Llama model
 
 ## Contributing
 
