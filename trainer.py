@@ -37,6 +37,7 @@ from transformers import (
     get_scheduler,
     set_seed,
 )
+from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
@@ -265,7 +266,7 @@ class Trainer:
                 xm.wait_device_ops()
             trace_start_time = timer()
 
-            print(batch)
+            print(batch["attention_mask"].shape)
             outputs = self.model(**batch)
             loss = outputs.loss
             loss.backward()

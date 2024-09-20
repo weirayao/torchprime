@@ -371,6 +371,7 @@ class LlamaModel(LlamaPreTrainedModel):
     def forward(
         self,
         input_ids: torch.LongTensor = None,
+        attention_mask: torch.FloatTensor = None,
     ) -> torch.FloatTensor:
         inputs_embeds = self.embed_tokens(input_ids)
 
@@ -385,6 +386,9 @@ class LlamaModel(LlamaPreTrainedModel):
                                  diagonal=1)
         causal_mask = causal_mask.unsqueeze(0).unsqueeze(
             0)  # Add batch and head dimension
+
+        if attention_mask is not None:
+            causal_mask = causal_mask * attention_mask[:, None, None, :]
 
         # embed positions
         hidden_states = inputs_embeds
@@ -416,8 +420,9 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         self,
         input_ids: torch.LongTensor = None,
         labels: torch.LongTensor = None,
+        attention_mask: torch.FloatTensor = None
     ) -> torch.FloatTensor:
-        hidden_states = self.model(input_ids=input_ids, )
+        hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
 
         logits = self.lm_head(hidden_states)
         logits = logits.float()

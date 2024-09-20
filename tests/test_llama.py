@@ -31,8 +31,8 @@ class TestYourModule(unittest.TestCase):
         input_sizes = [8, 128, 256]
         for input_size in input_sizes:
             input = torch.randint(128, ((2, input_size // 2))).to(device)
-            hf_output = hf_model(input, labels=input)
-            llama_output = model(input, labels=input)
+            hf_output = hf_model(input, labels=input, attention_mask=torch.ones_like(input))
+            llama_output = model(input, labels=input, attention_mask=torch.ones_like(input))
             self.assertTrue(torch.allclose(hf_output.logits, llama_output.logits, atol=1e-6),
                             "logits are not equal")
             self.assertTrue(torch.allclose(hf_output.loss, llama_output.loss, atol=1e-6),
