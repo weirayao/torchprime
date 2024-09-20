@@ -7,6 +7,7 @@ import torch_xla.core.xla_model as xm
 
 from torchprime.models.llama import LlamaForCausalLM
 
+
 class TestYourModule(unittest.TestCase):
     def test_forward(self):
         config = AutoConfig.from_pretrained(
@@ -20,9 +21,11 @@ class TestYourModule(unittest.TestCase):
         config.flash_attention = False
 
         device = xm.xla_device()
-        torch.manual_seed(42)  # Such that the two models are initialized the same way
+        torch.manual_seed(
+            42)  # Such that the two models are initialized the same way
         hf_model = HfLlamaForCausalLM(config).to(device)
-        torch.manual_seed(42)  # Such that the two models are initialized the same way
+        torch.manual_seed(
+            42)  # Such that the two models are initialized the same way
         model = LlamaForCausalLM(config).to(device)
 
         input_sizes = [8, 128, 256]
@@ -30,7 +33,8 @@ class TestYourModule(unittest.TestCase):
             input = torch.randint(128, ((2, input_size // 2))).to(device)
             hf_output = hf_model(input).logits
             llama_output = model(input)
-            self.assertTrue(torch.allclose(hf_output, llama_output, atol=1e-6), "logits are not equal")
+            self.assertTrue(torch.allclose(hf_output, llama_output, atol=1e-6),
+                            "logits are not equal")
 
 
 if __name__ == '__main__':
