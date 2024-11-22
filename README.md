@@ -1,57 +1,23 @@
-# TorchPrime
+TorchPrime is a reference model implementation for PyTorch/XLA, designed to showcase best 
+practices and efficient usage of PyTorch/XLA for high-performance machine learning on accelerators like TPUs.
 
-TorchPrime is a reference model implementation for PyTorch/XLA, designed to showcase best practices and efficient usage of PyTorch/XLA for high-performance machine learning on accelerators like TPUs.
+This repo will contain a list of reference models that 
+we have optimized and runs well on TPU.
 
-## Features
+Contents of this directory is organized in the following way:
 
-- Optimized for PyTorch/XLA
-- Demonstrates GSPMD parallelism
-- Supports large language models tasks
+* Every subdirectory is a self-contained model, as a seperate pip package.
+ 
+* Each subdirectory must has a README.md indicating:
+** is this training or inference
+** on what devices it has been tested / developed
+** instructions on running.
 
-## Requirements
+* Every subdirectory contains it's own set of shell scripts do with all the flags
+  set for the best performance that we turned, be it training or inference.
 
-- PyTorch
-- PyTorch/XLA
-- Transformers library
-- Datasets library
+* Each subdirectory can specify their own dependencies, and can depend on models / layers
+  defined in well-known OSS libraries, such as HuggingFace transformers. But should ideally not depend on each other.
 
-## Usage
+* (Optional) Each model can also have a GPU "original" version that illustrates and attributes where this model code came from, if any. This also helps to show case what changes we have done to make it performant on TPU.
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/pytorch-tpu/TorchPrime.git
-   cd TorchPrime
-   ```
-
-2. Install the package:
-   ```
-   pip install -e .
-   ```
-
-3. Run the training script:
-   ```
-   XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python trainer.py configs/run.json
-   ```
-
-## Key Components
-
-- `trainer.py`: Main training script that sets up the model, data, and training loop
-- `configs/run.json`: Configuration file for the training script
-- `configs/fsdp_config.json`: Configuration file for FSDPv2
-- `torchprime/models/llama.py`: Implementation of the Llama model
-
-## Contributing
-
-Contributions to TorchPrime are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the New BSD License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgements
-
-- PyTorch team for the amazing deep learning framework
-- Google's XLA team for the accelerated linear algebra compiler
-- Hugging Face for the Transformers library
-
-For more information on PyTorch/XLA, visit the [official documentation](https://github.com/pytorch/xla).
