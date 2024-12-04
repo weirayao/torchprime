@@ -12,8 +12,9 @@ from torch_xla2 import interop
 from torch_xla2.ops import mappings
 import custom_mesh
 from jax.sharding import Mesh
+import math
 
-from jax.experimental.mesh_utils import create_device_mesh
+from jax.experimental.mesh_utils import create_device_mesh, create_hybrid_device_mesh
 from jax.experimental.pallas.ops.tpu import flash_attention
 from jax.experimental.shard_map import shard_map
 
@@ -36,7 +37,7 @@ sharding_map_original = {
 sharding_map_scan = {
   "freqs_cis" : (), #  torch.complex64 (2048, 64)
   # ParallelEmbedding for llama2; VocabParallelEmbedding for 3
-  "tok_embeddings.weight" : ('fsdp', 'tp'), #  torch.float32 (vocab_size, 4096)
+  "tok_embeddings.weight" : ('tp', 'fsdp'), #  torch.float32 (vocab_size, 4096)
   "layers.params.attention___wo___weight" : (None, 'fsdp', 'tp'), #  torch.int8 (n, 4096, 4096)
   "layers.params.attention___wq___weight" : (None, 'tp', 'fsdp'), #  torch.int8 (n, 4096, 4096)
   "layers.params.attention___wk___weight" : (None, 'tp', 'fsdp'), #  torch.int8 (n, 4096, 4096)
@@ -49,6 +50,42 @@ sharding_map_scan = {
   "norm.weight" : ('fsdp', ), #  torch.float32 (4096,)
   "output.weight" : ('tp', 'fsdp'), #  torch.float32 (vocab_size, 4096)
 }
+
+
+from jax.experimental import pallas as pl
+
+def _bytes(x: jax.Array | jax.ShapeDtypeStruct) -> int:
+  return math.prod(x.shape) * x.dtype.itemsize
+
+def _fwd_cost_estimate(
+    q: jax.Array,
+    k: jax.Array,
+    v: jax.Array,
+    *args,
+    kernel_inputs_specs,
+    kernel_outputs_specs,
+    **kwargs
+) -> pl.CostEstimate | None:
+  b, h, tq, dqk = q.shape
+  tk = k.shape[-2]
+  dv = v.shape[-1]
+
+  # Simplify flop computation to include only matmul operations.
+  qk_flops = 2 * tq * tk * dqk
+  av_flops = 2 * tq * tk * dv
+  per_head_flops = qk_flops + av_flops
+  flops = b * h * per_head_flops
+
+  transcendentals = b * tq * tk * h
+  input_bytes = sum(_bytes(x) for x in jax.tree.leaves(kernel_inputs_specs))
+  output_bytes = sum(_bytes(x) for x in jax.tree.leaves(kernel_outputs_specs))
+  return pl.CostEstimate(
+      flops=flops,
+      transcendentals=transcendentals,
+      bytes_accessed=input_bytes + output_bytes,
+  )
+
+flash_attention._fwd_cost_estimate = _fwd_cost_estimate
 
 
 def _process_sharding_name(name):
@@ -153,7 +190,11 @@ def main(
         assert len(jax.devices()) == 256
         dev_array = np.array(jax.devices()).reshape(8, 2, 8, 2).transpose(0, 2, 1, 3).reshape(64, 4)
     else:
-      dev_array = create_device_mesh((fsdp_size, tp), allow_split_physical_axes=True)
+      if fsdp_size * tp <= 256:
+          dev_array = create_device_mesh((fsdp_size, tp), allow_split_physical_axes=True)
+      else:
+          num_pod = len(jax.devices()) // 256
+          dev_array = create_hybrid_device_mesh((fsdp_size // num_pod, tp), (num_pod, 1), jax.devices())
     mesh = Mesh(dev_array, ('fsdp', 'tp'))
 
     if use_custom_offload:

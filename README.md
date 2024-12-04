@@ -6,7 +6,7 @@ we have optimized and runs well on TPU.
 
 Contents of this directory is organized in the following way:
 
-* Every subdirectory is a self-contained model, as a seperate pip package.
+* Every subdirectory is a self-contained model.
  
 * Each subdirectory must has a README.md indicating:
 ** is this training or inference
