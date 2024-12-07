@@ -1,3 +1,4 @@
+import functools
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -13,9 +14,9 @@ from torch_xla2.ops import mappings
 import custom_mesh
 from jax.sharding import Mesh
 import math
+import splash_attn
 
 from jax.experimental.mesh_utils import create_device_mesh, create_hybrid_device_mesh
-from jax.experimental.pallas.ops.tpu import flash_attention
 from jax.experimental.shard_map import shard_map
 
 sharding_map_original = {
@@ -56,36 +57,6 @@ from jax.experimental import pallas as pl
 
 def _bytes(x: jax.Array | jax.ShapeDtypeStruct) -> int:
   return math.prod(x.shape) * x.dtype.itemsize
-
-def _fwd_cost_estimate(
-    q: jax.Array,
-    k: jax.Array,
-    v: jax.Array,
-    *args,
-    kernel_inputs_specs,
-    kernel_outputs_specs,
-    **kwargs
-) -> pl.CostEstimate | None:
-  b, h, tq, dqk = q.shape
-  tk = k.shape[-2]
-  dv = v.shape[-1]
-
-  # Simplify flop computation to include only matmul operations.
-  qk_flops = 2 * tq * tk * dqk
-  av_flops = 2 * tq * tk * dv
-  per_head_flops = qk_flops + av_flops
-  flops = b * h * per_head_flops
-
-  transcendentals = b * tq * tk * h
-  input_bytes = sum(_bytes(x) for x in jax.tree.leaves(kernel_inputs_specs))
-  output_bytes = sum(_bytes(x) for x in jax.tree.leaves(kernel_outputs_specs))
-  return pl.CostEstimate(
-      flops=flops,
-      transcendentals=transcendentals,
-      bytes_accessed=input_bytes + output_bytes,
-  )
-
-flash_attention._fwd_cost_estimate = _fwd_cost_estimate
 
 
 def _process_sharding_name(name):
@@ -174,6 +145,8 @@ def main(
     print(locals())
     torch.manual_seed(0)
     torch.set_default_dtype(torch.bfloat16)
+    torch_xla2.enable_performance_mode()
+
     print('Local devices:', jax.local_device_count())
     fsdp_size = len(jax.devices()) // tp
 
@@ -248,40 +221,20 @@ def main(
 
 
     # NOTE: overriding attention to capture mesh and sharding info
+    partition = P('fsdp', 'tp', None, None)
+    attention = functools.partial(
+      splash_attn.tpu_splash_attention, 
+      mesh, partition, (model_impl != 'scan_manual'))
+    attention = jax.jit(attention)
+
     def custom_attention(
         query, key, value, attn_mask=None,
         dropout_p=0.0, is_causal=False,
         scale=None, enable_gqa=False):
                   #  batch, num of head, seq, dim
-      partition = P('fsdp', 'tp', None, None)
-
-      def wrap_flash_attention(query, key, value):
-        print('query shape is ', query.shape)
-        block_sizes = flash_attention.BlockSizes(
-          block_b=min(2, query.shape[0]),
-          block_q=min(512, query.shape[2]),
-          block_k_major=min(512, key.shape[2]),
-          block_k=min(512, key.shape[2]),
-          block_q_major_dkv=min(512, query.shape[2]),
-          block_k_major_dkv=min(512, key.shape[2]),
-          block_k_dkv=min(512, key.shape[2]),
-          block_q_dkv=min(512, query.shape[2]),
-          block_k_major_dq=min(512, key.shape[2]),
-          block_k_dq=min(256, key.shape[2]),
-          block_q_dq=min(1024, query.shape[2]),
-        )
-        return flash_attention.flash_attention(
-            query, key, value, causal=True, block_sizes=block_sizes)
-
-      if model_impl != 'scan_manual':
-        wrap_flash_attention = shard_map(
-          wrap_flash_attention,
-          mesh=mesh,
-          in_specs=(partition, partition, partition),
-          out_specs=partition,
-          check_rep=False,
-        )
-      return interop.call_jax(wrap_flash_attention, query, key, value)
+      jk, jq, jv = interop.jax_view((query, key, value))
+      res =  attention(jk, jq, jv, None)
+      return interop.torch_view(res)
 
     register_attention(custom_attention)
 
@@ -290,80 +243,6 @@ def main(
         mesh, llama, sharded_weights, None,
         freqs_cis, lr, seqlen, policy, batch_size, use_shmap=(model_impl == 'scan_manual'),
         profile_dir=profile_dir)
-
-
-def main2(
-  batch_size: int = 64,
-  model_type: str='8B',
-  lr: float=0.001,
-  tp: int=4,
-  seqlen: int = 2048,
-  model_impl: str = 'scan',
-  use_custom_mesh: bool = False,
-  use_custom_offload: bool = True,
-  internal_override_layers: int = -1,
-  profile_dir: str = 'profile/',
-):
-    print(locals())
-    torch.manual_seed(0)
-    torch.set_default_dtype(torch.bfloat16)
-    print('Local devices:', jax.local_device_count())
-    fsdp_size = len(jax.devices()) // tp
-
-    env = torch_xla2.default_env()
-    env.config.use_torch_native_for_cpu_tensor = False
-
-    if use_custom_mesh:
-      assert len(jax.devices()) == 512
-      dev_array = custom_mesh.create_custom_64x4_device_mesh(
-        (64, 4), (2, 1), jax.devices()
-      )
-      tp = 4
-    else:
-      dev_array = create_device_mesh((fsdp_size, tp), allow_split_physical_axes=True)
-    mesh = Mesh(dev_array, ('fsdp', 'tp'))
-
-    if use_custom_offload:
-      policy = jax.checkpoint_policies.save_and_offload_only_these_names(
-          names_which_can_be_saved=[],
-          names_which_can_be_offloaded=[
-              "decoder_layer_input",
-              "query_proj",
-              "key_proj",
-              "value_proj",
-              "out_proj",
-          ],
-          offload_src="device",
-          offload_dst="pinned_host",
-      )
-    else:
-      policy=jax.checkpoint_policies.nothing_saveable
-
-    args = model.ModelArgs(
-      **model.transformer_configs[model_type]
-    )
-
-    with env:
-      ffn = model.FeedForward(4096, 4096, 256, 1.3)
-      ffn.to('jax')
-    def ffnc(weights, args):
-      weights, args = env.j2t_iso((weights, args))
-      res = torch.func.functional_call(
-        ffn,
-        weights,
-        args
-      )
-      return env.t2j_iso(res)
-
-    env.config.debug_print_each_op = True
-    print('====')
-    print(jax.jit(ffnc).lower(
-      env.t2j_iso(ffn.state_dict()),
-      (jax.ShapeDtypeStruct((3, 100, 4096), jnp.bfloat16.dtype), )
-    ).as_text())
-
-    breakpoint()
-
 
 
 if __name__ == '__main__':
