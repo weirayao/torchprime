@@ -20,6 +20,7 @@ from pathspec.patterns import GitWildMatchPattern  # type: ignore
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+import torchprime.launcher.doctor
 from torchprime.launcher.buildpush import buildpush
 
 
@@ -41,12 +42,17 @@ def interactive(f):
     return run_with_watcher(ctx)(f)(*args, **kwargs)
 
   wrapper.__name__ = f.__name__
+  wrapper.__doc__ = f.__doc__
   return wrapper
 
 
 @click.group()
 @click.option(
-  "-i", "--interactive", is_flag=True, default=False, help="Enable shouting mode."
+  "-i",
+  "--interactive",
+  is_flag=True,
+  default=False,
+  help="Re-run the command whenever a file is edited (useful for fast dev/test iteration)",
 )
 @click.pass_context
 def cli(ctx, interactive):
@@ -119,9 +125,11 @@ def use(
 
   path = write_config(config)
   click.echo(f"Written config {path.relative_to(os.getcwd())}")
+  torchprime.launcher.doctor.check_all()
 
 
 def create_and_activate_gcloud(gcloud_config_name, config: Config):
+  click.echo("Activating gcloud config...")
   ensure_command("gcloud")
   all_configurations = json.loads(
     subprocess.check_output(
@@ -134,38 +142,55 @@ def create_and_activate_gcloud(gcloud_config_name, config: Config):
     if gcloud_config["name"] == gcloud_config_name:
       existing = True
       break
+  runner = CommandRunner()
   if existing:
-    subprocess.check_output(
+    runner.run(
       [
         "gcloud",
         "config",
         "configurations",
         "activate",
         gcloud_config_name,
-      ]
+      ],
     )
   else:
-    subprocess.check_output(
-      ["gcloud", "config", "configurations", "create", gcloud_config_name, "--activate"]
+    runner.run(
+      [
+        "gcloud",
+        "config",
+        "configurations",
+        "create",
+        gcloud_config_name,
+        "--activate",
+      ],
     )
 
-  subprocess.check_output(
+  runner.run(
+    [
+      "gcloud",
+      "auth",
+      "application-default",
+      "set-quota-project",
+      config.project,
+    ],
+  )
+  runner.run(
     [
       "gcloud",
       "config",
       "set",
       "compute/zone",
       config.zone,
-    ]
+    ],
   )
-  subprocess.check_output(
+  runner.run(
     [
       "gcloud",
       "config",
       "set",
       "project",
       config.project,
-    ]
+    ],
   )
 
 
@@ -249,6 +274,36 @@ def test(args):
     subprocess.run(["pytest"] + list(args), check=True)
   except subprocess.CalledProcessError as e:
     sys.exit(e.returncode)
+
+
+@cli.command()
+@interactive
+def doctor():
+  """
+  Checks for any problems in your environment (missing packages, credentials, etc.).
+  """
+  torchprime.launcher.doctor.check_all()
+
+
+class CommandRunner:
+  def __init__(self):
+    self.outputs = b""
+
+  def run(self, command, **kwargs):
+    try:
+      self.outputs += f">> {' '.join(command)}\n".encode()
+      self.outputs += subprocess.check_output(
+        command, **kwargs, stderr=subprocess.STDOUT
+      )
+      self.outputs += b"\n"
+    except subprocess.CalledProcessError as e:
+      click.echo("Previous command outputs:")
+      click.echo(self.outputs.decode("utf-8"))
+      click.echo()
+      click.echo(f"❌ Error running `{' '.join(command)}` ❌")
+      click.echo()
+      click.echo(e.stdout)
+      sys.exit(-1)
 
 
 def forward_env(name: str) -> list[str]:
