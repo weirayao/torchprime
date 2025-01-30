@@ -68,6 +68,15 @@ tp run torchprime/experimental/torchax_models/run.py --batch_size=256
 `tp run` will broadcast this command to all VMs in the XPK cluster,
 which is the convention for running SPMD distributed workloads.
 
+#### Env var passed to the workload
+
+`tp run` will pick up these environment variables locally and proxy them
+to the distributed workload, if found:
+
+- `HF_TOKEN`: HuggingFace token
+- `XLA_IR_DEBUG`: [torch_xla debugging flag][torch_xla_debug_env]
+- `XLA_HLO_DEBUG`: [torch_xla debugging flag][torch_xla_debug_env]
+
 ## Structure
 
 This repo will contain a set of reference models that we have optimized and
@@ -136,3 +145,4 @@ For more information on PyTorch/XLA, visit the
 [1]: https://github.com/pytorch/xla
 [2]: https://github.com/pytorch/xla/tree/master/torchax
 [xpk]: https://github.com/AI-Hypercomputer/xpk
+[torch_xla_debug_env]: https://github.com/pytorch/xla/blob/master/docs/source/learn/troubleshoot.md#environment-variables
