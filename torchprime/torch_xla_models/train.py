@@ -1,5 +1,6 @@
 # Standard library imports
 import functools
+import importlib
 import logging
 import math
 import sys
@@ -8,7 +9,6 @@ from timeit import default_timer as timer
 # Third-party library imports
 import datasets
 import hydra
-import numpy as np
 import torch
 
 # PyTorch XLA imports
@@ -41,9 +41,6 @@ from transformers.optimization import Adafactor
 from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
 
-# TorchPrime imports
-from torchprime.torch_xla_models.llama import LlamaForCausalLM
-
 check_min_version("4.39.3")
 logger = logging.getLogger(__name__)
 
@@ -67,17 +64,20 @@ class Trainer:
 
     # Set up SPMD mesh and shard the model
     num_devices = xr.global_runtime_device_count()
-    xs.set_global_mesh(
-      xs.Mesh(
-        np.array(range(num_devices)),
-        (num_devices, 1),
-        axis_names=("fsdp", "tensor"),
-      )
+    assert num_devices == math.prod(
+      [i for i in config.mesh.values()]
+    ), "Mesh is not using all the available devices."
+    dcn_mesh_shape = (config.mesh.dcn, 1, 1, 1)
+    ici_mesh_shape = (1, config.mesh.fsdp, config.mesh.tensor, config.mesh.expert)
+    mesh = xs.HybridMesh(
+      ici_mesh_shape=ici_mesh_shape,
+      dcn_mesh_shape=dcn_mesh_shape,
+      axis_names=("dcn", "fsdp", "tensor", "expert"),
     )
-    logger.info(f"Logical mesh shape: {xs.get_global_mesh().shape()}")
-    self.input_sharding_spec = xs.ShardingSpec(
-      xs.get_global_mesh(), ("fsdp", None), minibatch=True
-    )
+    xs.set_global_mesh(mesh)
+    logger.info(f"Logical mesh shape: {mesh.shape()}")
+    # TODO (https://github.com/AI-Hypercomputer/torchprime/issues/66): Test this for multislice
+    self.input_sharding_spec = xs.ShardingSpec(mesh, ("fsdp", None), minibatch=True)
     self.model = self._shard_model(model)
 
     # Set up optimizers
@@ -134,7 +134,7 @@ class Trainer:
 
   def _shard_model(self, model):
     default_transformer_cls_names_to_wrap = []
-    fsdp_transformer_layer_cls_to_wrap = self.config.fsdp.get(
+    fsdp_transformer_layer_cls_to_wrap = self.config.model.fsdp.get(
       "transformer_layer_cls_to_wrap",
       default_transformer_cls_names_to_wrap,
     )
@@ -148,14 +148,14 @@ class Trainer:
         )
       else:
         transformer_cls_to_wrap.add(transformer_cls)
-    logger.info(f"Llama classes to wrap: {transformer_cls_to_wrap}")
+    logger.info(f"Model classes to wrap: {transformer_cls_to_wrap}")
     auto_wrap_policy = functools.partial(
       transformer_auto_wrap_policy,
       # Transformer layer class to wrap
       transformer_layer_cls=transformer_cls_to_wrap,
     )
 
-    if self.config.fsdp["xla_fsdp_grad_ckpt"]:
+    if self.config.model.fsdp["xla_fsdp_grad_ckpt"]:
       # Apply gradient checkpointing to auto-wrapped sub-modules if specified
       logger.info("Enabling gradient checkpointing")
 
@@ -175,7 +175,9 @@ class Trainer:
         raise ValueError(
           "Something went wrong, the output of the model shouldn't be `None`"
         )
-      xs.mark_sharding(real_output, mesh, ("fsdp", None, None))
+      # It is expected that the first dimension of the output is the batch size
+      # which is usually sharded among all the devices except the tensor axis.
+      xs.mark_sharding(real_output, mesh, (("dcn", "fsdp", "expert"), None, "tensor"))
 
     model = FSDPv2(
       model,
@@ -238,13 +240,30 @@ class Trainer:
 
   @torch_xla.compile(full_graph=True)
   def train_step(self, batch):
-    outputs = self.model(**batch)
-    loss = outputs.loss
+    _logits, loss = self.model(**batch)
     loss.backward()
     self.optimizer.step()
     self.lr_scheduler.step()
     self.model.zero_grad()
     return loss
+
+
+def initialize_model_class(model_config):
+  """Import and initalize model_class specified by the config."""
+  full_model_class_string = model_config.model_class
+  module_name, model_class_name = full_model_class_string.rsplit(".", 1)
+  try:
+    module = importlib.import_module(module_name)
+  except ModuleNotFoundError as e:
+    print(f"Error importing relative module: {e}")
+    sys.exit(1)
+  if hasattr(module, model_class_name):
+    model_class = getattr(module, model_class_name)
+  else:
+    print(f"Error: Function '{model_class_name}' not found in module '{module_name}'")
+    sys.exit(1)
+  model = model_class(model_config)
+  return model
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="base")
@@ -266,7 +285,8 @@ def main(config: DictConfig):
   # TODO: Add tokenizer models to torchprime
   tokenizer_name = config.model.tokenizer_name
   tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-  model = LlamaForCausalLM(config.model)
+
+  model = initialize_model_class(config.model)
   n_params = sum([p.numel() for p in model.parameters()])
   logger.info(f"Training new model from scratch - Total size={n_params} params")
 

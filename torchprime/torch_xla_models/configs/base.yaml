@@ -2,7 +2,7 @@
 # override the earlier ones.
 defaults:
   - _self_ # refers to this config file
-  - model: llama-3-8b # refers to model/llama.yaml
+  - model: llama-3-8b # refers to model/llama-3-8b.yaml
 
 dataset_name: wikitext
 dataset_config_name: wikitext-2-raw-v1
@@ -13,14 +13,16 @@ block_size: 8192
 cache_dir: /tmp/
 seed: 42
 profile_step: -1
-profile_logdir: /tmp/profile
+# This might be overwritten when using tp run to launch the run using XPK
+profile_dir: /tmp/profile 
 profile_duration: 100000
-fsdp:
-  transformer_layer_cls_to_wrap:
-    - LlamaDecoderLayer
-  xla_fsdp_grad_ckpt: true
 optimizer:
   learning_rate: 5.e-5
 lr_scheduler:
   type: linear
-  warmup_steps: 0 
+  warmup_steps: 0
+mesh:
+  dcn: 1
+  fsdp: 4
+  tensor: 1
+  expert: 1
