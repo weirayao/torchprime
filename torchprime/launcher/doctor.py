@@ -9,8 +9,11 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import TypeVar
 
 import click
+
+ConfigT = TypeVar("ConfigT", bound="Config")  # noqa: F821
 
 
 class CheckFailedError(Exception):
@@ -114,20 +117,63 @@ def check_gke_gcloud_auth_plugin():
   )
 
 
-def check_all():
+def check_gke_cluster_exist(config: ConfigT | None = None):
+  """Check that the GKE cluster exists."""
+  try:
+    result = subprocess.run(
+      [
+        "gcloud",
+        "container",
+        "clusters",
+        "describe",
+        f"{config.cluster}",
+        f"--project={config.project}",
+        f"--zone={config.zone}",
+      ],
+      check=True,
+      capture_output=True,
+      text=True,
+    )
+  except subprocess.CalledProcessError as e:
+    print(
+      f"Error running gcloud command: {e.stderr} Please check the cluster name and project"
+    )
+    # get existing clusters in the project
+    try:
+      result = subprocess.run(
+        ["gcloud", "container", "clusters", "list", f"--project={config.project}"],
+        check=True,
+        capture_output=True,
+        text=True,
+      )
+      print(f"Available clusters in the project: \n{result.stdout}")
+    except subprocess.CalledProcessError as e:
+      print(f"Error running gcloud command: {e.stderr} Unable to get existing clusters")
+    raise CheckFailedError(
+      f"""The GKE cluster `{config.cluster}` does not exist in project `{config.project}` in zone `{config.zone}`"""
+    ) from e
+
+
+def check_all(config: ConfigT | None = None):
   click.echo("Checking environment...")
-  for check in [
+  check_list = [
     check_docker,
     check_gcloud_auth_login,
     check_gcr_io,
     check_docker_access,
     check_kubectl,
     check_gke_gcloud_auth_plugin,
-  ]:
+  ]
+  if config:
+    check_list.append(check_gke_cluster_exist)
+  for check in check_list:
     assert check.__doc__ is not None
     click.echo(check.__doc__ + "..", nl=False)
     try:
-      check()
+      try:
+        check(config)
+      except TypeError:
+        check()
     except CheckFailedError as e:
       click.echo()
       click.echo()
