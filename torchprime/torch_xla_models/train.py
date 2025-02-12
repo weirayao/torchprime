@@ -206,11 +206,15 @@ class Trainer:
     logger.info(f"    Max step: {max_step}")
     logger.info(f"    Global batch size: {self.global_batch_size}")
 
+    epoch = 0
     for step in range(max_step):
       try:
         batch = next(train_iterator)
       except StopIteration:
-        break
+        logger.warning(f"DataLoader exhausted at step {step}, reset iterator")
+        epoch += 1
+        train_iterator = iter(train_loader)
+        batch = next(train_iterator)
 
       trace_start_time = timer()
       loss = self.train_step(batch)
@@ -218,9 +222,9 @@ class Trainer:
 
       if step % self.config.logging_steps == 0:
 
-        def step_closure(step, loss, trace_start_time, trace_end_time):
+        def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
           logger.info(
-            f"Step: {step}, loss: {loss:0.4f}, "
+            f"Epoch: {epoch}, Step: {step}, loss: {loss:0.4f}, "
             f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
           )
           if math.isnan(loss):
@@ -228,7 +232,7 @@ class Trainer:
 
         xm.add_step_closure(
           step_closure,
-          args=(step, loss, trace_start_time, trace_end_time),
+          args=(epoch, step, loss, trace_start_time, trace_end_time),
           run_async=True,
         )
 
