@@ -35,6 +35,7 @@ pip-wheel-metadata/
 # Ignore build and distribution directories
 build/
 dist/
+local_dist/
 *.egg-info/
 
 # Ignore environment configuration files
