@@ -228,12 +228,53 @@ class MixtralAttention(nn.Module):
       query_states, key_states, cos, sin, position_ids
     )
 
-    # repeat k/v heads if n_kv_heads < n_heads
-    key_states = repeat_kv(key_states, self.num_key_value_groups)
-    value_states = repeat_kv(value_states, self.num_key_value_groups)
+    if self.config.attention_kernel != "splash_attention":
+      # repeat k/v heads if n_kv_heads < n_heads
+      key_states = repeat_kv(key_states, self.num_key_value_groups)
+      value_states = repeat_kv(value_states, self.num_key_value_groups)
 
     # Non FA path doesn't deal with 2D sharding.
-    if not self.config.flash_attention:
+    partition_spec = None
+    if xs.get_global_mesh() is not None:
+      partition_spec = (("data", "fsdp"), "tensor", None, None)
+      # TODO(bhavya01): Check to see if the segment_ids_partition_spec is
+      # correct.
+      segment_ids_partition_spec = (("data", "fsdp"), None)
+    if self.config.attention_kernel == "splash_attention":
+      # Integrated with PyTorch/XLA Pallas Splash Attention:
+      assert (
+        xs.get_global_mesh() is not None
+      ), "Global mesh is required for Splash Attention"
+      from torchprime.torch_xla_models.experimental.custom_kernel import (
+        SplashAttentionConfig,
+        splash_attention,
+      )
+
+      sa_config = SplashAttentionConfig(
+        mesh=str(xs.get_global_mesh()),
+      )
+      sa_config = SplashAttentionConfig(
+        mesh=str(xs.get_global_mesh()),
+        qkv_partition_spec=partition_spec,
+        segment_ids_partition_spec=segment_ids_partition_spec,
+      )
+      query_states /= math.sqrt(self.head_dim)
+      attn_output = splash_attention(
+        query_states, key_states, value_states, sa_config.to_json()
+      )
+    elif self.config.attention_kernel == "flash_attention":
+      # Integrated with PyTorch/XLA Pallas Flash Attention:
+      from torch_xla.experimental.custom_kernel import flash_attention
+
+      query_states /= math.sqrt(self.head_dim)
+      attn_output = flash_attention(
+        query_states,
+        key_states,
+        value_states,
+        causal=True,
+        partition_spec=partition_spec,
+      )
+    else:
       attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(
         self.head_dim
       )
@@ -260,21 +301,6 @@ class MixtralAttention(nn.Module):
         attn_weights, p=self.attention_dropout, training=self.training
       )
       attn_output = torch.matmul(attn_weights, value_states)
-    else:
-      # Integrated with PyTorch/XLA Pallas Flash Attention:
-      from torch_xla.experimental.custom_kernel import flash_attention
-
-      query_states /= math.sqrt(self.head_dim)
-      partition_spec = None
-      if xs.get_global_mesh() is not None:
-        partition_spec = (("data", "fsdp"), "tensor", None, None)
-      attn_output = flash_attention(
-        query_states,
-        key_states,
-        value_states,
-        causal=True,
-        partition_spec=partition_spec,
-      )
 
     if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
       raise ValueError(
