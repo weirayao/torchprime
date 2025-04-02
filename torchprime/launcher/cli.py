@@ -4,6 +4,7 @@ tp is a CLI for common torchprime workflows.
 
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -305,6 +306,18 @@ def run(
     workload_name = (
       f"{os.environ['USER']}-xpk-{config.tpu_type}-{config.num_slices}-{datetime_str}"
     )
+
+  if not (
+    re.match(r"[a-z]([-a-z0-9]*[a-z0-9])?", workload_name) and len(workload_name) < 40
+  ):
+    raise RuntimeError(
+      f"""
+      Workload name: {workload_name} not valid. Workload name must match
+      [a-z]([-a-z0-9]*[a-z0-9])? and be less than 40 characters long. Consider
+      using "--name" flag to set correct name
+      """
+    )
+
   command = ["python", "torchprime/launcher/thunk.py"] + list(args)
 
   # Forward a bunch of important env vars.
