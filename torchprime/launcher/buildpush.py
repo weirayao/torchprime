@@ -5,6 +5,7 @@ import getpass
 import grp
 import os
 import random
+import re
 import string
 import subprocess
 from pathlib import Path
@@ -13,9 +14,10 @@ import click
 
 
 def buildpush(
-  torchprime_project_id,
+  torchprime_project_id="",
   torchprime_docker_url=None,
   push_docker=True,
+  placeholder_url=None,
   *,
   build_arg=None,
 ) -> str:
@@ -39,11 +41,19 @@ def buildpush(
   docker_tag = default_tag
 
   # Determine Docker URL
-  default_url = f"gcr.io/{torchprime_project_id}/torchprime-{user}:{docker_tag}"
-  docker_url = torchprime_docker_url if torchprime_docker_url else default_url
+  if placeholder_url:
+    docker_url = placeholder_url
+  else:
+    default_url = f"gcr.io/{torchprime_project_id}/torchprime-{user}:{docker_tag}"
+    docker_url = torchprime_docker_url if torchprime_docker_url else default_url
+    # docker_url doesn't accept `//` and uppercase.
+    docker_url = re.sub(r"/+", "/", docker_url).lower()
 
   print()
-  print(f"Will build a docker image and upload to: {docker_url}")
+  if push_docker:
+    print(f"Will build a docker image and upload to: {docker_url}")
+  else:
+    print(f"Create docker image: {docker_url} and tag locally")
   print()
 
   build_cmd = f"{sudo_cmd} docker build"
