@@ -17,7 +17,6 @@ import torch_xla.distributed.parallel_loader as pl
 import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
 import transformers
-from datasets import load_dataset
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, IterableDataset
@@ -34,6 +33,7 @@ from transformers.optimization import Adafactor
 from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
 
+from torchprime.data.dataset import make_huggingface_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
 from torchprime.metrics.step_duration import step_duration_from_latest_profile
@@ -43,6 +43,7 @@ from torchprime.sharding.shard_model import (
 )
 from torchprime.torch_xla_models import offloading, remat_all, scan_layers
 from torchprime.torch_xla_models.topology import get_mesh, is_1d_sharding
+from torchprime.utils.retry import retry
 
 check_min_version("4.39.3")
 logger = logging.getLogger(__name__)
@@ -386,7 +387,7 @@ def main(config: DictConfig):
 
   # TODO(https://github.com/AI-Hypercomputer/torchprime/issues/14): Add tokenizers to torchprime.
   tokenizer_name = config.model.tokenizer_name
-  tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+  tokenizer = retry(lambda: AutoTokenizer.from_pretrained(tokenizer_name))
 
   # Set the model dtype to bfloat16, and set the default device to the XLA device.
   # This will capture the model constructor into a graph so that we can add
@@ -398,40 +399,16 @@ def main(config: DictConfig):
   logger.info(f"Training new model from scratch - Total size={n_params} params")
 
   # Downloading and loading a dataset from the hub.
-  data = load_dataset(
-    config.dataset_name,
-    config.dataset_config_name,
-    cache_dir=config.cache_dir,
-  )["train"]
-  column_names = list(data.features)
-  data = data.map(
-    lambda samples: tokenizer(samples["text"]),
-    batched=True,
-    remove_columns=column_names,
+  data = retry(
+    lambda: make_huggingface_dataset(
+      name=config.dataset_name,
+      config_name=config.dataset_config_name,
+      split="train",
+      cache_dir=config.cache_dir,
+      tokenizer=tokenizer,
+      block_size=config.block_size,
+    )
   )
-
-  # Taken from run_clm.py. It's important to group texts evenly to avoid recompilations in TPU.
-  block_size = config.block_size
-
-  def group_texts(examples):
-    from itertools import chain
-
-    # Concatenate all texts.
-    concatenated_examples = {k: list(chain(*examples[k])) for k in examples}
-    total_length = len(concatenated_examples[list(examples.keys())[0]])
-    # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
-    # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
-    total_length = (total_length // block_size) * block_size
-    # Split by chunks of max_len.
-    result = {
-      k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
-      for k, t in concatenated_examples.items()
-    }
-    result["labels"] = result["input_ids"].copy()
-    return result
-
-  data = data.map(group_texts, batched=True)
-
   trainer = Trainer(
     model=model,
     config=config,
