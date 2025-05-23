@@ -2,6 +2,7 @@
 tp is a CLI for common torchprime workflows.
 """
 
+import getpass
 import json
 import os
 import re
@@ -42,6 +43,10 @@ class Config:
   num_slices: int
   tpu_type: str
   artifact_dir: str
+  upload_metrics: bool
+  bq_project: str
+  bq_dataset: str
+  bq_table: str
   docker_project: str | None = None
 
 
@@ -95,6 +100,31 @@ def cli(ctx, interactive):
 E.g. gs://foo/bar",
 )
 @click.option(
+  "--upload-metrics",
+  required=False,
+  is_flag=True,
+  default=False,
+  help="If given, uploads metrics to the database ",
+)
+@click.option(
+  "--bq-project",
+  required=False,
+  default="tpu-pytorch",
+  help="A bigquery project to upload metrics.",
+)
+@click.option(
+  "--bq-dataset",
+  required=False,
+  default="benchmark_dataset_test",
+  help="A bigqeury dataset to upload metrics.",
+)
+@click.option(
+  "--bq-table",
+  required=False,
+  default="benchmark_experiment",
+  help="A bigquery table to upload metrics.",
+)
+@click.option(
   "--docker-project",
   required=False,
   default=None,
@@ -108,6 +138,10 @@ def use(
   num_slices: int,
   tpu_type: str,
   artifact_dir: str,
+  upload_metrics: bool,
+  bq_project: str,
+  bq_dataset: str,
+  bq_table: str,
   docker_project: str | None,
 ):
   """
@@ -125,6 +159,10 @@ def use(
     num_slices=num_slices,
     tpu_type=tpu_type,
     artifact_dir=artifact_dir,
+    upload_metrics=upload_metrics,
+    bq_project=bq_project,
+    bq_dataset=bq_dataset,
+    bq_table=bq_table,
     docker_project=docker_project,
   )
   gcloud_config_name = f"torchprime-{project}-{zone}"
@@ -283,6 +321,12 @@ def docker_run(args, use_hf: bool):
   is_flag=True,
   help="Use local torch and torch_xla wheels under folder local_dist/",
 )
+@click.option(
+  "--comments",
+  required=False,
+  default=None,
+  help="Optional description of the training run, stored in the database.",
+)
 @interactive
 def run(
   args,
@@ -291,6 +335,7 @@ def run(
   num_slices: int | None,
   use_hf: bool,
   use_local_wheel: bool,
+  comments: str | None,
 ):
   """
   Runs the provided SPMD training command as an xpk job on a GKE cluster.
@@ -339,12 +384,32 @@ def run(
   env_forwarding = [
     arg for env_var in _DOCKER_ENV_FORWARD_LIST for arg in forward_env(env_var)
   ]
-  # Pass artifact dir and jobset name as env vars.
+  # Pass configuration, jobset name, and current user as env vars.
   artifact_arg = [
     "--env",
     f"TORCHPRIME_ARTIFACT_DIR={config.artifact_dir}",
     "--env",
+    f"TORCHPRIME_TPU_TYPE={config.tpu_type}",
+    "--env",
+    f"TORCHPRIME_NUM_SLICES={config.num_slices}",
+    "--env",
+    f"TORCHPRIME_CLUSTER={config.cluster}",
+    "--env",
+    f"TORCHPRIME_UPLOAD_METRICS={config.upload_metrics}",
+    "--env",
+    f"TORCHPRIME_BQ_PROJECT={config.bq_project}",
+    "--env",
+    f"TORCHPRIME_BQ_DATASET={config.bq_dataset}",
+    "--env",
+    f"TORCHPRIME_BQ_TABLE={config.bq_table}",
+    "--env",
     f"TORCHPRIME_JOBSET_NAME={workload_name}",
+    "--env",
+    f"TORCHPRIME_COMMENTS={comments}",
+    "--env",
+    f"TORCHPRIME_DOCKER_URL={docker_url}",
+    "--env",
+    f"TORCHPRIME_USER={getpass.getuser()}",
   ]
 
   if num_slices is None:
