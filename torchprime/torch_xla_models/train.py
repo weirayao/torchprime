@@ -385,7 +385,6 @@ def initialize_model_class(model_config):
   )
   model.load_state_dict(hf_model.state_dict())
   del hf_model
-  torch_xla.sync()  # Ensure TPU memory is freed
   return model
 
 
