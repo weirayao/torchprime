@@ -384,6 +384,7 @@ def initialize_model_class(model_config):
     "flex.LlamaForCausalLM": "LlamaForCausalLM", 
     "mixtral.MixtralForCausalLM": "MixtralForCausalLM",
     "llama4.Llama4TextForCausalLM": "Llama4ForCausalLM",
+    "qwen.Qwen3ForCausalLM": "Qwen3ForCausalLM",
   }
   
   hf_model_class_name = hf_model_class_mapping.get(full_model_class_string)
