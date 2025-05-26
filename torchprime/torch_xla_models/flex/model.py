@@ -403,6 +403,8 @@ class LlamaForCausalLM(nn.Module):
     sampling_eps = 1e-3
     mask_token_id = 128002 # <|reserved_special_token_0|>
     loss_func = nn.CrossEntropyLoss(reduction="none")
+    # input_ids: [bs, seq_len]
+    # source mask is all-false, so all tokens in the sequence can be masked for pretraining
     src_mask = torch.zeros_like(input_ids, dtype=torch.bool, device=input_ids.device)
     t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
     sigma = t
@@ -416,12 +418,15 @@ class LlamaForCausalLM(nn.Module):
     # hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
     logits = self.lm_head(hidden_states)
     logits = logits.float()
-    
+    # logits: [bs, seq_len, vocab_size]
     # Shifted logits and labels
-    logits = logits[:,:-1]
+    # logits: [bs, seq_len-1, vocab_size]
+    logits = logits[..., :-1, :].contiguous()
     # weiran: if the shifted token is not masked in the original input, the loss is 0
-    loss_mask = loss_mask[:,1:]
-    target_ids = input_ids[:,1:]
+    # loss_mask: [bs, seq_len-1]
+    loss_mask = loss_mask[..., 1:].contiguous()
+    target_ids = input_ids[..., 1:].contiguous()
+    # loss: [bs, seq_len-1]
     loss = loss_func(
       logits.reshape(-1, logits.shape[-1]), target_ids.reshape(-1)
     ).reshape(target_ids.shape[0],-1)

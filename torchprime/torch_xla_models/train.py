@@ -377,9 +377,31 @@ def initialize_model_class(model_config):
     print(f"Error: Function '{model_class_name}' not found in module '{module_name}'")
     sys.exit(1)
   model = model_class(model_config)
-  # weiran: load pretrained weights from hf model
-  from transformers import LlamaForCausalLM as HfLlamaForCausalLM
-  hf_model = HfLlamaForCausalLM.from_pretrained(
+  
+  # Map torchprime model classes to their corresponding HuggingFace model classes
+  hf_model_class_mapping = {
+    "llama.LlamaForCausalLM": "LlamaForCausalLM",
+    "flex.LlamaForCausalLM": "LlamaForCausalLM", 
+    "mixtral.MixtralForCausalLM": "MixtralForCausalLM",
+    "llama4.Llama4TextForCausalLM": "Llama4ForCausalLM",
+  }
+  
+  hf_model_class_name = hf_model_class_mapping.get(full_model_class_string)
+  if hf_model_class_name is None:
+    print(f"Error: No HuggingFace model mapping found for '{full_model_class_string}'")
+    print(f"Available mappings: {list(hf_model_class_mapping.keys())}")
+    sys.exit(1)
+  
+  # Dynamically import the HuggingFace model class
+  try:
+    transformers_module = importlib.import_module("transformers")
+    hf_model_class = getattr(transformers_module, hf_model_class_name)
+  except (ModuleNotFoundError, AttributeError) as e:
+    print(f"Error importing HuggingFace model class '{hf_model_class_name}': {e}")
+    sys.exit(1)
+  
+  # Load pretrained weights from HuggingFace model
+  hf_model = hf_model_class.from_pretrained(
     model_config.tokenizer_name,
     torch_dtype=torch.bfloat16,
   )
