@@ -29,7 +29,6 @@ from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.rope.rope import RopeScaling, llama3_rope_frequencies
 from torchprime.torch_xla_models import offloading
 from torchprime.torch_xla_models.flex.attention import AttentionModule
-from torchprime.torch_xla_models.flex.loss import cross_entropy_loss
 
 logger = logging.get_logger(__name__)
 
@@ -428,8 +427,6 @@ class LlamaForCausalLM(nn.Module):
     ).reshape(target_ids.shape[0],-1)
     loss = loss.masked_fill(~loss_mask, 0)
     loss = (dsigma[:, None] * loss).sum() / loss_mask.sum()
-    if labels is None:
-      return logits, None
     return logits, loss
 
 @xp.trace_me("transition")

@@ -65,6 +65,7 @@ class AttentionModule(nn.Module):
 
     match self.config.attention_kernel:
       case "splash_attention":
+        raise NotImplementedError("Splash Attention is not supported yet")
         # Integrated with PyTorch/XLA Pallas Splash Attention:
         assert xs.get_global_mesh() is not None, (
           "Global mesh is required for Splash Attention"
@@ -106,10 +107,11 @@ class AttentionModule(nn.Module):
           query_states,
           key_states,
           value_states,
-          causal=False,
+          causal=False, # weiran: causal=False for bi-directional attention
           partition_spec=self.partition_spec,
         )
       case _:
+        raise NotImplementedError(f"Attention kernel {self.config.attention_kernel} is not supported yet")
         attn_weights = torch.matmul(
           query_states, key_states.transpose(2, 3)
         ) / math.sqrt(head_dim)

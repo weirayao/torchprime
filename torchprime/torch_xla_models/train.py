@@ -377,6 +377,15 @@ def initialize_model_class(model_config):
     print(f"Error: Function '{model_class_name}' not found in module '{module_name}'")
     sys.exit(1)
   model = model_class(model_config)
+  # weiran: load pretrained weights from hf model
+  from transformers import LlamaForCausalLM as HfLlamaForCausalLM
+  hf_model = HfLlamaForCausalLM.from_pretrained(
+    model_config.tokenizer_name,
+    torch_dtype=torch.bfloat16,
+  )
+  model.load_state_dict(hf_model.state_dict())
+  del hf_model
+  torch_xla.sync()  # Ensure TPU memory is freed
   return model
 
 
