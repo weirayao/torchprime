@@ -59,44 +59,8 @@ assert xr.is_spmd() is True
 
 def is_main_process():
   """Check if current process is the main process (rank 0)."""
-  try:
-    # On Cloud TPUs with gcloud ssh --worker=all, check various possible worker identifiers
-    
-    # Try CLOUD_TPU_TASK_ID first
-    worker_id = os.environ.get('CLOUD_TPU_TASK_ID')
-    if worker_id is not None:
-      return int(worker_id) == 0
-    
-    # Try TPU_WORKER_ID
-    worker_id = os.environ.get('TPU_WORKER_ID')
-    if worker_id is not None:
-      return int(worker_id) == 0
-      
-    # Try checking hostname for worker-0 pattern
-    hostname = os.environ.get('HOSTNAME', '')
-    if 'worker-0' in hostname or hostname.endswith('-0'):
-      return True
-    if 'worker-' in hostname and not hostname.endswith('-0'):
-      return False
-      
-    # Try RANK
-    rank = os.environ.get('RANK')
-    if rank is not None:
-      return int(rank) == 0
-      
-    # Try LOCAL_RANK
-    local_rank = os.environ.get('LOCAL_RANK')
-    if local_rank is not None:
-      return int(local_rank) == 0
-      
-    # If none of the above work, assume main process
-    return True
-    
-  except Exception:
-    # If any error occurs, assume main process
-    return True
-
-
+  hostname = os.environ.get('HOSTNAME', '')
+  return "-w-0" in hostname
 # Store original functions
 _original_print = print
 
