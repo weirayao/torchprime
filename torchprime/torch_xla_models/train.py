@@ -52,10 +52,66 @@ from torchprime.torch_xla_models.topology import (
 from torchprime.utils.retry import retry
 
 check_min_version("4.39.3")
-logger = logging.getLogger(__name__)
 
 xr.use_spmd()
 assert xr.is_spmd() is True
+
+
+def is_main_process():
+  """Check if current process is the main process (rank 0)."""
+  return xr.process_index() == 0
+
+
+# Store original functions
+_original_print = print
+
+
+def _main_process_print(*args, **kwargs):
+  """Print only on main process."""
+  if is_main_process():
+    _original_print(*args, **kwargs)
+
+
+# Patch print function globally
+print = _main_process_print
+
+
+class MainProcessLoggerAdapter:
+  """Logger adapter that only logs on main process."""
+  
+  def __init__(self, logger):
+    self._logger = logger
+    
+  def debug(self, *args, **kwargs):
+    if is_main_process():
+      self._logger.debug(*args, **kwargs)
+      
+  def info(self, *args, **kwargs):
+    if is_main_process():
+      self._logger.info(*args, **kwargs)
+      
+  def warning(self, *args, **kwargs):
+    if is_main_process():
+      self._logger.warning(*args, **kwargs)
+      
+  def error(self, *args, **kwargs):
+    if is_main_process():
+      self._logger.error(*args, **kwargs)
+      
+  def critical(self, *args, **kwargs):
+    if is_main_process():
+      self._logger.critical(*args, **kwargs)
+      
+  def setLevel(self, level):
+    self._logger.setLevel(level)
+    
+  def __getattr__(self, name):
+    # Delegate any other attributes to the original logger
+    return getattr(self._logger, name)
+
+
+# Create main process logger
+logger = MainProcessLoggerAdapter(logging.getLogger(__name__))
 
 
 class Trainer:
