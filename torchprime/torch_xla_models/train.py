@@ -60,17 +60,41 @@ assert xr.is_spmd() is True
 def is_main_process():
   """Check if current process is the main process (rank 0)."""
   try:
-    # On Cloud TPUs, check the worker ID from environment variables
-    worker_id = os.environ.get('CLOUD_TPU_TASK_ID', '0')
-    return int(worker_id) == 0
-  except:
-    try:
-      # Fallback to other common distributed environment variables
-      rank = os.environ.get('RANK', '0')
-      return int(rank) == 0
-    except:
-      # If all else fails, assume we're the main process
+    # On Cloud TPUs with gcloud ssh --worker=all, check various possible worker identifiers
+    
+    # Try CLOUD_TPU_TASK_ID first
+    worker_id = os.environ.get('CLOUD_TPU_TASK_ID')
+    if worker_id is not None:
+      return int(worker_id) == 0
+    
+    # Try TPU_WORKER_ID
+    worker_id = os.environ.get('TPU_WORKER_ID')
+    if worker_id is not None:
+      return int(worker_id) == 0
+      
+    # Try checking hostname for worker-0 pattern
+    hostname = os.environ.get('HOSTNAME', '')
+    if 'worker-0' in hostname or hostname.endswith('-0'):
       return True
+    if 'worker-' in hostname and not hostname.endswith('-0'):
+      return False
+      
+    # Try RANK
+    rank = os.environ.get('RANK')
+    if rank is not None:
+      return int(rank) == 0
+      
+    # Try LOCAL_RANK
+    local_rank = os.environ.get('LOCAL_RANK')
+    if local_rank is not None:
+      return int(local_rank) == 0
+      
+    # If none of the above work, assume main process
+    return True
+    
+  except Exception:
+    # If any error occurs, assume main process
+    return True
 
 
 # Store original functions
@@ -88,11 +112,12 @@ print = _main_process_print
 
 
 # Debug: Check environment variables to understand worker identification
-_original_print(f"DEBUG: CLOUD_TPU_TASK_ID = {os.environ.get('CLOUD_TPU_TASK_ID')}")
-_original_print(f"DEBUG: TPU_WORKER_ID = {os.environ.get('TPU_WORKER_ID')}")
-_original_print(f"DEBUG: RANK = {os.environ.get('RANK')}")
-_original_print(f"DEBUG: LOCAL_RANK = {os.environ.get('LOCAL_RANK')}")
-_original_print(f"DEBUG: is_main = {is_main_process()}")
+print(f"DEBUG: CLOUD_TPU_TASK_ID = {os.environ.get('CLOUD_TPU_TASK_ID')}")
+print(f"DEBUG: TPU_WORKER_ID = {os.environ.get('TPU_WORKER_ID')}")
+print(f"DEBUG: HOSTNAME = {os.environ.get('HOSTNAME')}")
+print(f"DEBUG: RANK = {os.environ.get('RANK')}")
+print(f"DEBUG: LOCAL_RANK = {os.environ.get('LOCAL_RANK')}")
+print(f"DEBUG: is_main = {is_main_process()}")
 
 
 class MainProcessLoggerAdapter:
