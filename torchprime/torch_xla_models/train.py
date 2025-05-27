@@ -459,7 +459,7 @@ def main(config: DictConfig):
     model = initialize_model_class(config.model)
 
   n_params = sum([p.numel() for p in model.parameters()])
-  logger.info(f"Training new model from scratch - Total size={n_params} params")
+  logger.info(f"Continuing training on pretrained model checkpoint - Total size={n_params} params")
 
   # Downloading and loading a dataset from the hub.
   data = retry(
