@@ -59,7 +59,18 @@ assert xr.is_spmd() is True
 
 def is_main_process():
   """Check if current process is the main process (rank 0)."""
-  return xr.process_index() == 0
+  try:
+    # On Cloud TPUs, check the worker ID from environment variables
+    worker_id = os.environ.get('CLOUD_TPU_TASK_ID', '0')
+    return int(worker_id) == 0
+  except:
+    try:
+      # Fallback to other common distributed environment variables
+      rank = os.environ.get('RANK', '0')
+      return int(rank) == 0
+    except:
+      # If all else fails, assume we're the main process
+      return True
 
 
 # Store original functions
@@ -72,8 +83,16 @@ def _main_process_print(*args, **kwargs):
     _original_print(*args, **kwargs)
 
 
-# Patch print function globally
+# Patch print function globally after XLA is initialized
 print = _main_process_print
+
+
+# Debug: Check environment variables to understand worker identification
+_original_print(f"DEBUG: CLOUD_TPU_TASK_ID = {os.environ.get('CLOUD_TPU_TASK_ID')}")
+_original_print(f"DEBUG: TPU_WORKER_ID = {os.environ.get('TPU_WORKER_ID')}")
+_original_print(f"DEBUG: RANK = {os.environ.get('RANK')}")
+_original_print(f"DEBUG: LOCAL_RANK = {os.environ.get('LOCAL_RANK')}")
+_original_print(f"DEBUG: is_main = {is_main_process()}")
 
 
 class MainProcessLoggerAdapter:
