@@ -318,8 +318,11 @@ class Qwen3Model(nn.Module):
   def __init__(self, config: DictConfig):
     super().__init__()
     self.vocab_size = config.vocab_size
-    self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
-
+    if "pad_token_id" not in config:
+      self.padding_idx = None
+    else:
+      self.padding_idx = config.pad_token_id
+    self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=self.padding_idx)
     # `HomogeneousSequential` is similar to `nn.Sequential` but can be compiled with
     # `scan` described in https://pytorch.org/xla/release/r2.6/features/scan.html.
     self.layers = HomogeneousSequential(
