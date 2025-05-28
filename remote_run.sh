@@ -53,7 +53,10 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --project=salesforce-research-internal \
     --tunnel-through-iap \
     --worker=all \
-    --command='cd torchprime; \
+    --command='
+    export HF_HOME="~/sfr-text-diffusion-model-research/huggingface"; \
+    export HF_TOKEN="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"; \
+    cd torchprime; \
     git fetch; \
     git checkout haolin/dev; \
     git pull; \
