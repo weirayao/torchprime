@@ -409,6 +409,7 @@ def initialize_model_class(model_config):
     gcs_model_path,
     torch_dtype=torch.bfloat16,
   )
+  logger.info(f"Loaded model from {gcs_model_path}. Now loading state dict.")
   model.load_state_dict(hf_model.state_dict())
   del hf_model
   return model
