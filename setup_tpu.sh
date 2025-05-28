@@ -18,6 +18,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     # curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo tee /usr/share/keyrings/cloud.google.asc; \
     # sudo apt-get update; \
     # sudo apt-get install gcsfuse; \
+
 # Install torchprime and other dependencies
 
 # gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
