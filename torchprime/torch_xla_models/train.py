@@ -34,7 +34,7 @@ from transformers.optimization import Adafactor
 from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
 
-from torchprime.data.dataset import make_huggingface_dataset
+from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
 from torchprime.metrics.mfu import compute_mfu
@@ -402,8 +402,10 @@ def initialize_model_class(model_config):
     sys.exit(1)
   
   # Load pretrained weights from HuggingFace model
+  # TODO: try to read from GCS bucket
+  gcs_model_path = "~/sfr-text-diffusion-model-research/huggingface/models/" + model_config.tokenizer_name 
   hf_model = hf_model_class.from_pretrained(
-    model_config.tokenizer_name,
+    gcs_model_path,
     torch_dtype=torch.bfloat16,
   )
   model.load_state_dict(hf_model.state_dict())
