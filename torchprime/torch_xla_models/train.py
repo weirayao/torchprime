@@ -404,6 +404,7 @@ def initialize_model_class(model_config):
   # Load pretrained weights from HuggingFace model
   # TODO: try to read from GCS bucket
   gcs_model_path = "/home/haolin.chen/sfr-text-diffusion-model-research/huggingface/models/" + model_config.tokenizer_name 
+  logger.info(f"Loading model from {gcs_model_path}")
   hf_model = hf_model_class.from_pretrained(
     gcs_model_path,
     torch_dtype=torch.bfloat16,

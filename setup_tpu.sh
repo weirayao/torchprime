@@ -11,7 +11,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --command='
     mkdir -p ~/sfr-text-diffusion-model-research; \
     umount ~/sfr-text-diffusion-model-research; \
-    gcsfuse --metadata-cache-ttl-secs -1 sfr-text-diffusion-model-research ~/sfr-text-diffusion-model-research;'
+    gcsfuse --implicit-dirs --metadata-cache-ttl-secs 0 sfr-text-diffusion-model-research ~/sfr-text-diffusion-model-research;'
 
     # export GCSFUSE_REPO=gcsfuse-`lsb_release -c -s`; \
     # echo "deb [signed-by=/usr/share/keyrings/cloud.google.asc] https://packages.cloud.google.com/apt $GCSFUSE_REPO main" | sudo tee /etc/apt/sources.list.d/gcsfuse.list; \
