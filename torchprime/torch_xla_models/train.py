@@ -208,15 +208,21 @@ class Trainer:
     )
 
     # Initialize checkpoint manager
-    self.ckpt_dir = "gs://sfr-text-diffusion-model-research/" + config.checkpoint_dir
-    try:
-      import gcsfs
-      fs = gcsfs.GCSFileSystem()
-      if not fs.exists(self.ckpt_dir):
-        fs.makedirs(self.ckpt_dir, exist_ok=True)
-        logger.info(f"Created checkpoint directory: {self.ckpt_dir}")
-    except Exception as e:
-      logger.warning(f"Could not create checkpoint directory {self.ckpt_dir}: {e}")
+    # Use GCS for checkpoints with proper path handling
+    self.ckpt_dir = f"~/sfr-text-diffusion-model-research/{config.checkpoint_dir}"
+    
+    # Ensure GCS checkpoint directory exists
+    # if is_main_process():
+    #   try:
+    #     import gcsfs
+    #     fs = gcsfs.GCSFileSystem()
+    #     # Clean the path for GCS operations
+    #     gcs_path = self.ckpt_dir.replace("gs://", "")
+    #     if not fs.exists(gcs_path):
+    #       fs.makedirs(gcs_path, exist_ok=True)
+    #       logger.info(f"Created GCS checkpoint directory: {self.ckpt_dir}")
+    #   except Exception as e:
+    #     logger.warning(f"Could not create GCS checkpoint directory {self.ckpt_dir}: {e}")
     
     # self.ckpt_mgr = SPMDCheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
     self.ckpt_mgr = CheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
@@ -455,6 +461,10 @@ class Trainer:
       if step > 0 and step % self.config.save_steps == 0:
         # Save checkpoint synchronously to avoid compiled context issues
         xm.wait_device_ops()  # Wait for all XLA operations to complete
+        
+        # Synchronize all processes before checkpointing
+        xm.rendezvous("checkpoint_start")
+        
         state_dict = {
           "model": self.model.state_dict(),
           "optimizer": self.optimizer.state_dict(),
@@ -627,7 +637,7 @@ def main(config: DictConfig):
   transformers.utils.logging.enable_explicit_format()
 
   # Initialize distributed process group for XLA
-  torch.distributed.init_process_group('gloo', init_method='xla://')
+  # torch.distributed.init_process_group('gloo', init_method='xla://')
 
   set_seed(config.seed)
   torch_xla.manual_seed(config.seed)
