@@ -60,5 +60,4 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     git checkout haolin/dev; \
     git pull; \
     source venv/bin/activate; \
-    python torchprime/torch_xla_models/debug.py'
-# bash '"$RECIPE"'
+    bash '"$RECIPE"'
