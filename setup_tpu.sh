@@ -2,25 +2,24 @@
 TPU_VM_NAME="sfr-haolin-chen-v4-16"
 TPU_ZONE="us-central2-b"
 
-# Mount GCS bucket to TPU VM
-gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
-    --zone=$TPU_ZONE \
-    --project=salesforce-research-internal \
-    --tunnel-through-iap \
-    --worker=all \
-    --command='
-    mkdir -p ~/sfr-text-diffusion-model-research; \
-    umount ~/sfr-text-diffusion-model-research; \
-    gcsfuse --implicit-dirs --metadata-cache-ttl-secs 0 sfr-text-diffusion-model-research ~/sfr-text-diffusion-model-research;'
 
-    # export GCSFUSE_REPO=gcsfuse-`lsb_release -c -s`; \
-    # echo "deb [signed-by=/usr/share/keyrings/cloud.google.asc] https://packages.cloud.google.com/apt $GCSFUSE_REPO main" | sudo tee /etc/apt/sources.list.d/gcsfuse.list; \
-    # curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo tee /usr/share/keyrings/cloud.google.asc; \
-    # sudo apt-get update; \
-    # sudo apt-get install gcsfuse; \
+# Install gcsfuse and mount GCS bucket to TPU VM
+# gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
+#     --zone=$TPU_ZONE \
+#     --project=salesforce-research-internal \
+#     --tunnel-through-iap \
+#     --worker=all \
+#     --command='
+#     export GCSFUSE_REPO=gcsfuse-`lsb_release -c -s`; \
+#     echo "deb [signed-by=/usr/share/keyrings/cloud.google.asc] https://packages.cloud.google.com/apt $GCSFUSE_REPO main" | sudo tee /etc/apt/sources.list.d/gcsfuse.list; \
+#     curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo tee /usr/share/keyrings/cloud.google.asc; \
+#     sudo apt-get update; \
+#     sudo apt-get install gcsfuse; \
+#     mkdir -p ~/sfr-text-diffusion-model-research; \
+#     umount ~/sfr-text-diffusion-model-research; \
+#     gcsfuse --implicit-dirs --metadata-cache-ttl-secs 0 sfr-text-diffusion-model-research ~/sfr-text-diffusion-model-research;'
 
 # Install torchprime and other dependencies
-
 # gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
 #     --zone=$TPU_ZONE \
 #     --project=salesforce-research-internal \

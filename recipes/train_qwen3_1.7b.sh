@@ -4,6 +4,8 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     global_batch_size=8 \
     block_size=4096 \
     max_steps=1000 \
+    checkpoint_dir=checkpoints/test-qwen3-1b \
+    save_steps=10 \
     logging_steps=1 \
     ici_mesh.fsdp=8 \
     ici_mesh.tensor=1 \
