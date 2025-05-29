@@ -3,11 +3,6 @@ import logging
 import math
 import os
 import sys
-import threading
-import fsspec
-import pickle
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
@@ -17,10 +12,7 @@ import datasets
 import hydra
 import torch
 import torch.distributed as dist
-import torch.distributed.checkpoint as dist_cp
-from torch.distributed.checkpoint._fsspec_filesystem import FsspecReader, FsspecWriter
 import torch_xla
-import torch_xla.experimental.distributed_checkpoint as xc
 import torch_xla.core.xla_model as xm
 import torch_xla.debug.profiler as xp
 import torch_xla.distributed.parallel_loader as pl
@@ -41,7 +33,6 @@ from transformers import (
   set_seed,
 )
 from torch_xla.experimental.distributed_checkpoint import CheckpointManager, prime_optimizer
-from torch_xla.experimental.distributed_checkpoint.manager import _CheckpointMetadata, _MANAGER_METADATA_FILE
 from transformers.optimization import Adafactor
 from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
