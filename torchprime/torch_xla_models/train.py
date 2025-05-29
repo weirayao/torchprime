@@ -443,31 +443,24 @@ class Trainer:
         )
 
       if step % self.config.save_steps == 0:
-        def save_closure(epoch, step, model, optimizer, scheduler):
-          # Wait for all XLA operations to complete before accessing state dicts
-          xm.wait_device_ops()
-          state_dict = {
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "scheduler": scheduler.state_dict(),
-            "step": step,
-            "epoch": epoch
-          }
-          dist_cp.save(
-              state_dict=state_dict,
-              storage_writer=FsspecWriter(
-                  self.ckpt_dir,
-                  per_thread_copy_ahead=0,
-              ),
-              planner=xc.SPMDSavePlanner(),
-          )
-          logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
-
-        xm.add_step_closure(
-          save_closure,
-          args=(epoch, step, self.model, self.optimizer, self.lr_scheduler),
-          run_async=True,
+        # Save checkpoint synchronously to avoid compiled context issues
+        xm.wait_device_ops()  # Wait for all XLA operations to complete
+        state_dict = {
+          "model": self.model.state_dict(),
+          "optimizer": self.optimizer.state_dict(),
+          "scheduler": self.lr_scheduler.state_dict(),
+          "step": step,
+          "epoch": epoch
+        }
+        dist_cp.save(
+            state_dict=state_dict,
+            storage_writer=FsspecWriter(
+                self.ckpt_dir,
+                per_thread_copy_ahead=0,
+            ),
+            planner=xc.SPMDSavePlanner(),
         )
+        logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
 
       # Capture profile at the prefer step
       if step == self.config.profile_step:
