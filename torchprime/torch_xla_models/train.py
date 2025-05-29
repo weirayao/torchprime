@@ -67,7 +67,6 @@ logger = logging.getLogger(__name__)
 
 xr.use_spmd()
 assert xr.is_spmd() is True
-# torch.distributed.init_process_group('gloo', init_method='xla://')
 
 
 def is_main_process():
@@ -219,7 +218,8 @@ class Trainer:
     except Exception as e:
       logger.warning(f"Could not create checkpoint directory {self.ckpt_dir}: {e}")
     
-    self.ckpt_mgr = SPMDCheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
+    # self.ckpt_mgr = SPMDCheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
+    self.ckpt_mgr = CheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
     self.start_step = 0
     self.start_epoch = 0
 
@@ -625,6 +625,9 @@ def main(config: DictConfig):
   transformers.utils.logging.set_verbosity(log_level)
   transformers.utils.logging.enable_default_handler()
   transformers.utils.logging.enable_explicit_format()
+
+  # Initialize distributed process group for XLA
+  torch.distributed.init_process_group('gloo', init_method='xla://')
 
   set_seed(config.seed)
   torch_xla.manual_seed(config.seed)
