@@ -379,7 +379,7 @@ class Trainer:
           run_async=True,
         )
 
-      if step > 0 and step % self.config.save_steps == 0:
+      if step > self.start_step and step % self.config.save_steps == 0:
         # Save checkpoint synchronously to avoid compiled context issues
         xm.wait_device_ops()  # Wait for all XLA operations to complete
         
