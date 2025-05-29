@@ -170,7 +170,7 @@ class Trainer:
       "scheduler": self.lr_scheduler.state_dict(),
       "step": self.start_step,
     }
-    prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
+    self.optimizer = prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
     if self.config.checkpoint_step in tracked_steps:
       logger.info(f"Loading checkpoint from step {self.config.checkpoint_step}")
       self.ckpt_mgr.restore(self.config.checkpoint_step, state_dict)
