@@ -8,7 +8,6 @@ from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 from timeit import default_timer as timer
-from unittest.mock import patch
 
 import datasets
 import hydra
@@ -61,6 +60,31 @@ logger = logging.getLogger(__name__)
 
 xr.use_spmd()
 assert xr.is_spmd() is True
+
+
+def initialize_xla_distributed():
+  """Initialize minimal distributed setup for XLA SPMD compatibility."""
+  if not dist.is_initialized():
+    # Initialize with gloo backend for CPU-only distributed operations
+    # XLA will handle the actual TPU distributed coordination
+    try:
+      dist.init_process_group(
+        backend="gloo",
+        init_method="xla://",
+        world_size=xr.process_count(),
+        rank=xr.process_index()
+      )
+      logger.info(f"Initialized PyTorch distributed for XLA compatibility. World size: {dist.get_world_size()}, Rank: {dist.get_rank()}")
+    except Exception as e:
+      logger.warning(f"Could not initialize PyTorch distributed: {e}. Continuing with XLA-only coordination.")
+  
+  logger.info(f"XLA process count: {xr.process_count()}")
+  logger.info(f"XLA process index: {xr.process_index()}")
+
+
+def is_main_process():
+  """Check if this is the main process (rank 0)."""
+  return xr.process_index() == 0
 
 
 class Trainer:
@@ -133,9 +157,7 @@ class Trainer:
 
     # Initialize checkpoint manager
     self.ckpt_dir = "gs://sfr-text-diffusion-model-research/" + config.checkpoint_dir
-    # Mock the function to always return True
-    with patch.object(dist, 'is_initialized', return_value=True):
-      self.ckpt_mgr = CheckpointManager(self.ckpt_dir, save_interval=config.save_steps)
+    self.ckpt_mgr = CheckpointManager(self.ckpt_dir, save_interval=config.save_steps)
     self.start_step = 0
     self.start_epoch = 0
 
@@ -516,8 +538,13 @@ def get_model_dtype(module):
 
 @hydra.main(version_base=None, config_path="configs", config_name="default")
 def main(config: DictConfig):
-  # Configure logging
-  print(OmegaConf.to_yaml(config))  # Print the config for debugging
+  # Initialize XLA distributed coordination
+  initialize_xla_distributed()
+  
+  # Configure logging (only on main process to avoid duplicate logs)
+  if is_main_process():
+    print(OmegaConf.to_yaml(config))  # Print the config for debugging
+  
   log_level = logging.INFO
   logger.setLevel(log_level)
   logger.setLevel(log_level)
@@ -528,8 +555,11 @@ def main(config: DictConfig):
 
   set_seed(config.seed)
   torch_xla.manual_seed(config.seed)
-  server = xp.start_server(9012)
-  logger.info(f"Profiling server started: {str(server)}")
+  
+  # Start profiling server (only on main process)
+  if is_main_process():
+    server = xp.start_server(9012)
+    logger.info(f"Profiling server started: {str(server)}")
 
   # TODO(https://github.com/AI-Hypercomputer/torchprime/issues/14): Add tokenizers to torchprime.
   tokenizer_name = config.model.tokenizer_name
@@ -544,7 +574,8 @@ def main(config: DictConfig):
     model = initialize_model_class(config.model, load_from_hf=ckpt_step is None)
 
   n_params = sum([p.numel() for p in model.parameters()])
-  logger.info(f"Continuing training on pretrained model checkpoint - Total size={n_params} params")
+  if is_main_process():
+    logger.info(f"Continuing training on pretrained model checkpoint - Total size={n_params} params")
 
   # Downloading and loading a dataset from the hub.
   data = retry(
@@ -562,6 +593,11 @@ def main(config: DictConfig):
     config=config,
     train_dataset=data,
   )
+
+  # Synchronize all processes before starting training
+  xm.wait_device_ops()  # Wait for all XLA operations to complete
+  if is_main_process():
+    logger.info("All processes synchronized, starting training")
 
   # TODO(https://github.com/pytorch/xla/issues/8954): Remove `jax_env_context`.
   with jax_env_context():
