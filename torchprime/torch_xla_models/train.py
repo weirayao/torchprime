@@ -175,11 +175,13 @@ class Trainer:
     prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
     if self.config.checkpoint_step in tracked_steps:
       logger.info(f"Loading checkpoint from step {self.config.checkpoint_step}")
-      state_dict = self.ckpt_mgr.restore(self.config.checkpoint_step)
-    else:
+      self.ckpt_mgr.restore(self.config.checkpoint_step, state_dict)
+    elif self.config.checkpoint_step == "latest":
       last_step = max(tracked_steps)
       logger.warning(f"Checkpoint step {self.config.checkpoint_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
-      state_dict = self.ckpt_mgr.restore(last_step, state_dict)
+      self.ckpt_mgr.restore(last_step, state_dict)
+    else:
+      raise ValueError(f"Invalid checkpoint step: {self.config.checkpoint_step}. Must be one of {tracked_steps} or 'latest'.")
 
     self.model.load_state_dict(state_dict["model"])
     self.optimizer.load_state_dict(state_dict["optimizer"])
