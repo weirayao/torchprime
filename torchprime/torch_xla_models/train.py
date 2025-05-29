@@ -211,7 +211,7 @@ class Trainer:
 
     # Initialize checkpoint manager
     # Use GCS for checkpoints with proper path handling
-    self.ckpt_dir = f"~/sfr-text-diffusion-model-research/{config.checkpoint_dir}"
+    self.ckpt_dir = f"gs://sfr-text-diffusion-model-research/{config.checkpoint_dir}"
     
     # Ensure GCS checkpoint directory exists
     # if is_main_process():

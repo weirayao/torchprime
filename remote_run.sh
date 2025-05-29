@@ -60,4 +60,4 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     git checkout haolin/dev; \
     git pull; \
     source venv/bin/activate; \
-    bash '"$RECIPE"'
+    bash '"$RECIPE"'';
