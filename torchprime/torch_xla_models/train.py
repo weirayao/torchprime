@@ -460,7 +460,7 @@ class Trainer:
 
         xm.add_step_closure(
           save_closure,
-          args=(epoch, step, self.model, self.optimizer, self.lr_scheduler, self.ckpt_mgr),
+          args=(epoch, step, self.model, self.optimizer, self.lr_scheduler),
           run_async=True,
         )
 
