@@ -334,6 +334,11 @@ class Trainer:
       logger.info(f"    Resuming from step: {self.start_step}")
     if is_main_process():
       wandb.init(project="text-diffusion-model-research", name=self.config.model.model_class)
+      # Log the configuration to wandb
+      wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
+      # Set wandb step to start_step if resuming from checkpoint
+      if self.start_step > 0:
+        wandb.log({}, step=self.start_step-1)  # Set the initial step counter
 
     # Initialize epoch and step counters, accounting for checkpoint loading
     epoch = 0
@@ -374,7 +379,16 @@ class Trainer:
           if math.isnan(loss):
             raise ValueError(f"Loss is NaN at step {step}")
           if is_main_process():
-            wandb.log({"train/loss": loss, "train/step_time": (trace_end_time - trace_start_time) * 1000, "train/epoch": epoch, "train/step": step})
+            wandb.log(
+              {
+                "train/loss": loss,
+                "train/step_time": (trace_end_time - trace_start_time) * 1000,
+                "train/epoch": epoch,
+                "train/step": step,
+                "train/lr": self.lr_scheduler.get_last_lr()[0],
+              },
+              step=step  # Explicitly set the wandb global step
+            )
 
         xm.add_step_closure(
           step_closure,
@@ -383,9 +397,8 @@ class Trainer:
         )
 
       if step > self.start_step and step % self.config.save_steps == 0:
-        # Save checkpoint synchronously to avoid compiled context issues
+        # NOTE: currently we save the checkpoint synchronously
         xm.wait_device_ops()  # Wait for all XLA operations to complete
-        
         state_dict = {
           "model": self.model.state_dict(),
           "optimizer": self.optimizer.state_dict(),
@@ -397,22 +410,6 @@ class Trainer:
           logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
-        # try:
-          # # Create a unique checkpoint path for this step
-          # step_ckpt_dir = f"{self.ckpt_dir}/step_{step}"
-          
-          # dist_cp.save(
-          #     state_dict=state_dict,
-          #     storage_writer=FsspecWriter(
-          #         step_ckpt_dir,
-          #         per_thread_copy_ahead=0,
-          #     ),
-          #     planner=xc.SPMDSavePlanner(),
-          # )
-          # logger.info(f"Checkpoint saved at step {step} to {step_ckpt_dir}")
-        # except Exception as e:
-        #   logger.error(f"Failed to save checkpoint at step {step}: {e}")
-        # Continue training even if checkpoint fails
         xm.wait_device_ops()  # Ensure save is complete before logging
 
       # Capture profile at the prefer step
