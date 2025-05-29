@@ -453,7 +453,10 @@ class Trainer:
           }
           dist_cp.save(
               state_dict=state_dict,
-              storage_writer=dist_cp.FileSystemWriter(self.ckpt_dir),
+              storage_writer=FsspecWriter(
+                  self.ckpt_dir,
+                  per_thread_copy_ahead=0,
+              ),
               planner=xc.SPMDSavePlanner(),
           )
           logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
