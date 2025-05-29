@@ -149,7 +149,6 @@ class Trainer:
     self.ckpt_dir = config.checkpoint_dir
     self.ckpt_mgr = CheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
     self.start_step = 0
-    self.start_epoch = 0
 
     # Execute all initialization work queued so far before starting training.
     torch_xla.sync()
@@ -170,7 +169,6 @@ class Trainer:
       "optimizer": self.optimizer.state_dict(),
       "scheduler": self.lr_scheduler.state_dict(),
       "step": self.start_step,
-      "epoch": self.start_epoch
     }
     prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
     if self.config.checkpoint_step in tracked_steps:
@@ -187,7 +185,6 @@ class Trainer:
     self.optimizer.load_state_dict(state_dict["optimizer"])
     self.lr_scheduler.load_state_dict(state_dict["scheduler"])
     self.start_step = state_dict["step"]
-    self.start_epoch = state_dict["epoch"]
 
   def _get_train_dataloader(self):
     if self.train_dataset is None:
@@ -336,7 +333,7 @@ class Trainer:
       wandb.init(project="text-diffusion-model-research", name=self.config.model.model_class)
 
     # Initialize epoch and step counters, accounting for checkpoint loading
-    epoch = self.start_epoch
+    epoch = 0
     start_step = self.start_step
 
     # Skip batches if we're resuming from a checkpoint
@@ -391,7 +388,6 @@ class Trainer:
           "optimizer": self.optimizer.state_dict(),
           "scheduler": self.lr_scheduler.state_dict(),
           "step": step,
-          "epoch": epoch
         }
         try:
           self.ckpt_mgr.save(step, state_dict, force=True)
