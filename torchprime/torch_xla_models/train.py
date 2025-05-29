@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import sys
+import platform
 from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
@@ -18,6 +19,7 @@ import torch_xla.distributed.parallel_loader as pl
 import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
 import transformers
+import wandb
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, IterableDataset
@@ -30,6 +32,7 @@ from transformers import (
   get_scheduler,
   set_seed,
 )
+from torch_xla.experimental.distributed_checkpoint import CheckpointManager, prime_optimizer
 from transformers.optimization import Adafactor
 from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
@@ -126,6 +129,12 @@ class Trainer:
       num_training_steps=self.config.max_steps,
     )
 
+    # Initialize checkpoint manager
+    self.ckpt_dir = "gs://sfr-text-diffusion-model-research/" + config.checkpoint_dir
+    self.ckpt_mgr = CheckpointManager(self.ckpt_dir, save_interval=config.save_steps)
+    self.start_step = 0
+    self.start_epoch = 0
+
     # Execute all initialization work queued so far before starting training.
     torch_xla.sync()
 
@@ -136,6 +145,31 @@ class Trainer:
         p.grad.requires_grad_(False)
     self.optimizer.step()
     torch_xla.sync()
+
+  def _load_checkpoint(self):
+    """Load optimizer, scheduler, and training state from checkpoint."""
+    tracked_steps = self.ckpt_mgr.all_steps()
+    state_dict = {
+      "model": self.model.state_dict(),
+      "optimizer": self.optimizer.state_dict(),
+      "scheduler": self.lr_scheduler.state_dict(),
+      "step": self.start_step,
+      "epoch": self.start_epoch
+    }
+    prime_optimizer(self.optimizer) # NOTE: create the state dict for the optimizer
+    if self.config.checkpoint_step in tracked_steps:
+      logger.info(f"Loading checkpoint from step {self.config.checkpoint_step}")
+      state_dict = self.ckpt_mgr.restore(self.config.checkpoint_step)
+    else:
+      last_step = max(tracked_steps)
+      logger.warning(f"Checkpoint step {self.config.checkpoint_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
+      state_dict = self.ckpt_mgr.restore(last_step, state_dict)
+
+    self.model.load_state_dict(state_dict["model"])
+    self.optimizer.load_state_dict(state_dict["optimizer"])
+    self.lr_scheduler.load_state_dict(state_dict["scheduler"])
+    self.start_step = state_dict["step"]
+    self.start_epoch = state_dict["epoch"]
 
   def _get_train_dataloader(self):
     if self.train_dataset is None:
@@ -264,6 +298,8 @@ class Trainer:
     return tuple(classes_to_checkpoint)
 
   def train_loop(self):
+    if self.config.checkpoint_step is not None:
+      self._load_checkpoint()
     self.model.train()
     self.model.zero_grad()
 
@@ -276,9 +312,27 @@ class Trainer:
     logger.info("Starting training")
     logger.info(f"    Max step: {max_step}")
     logger.info(f"    Global batch size: {self.global_batch_size}")
+    if hasattr(self, 'start_step') and self.start_step > 0:
+      logger.info(f"    Resuming from step: {self.start_step}")
+    if "w-0" in platform.node():
+      wandb.init(project="text-diffusion-model-research", name=self.config.model.model_class)
 
-    epoch = 0
-    for step in range(max_step):
+    # Initialize epoch and step counters, accounting for checkpoint loading
+    epoch = self.start_epoch
+    start_step = self.start_step
+
+    # Skip batches if we're resuming from a checkpoint
+    if start_step > 0:
+      logger.info(f"Skipping {start_step} batches to resume from checkpoint...")
+      for _ in range(start_step):
+        try:
+          next(train_iterator)
+        except StopIteration:
+          epoch += 1
+          train_iterator = iter(train_loader)
+          next(train_iterator)
+
+    for step in range(start_step, max_step):
       try:
         batch = next(train_iterator)
       except StopIteration:
@@ -301,10 +355,31 @@ class Trainer:
           )
           if math.isnan(loss):
             raise ValueError(f"Loss is NaN at step {step}")
+          if "w-0" in platform.node():
+            wandb.log({"train/loss": loss, "train/step_time": (trace_end_time - trace_start_time) * 1000, "train/epoch": epoch, "train/step": step})
 
         xm.add_step_closure(
           step_closure,
           args=(epoch, step, loss, trace_start_time, trace_end_time),
+          run_async=True,
+        )
+
+      if step % self.config.save_steps == 0:
+        def save_closure(epoch, step, model, optimizer, scheduler, ckpt_mgr: CheckpointManager):
+          state_dict = {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "scheduler": scheduler.state_dict(),
+            "step": step,
+            "epoch": epoch
+          }
+          ckpt_mgr.save_async(step, state_dict, force=True)
+
+          logger.info(f"Checkpoint saved at step {step} to {ckpt_mgr.base_path}")
+
+        xm.add_step_closure(
+          save_closure,
+          args=(epoch, step, self.model, self.optimizer, self.lr_scheduler, self.ckpt_mgr),
           run_async=True,
         )
 
@@ -362,7 +437,7 @@ class Trainer:
     return loss
 
 
-def initialize_model_class(model_config):
+def initialize_model_class(model_config, load_from_hf=True):
   """Import and initialize model_class specified by the config."""
   full_model_class_string = model_config.model_class
   module_name, model_class_name = full_model_class_string.rsplit(".", 1)
@@ -402,16 +477,16 @@ def initialize_model_class(model_config):
     sys.exit(1)
   
   # Load pretrained weights from HuggingFace model
-  # TODO: try to read from GCS bucket
-  gcs_model_path = "/home/haolin.chen/sfr-text-diffusion-model-research/huggingface/models/" + model_config.tokenizer_name 
-  logger.info(f"Loading model from {gcs_model_path}")
-  hf_model = hf_model_class.from_pretrained(
-    gcs_model_path,
-    torch_dtype=torch.bfloat16,
-  )
-  logger.info(f"Loaded model from {gcs_model_path}. Now loading state dict.")
-  model.load_state_dict(hf_model.state_dict())
-  del hf_model
+  if load_from_hf:
+    gcs_model_path = "/home/haolin.chen/sfr-text-diffusion-model-research/huggingface/models/" + model_config.tokenizer_name 
+    logger.info(f"Loading model from {gcs_model_path}")
+    hf_model = hf_model_class.from_pretrained(
+      gcs_model_path,
+      torch_dtype=torch.bfloat16,
+    )
+    logger.info(f"Loaded model from {gcs_model_path}. Now loading state dict.")
+    model.load_state_dict(hf_model.state_dict())
+    del hf_model
   return model
 
 
@@ -459,8 +534,10 @@ def main(config: DictConfig):
   # Set the model dtype to bfloat16, and set the default device to the XLA device.
   # This will capture the model constructor into a graph so that we can add
   # sharding annotations to the weights later, and run the constructor on the XLA device.
+  ckpt_step = getattr(config, 'checkpoint_step', None)
+  # NOTE: read HF model from GCS bucket if checkpoint_dir is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
   with set_default_dtype(torch.bfloat16), torch_xla.device():
-    model = initialize_model_class(config.model)
+    model = initialize_model_class(config.model, load_from_hf=ckpt_step is None)
 
   n_params = sum([p.numel() for p in model.parameters()])
   logger.info(f"Continuing training on pretrained model checkpoint - Total size={n_params} params")
