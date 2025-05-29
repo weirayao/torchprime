@@ -67,6 +67,7 @@ logger = logging.getLogger(__name__)
 
 xr.use_spmd()
 assert xr.is_spmd() is True
+# torch.distributed.init_process_group('gloo', init_method='xla://')
 
 
 def is_main_process():
@@ -454,36 +455,35 @@ class Trainer:
       if step > 0 and step % self.config.save_steps == 0:
         # Save checkpoint synchronously to avoid compiled context issues
         xm.wait_device_ops()  # Wait for all XLA operations to complete
-        
+        state_dict = {
+          "model": self.model.state_dict(),
+          "optimizer": self.optimizer.state_dict(),
+          "scheduler": self.lr_scheduler.state_dict(),
+          "step": step,
+          "epoch": epoch
+        }
         try:
-          state_dict = {
-            "model": self.model.state_dict(),
-            "optimizer": self.optimizer.state_dict(),
-            "scheduler": self.lr_scheduler.state_dict(),
-            "step": step,
-            "epoch": epoch
-          }
-          
-          # Create a unique checkpoint path for this step
-          step_ckpt_dir = f"{self.ckpt_dir}/step_{step}"
-          
-          dist_cp.save(
-              state_dict=state_dict,
-              storage_writer=FsspecWriter(
-                  step_ckpt_dir,
-                  per_thread_copy_ahead=0,
-              ),
-              planner=xc.SPMDSavePlanner(),
-          )
-          try:
-            self.ckpt_mgr.save(step, state_dict, force=True)
-          except Exception as e:
-            logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
-          xm.wait_device_ops()  # Ensure save is complete before logging
-          logger.info(f"Checkpoint saved at step {step} to {step_ckpt_dir}")
+          self.ckpt_mgr.save(step, state_dict, force=True)
+          logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
         except Exception as e:
-          logger.error(f"Failed to save checkpoint at step {step}: {e}")
-          # Continue training even if checkpoint fails
+          logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
+        # try:
+          # # Create a unique checkpoint path for this step
+          # step_ckpt_dir = f"{self.ckpt_dir}/step_{step}"
+          
+          # dist_cp.save(
+          #     state_dict=state_dict,
+          #     storage_writer=FsspecWriter(
+          #         step_ckpt_dir,
+          #         per_thread_copy_ahead=0,
+          #     ),
+          #     planner=xc.SPMDSavePlanner(),
+          # )
+          # logger.info(f"Checkpoint saved at step {step} to {step_ckpt_dir}")
+        # except Exception as e:
+        #   logger.error(f"Failed to save checkpoint at step {step}: {e}")
+        # Continue training even if checkpoint fails
+        xm.wait_device_ops()  # Ensure save is complete before logging
 
       # Capture profile at the prefer step
       if step == self.config.profile_step:
