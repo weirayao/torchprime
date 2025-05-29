@@ -66,6 +66,8 @@ from torchprime.utils.retry import retry
 check_min_version("4.39.3")
 logger = logging.getLogger(__name__)
 
+dist.destroy_process_group()
+
 xr.use_spmd()
 assert xr.is_spmd() is True
 
