@@ -3,7 +3,6 @@ import logging
 import math
 import os
 import sys
-import platform
 import threading
 import fsspec
 import pickle
@@ -74,70 +73,70 @@ def is_main_process():
   """Check if this is the main process (rank 0)."""
   return xr.process_index() == 0
 
-class SPMDCheckpointManager(CheckpointManager):
-  def __init__(self, path, save_interval, max_to_keep=0, max_pending_async=1, chkpt_on_preemption=False):
-      # Skip the parent __init__ and implement our own
-      assert save_interval > 0, "save_interval must be positive"
-      assert max_pending_async > 0, "max_pending_async must be positive"
-      assert max_to_keep >= 0, "max_to_keep must be non-negative"
+# class SPMDCheckpointManager(CheckpointManager):
+#   def __init__(self, path, save_interval, max_to_keep=0, max_pending_async=1, chkpt_on_preemption=False):
+#       # Skip the parent __init__ and implement our own
+#       assert save_interval > 0, "save_interval must be positive"
+#       assert max_pending_async > 0, "max_pending_async must be positive"
+#       assert max_to_keep >= 0, "max_to_keep must be non-negative"
 
-      self.base_path = os.path.join(path, '')  # Ensure the base path ends in '/'
-      self.save_interval = save_interval
-      self.max_to_keep = max_to_keep
-      self.chkpt_on_preemption = chkpt_on_preemption
-      self.pg = None
+#       self.base_path = os.path.join(path, '')  # Ensure the base path ends in '/'
+#       self.save_interval = save_interval
+#       self.max_to_keep = max_to_keep
+#       self.chkpt_on_preemption = chkpt_on_preemption
+#       self.pg = None
 
-      # Thread pool to run the async checkpoints. `_async_sem` is used to guard
-      # the number of pending checkpoints, and `_async_futures` tracks all
-      # futures returned by the pool.
-      self._async_worker_pool = ThreadPoolExecutor(max_workers=1)
-      self._async_sem = threading.Semaphore(max_pending_async)
-      self._async_futures = []
-      # Mutex to ensure only a single thread can write a checkpoint at a time.
-      self._save_mutex = threading.Lock()
+#       # Thread pool to run the async checkpoints. `_async_sem` is used to guard
+#       # the number of pending checkpoints, and `_async_futures` tracks all
+#       # futures returned by the pool.
+#       self._async_worker_pool = ThreadPoolExecutor(max_workers=1)
+#       self._async_sem = threading.Semaphore(max_pending_async)
+#       self._async_futures = []
+#       # Mutex to ensure only a single thread can write a checkpoint at a time.
+#       self._save_mutex = threading.Lock()
 
-      self._tracked_chkpts = self._load_tracked_chkpts()
+#       self._tracked_chkpts = self._load_tracked_chkpts()
 
-      if self.chkpt_on_preemption:
-        # Initialize the distributed runtime for preemption detection
-        torch_xla._XLAC._ensure_xla_coordinator_initialized(
-            xr.process_index(), xr.process_count(), xr.get_master_ip())
-        torch_xla._XLAC._activate_preemption_sync_manager()
+#       if self.chkpt_on_preemption:
+#         # Initialize the distributed runtime for preemption detection
+#         torch_xla._XLAC._ensure_xla_coordinator_initialized(
+#             xr.process_index(), xr.process_count(), xr.get_master_ip())
+#         torch_xla._XLAC._activate_preemption_sync_manager()
 
-  def _save(self, step, state_dict):
-    """
-    The actual checkpointing logic, which is shared between async and
-    synchronous checkpointing.
+#   def _save(self, step, state_dict):
+#     """
+#     The actual checkpointing logic, which is shared between async and
+#     synchronous checkpointing.
 
-    The caller must ensure that data is accessible within the state_dict before
-    calling, which can be achieved with `self._wait_for_data`.
-    """
-    with self._save_mutex:
-      path = self._get_path(step)
-      # Delete any existing checkpoint at the current step.
-      self._delete_chkpt_at_step(step)
-      dist_cp.save(
-          state_dict=state_dict,
-          storage_writer=FsspecWriter(
-              path,
-              per_thread_copy_ahead=0,
-          ),
-          planner=xc.SPMDSavePlanner(),
-          process_group=self.pg,
-      )
-      metadata = _CheckpointMetadata(step=step, ts=datetime.now())
-      self._tracked_chkpts.append(metadata)
-      if is_main_process():
-        with fsspec.open(os.path.join(path, _MANAGER_METADATA_FILE), 'wb') as f:
-          pickle.dump(metadata, f)
-        self._release_oldest_checkpoints()
+#     The caller must ensure that data is accessible within the state_dict before
+#     calling, which can be achieved with `self._wait_for_data`.
+#     """
+#     with self._save_mutex:
+#       path = self._get_path(step)
+#       # Delete any existing checkpoint at the current step.
+#       self._delete_chkpt_at_step(step)
+#       dist_cp.save(
+#           state_dict=state_dict,
+#           storage_writer=FsspecWriter(
+#               path,
+#               per_thread_copy_ahead=0,
+#           ),
+#           planner=xc.SPMDSavePlanner(),
+#           process_group=self.pg,
+#       )
+#       metadata = _CheckpointMetadata(step=step, ts=datetime.now())
+#       self._tracked_chkpts.append(metadata)
+#       if is_main_process():
+#         with fsspec.open(os.path.join(path, _MANAGER_METADATA_FILE), 'wb') as f:
+#           pickle.dump(metadata, f)
+#         self._release_oldest_checkpoints()
 
-  def _delete_chkpt_at_step(self, step):
-    if is_main_process():
-      path = self._get_path(step)
-      fs, raw_path = fsspec.url_to_fs(path)
-      if fs.exists(raw_path):
-        fs.rm(raw_path, recursive=True)
+#   def _delete_chkpt_at_step(self, step):
+#     if is_main_process():
+#       path = self._get_path(step)
+#       fs, raw_path = fsspec.url_to_fs(path)
+#       if fs.exists(raw_path):
+#         fs.rm(raw_path, recursive=True)
 
 
 class Trainer:
@@ -210,7 +209,7 @@ class Trainer:
 
     # Initialize checkpoint manager
     self.ckpt_dir = "gs://sfr-text-diffusion-model-research/" + config.checkpoint_dir
-    self.ckpt_mgr = SPMDCheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
+    # self.ckpt_mgr = SPMDCheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
     self.start_step = 0
     self.start_epoch = 0
 
@@ -225,30 +224,30 @@ class Trainer:
     self.optimizer.step()
     torch_xla.sync()
 
-  def _load_checkpoint(self):
-    """Load optimizer, scheduler, and training state from checkpoint."""
-    tracked_steps = self.ckpt_mgr.all_steps()
-    state_dict = {
-      "model": self.model.state_dict(),
-      "optimizer": self.optimizer.state_dict(),
-      "scheduler": self.lr_scheduler.state_dict(),
-      "step": self.start_step,
-      "epoch": self.start_epoch
-    }
-    prime_optimizer(self.optimizer) # NOTE: create the state dict for the optimizer
-    if self.config.checkpoint_step in tracked_steps:
-      logger.info(f"Loading checkpoint from step {self.config.checkpoint_step}")
-      state_dict = self.ckpt_mgr.restore(self.config.checkpoint_step)
-    else:
-      last_step = max(tracked_steps)
-      logger.warning(f"Checkpoint step {self.config.checkpoint_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
-      state_dict = self.ckpt_mgr.restore(last_step, state_dict)
+  # def _load_checkpoint(self):
+  #   """Load optimizer, scheduler, and training state from checkpoint."""
+  #   tracked_steps = self.ckpt_mgr.all_steps()
+  #   state_dict = {
+  #     "model": self.model.state_dict(),
+  #     "optimizer": self.optimizer.state_dict(),
+  #     "scheduler": self.lr_scheduler.state_dict(),
+  #     "step": self.start_step,
+  #     "epoch": self.start_epoch
+  #   }
+  #   prime_optimizer(self.optimizer) # NOTE: create the state dict for the optimizer
+  #   if self.config.checkpoint_step in tracked_steps:
+  #     logger.info(f"Loading checkpoint from step {self.config.checkpoint_step}")
+  #     state_dict = self.ckpt_mgr.restore(self.config.checkpoint_step)
+  #   else:
+  #     last_step = max(tracked_steps)
+  #     logger.warning(f"Checkpoint step {self.config.checkpoint_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
+  #     state_dict = self.ckpt_mgr.restore(last_step, state_dict)
 
-    self.model.load_state_dict(state_dict["model"])
-    self.optimizer.load_state_dict(state_dict["optimizer"])
-    self.lr_scheduler.load_state_dict(state_dict["scheduler"])
-    self.start_step = state_dict["step"]
-    self.start_epoch = state_dict["epoch"]
+  #   self.model.load_state_dict(state_dict["model"])
+  #   self.optimizer.load_state_dict(state_dict["optimizer"])
+  #   self.lr_scheduler.load_state_dict(state_dict["scheduler"])
+  #   self.start_step = state_dict["step"]
+  #   self.start_epoch = state_dict["epoch"]
 
   def _get_train_dataloader(self):
     if self.train_dataset is None:
@@ -377,8 +376,8 @@ class Trainer:
     return tuple(classes_to_checkpoint)
 
   def train_loop(self):
-    if self.config.checkpoint_step is not None:
-      self._load_checkpoint()
+    # if self.config.checkpoint_step is not None:
+    #   self._load_checkpoint()
     self.model.train()
     self.model.zero_grad()
 
@@ -393,7 +392,7 @@ class Trainer:
     logger.info(f"    Global batch size: {self.global_batch_size}")
     if hasattr(self, 'start_step') and self.start_step > 0:
       logger.info(f"    Resuming from step: {self.start_step}")
-    if "w-0" in platform.node():
+    if is_main_process():
       wandb.init(project="text-diffusion-model-research", name=self.config.model.model_class)
 
     # Initialize epoch and step counters, accounting for checkpoint loading
@@ -434,7 +433,7 @@ class Trainer:
           )
           if math.isnan(loss):
             raise ValueError(f"Loss is NaN at step {step}")
-          if "w-0" in platform.node():
+          if is_main_process():
             wandb.log({"train/loss": loss, "train/step_time": (trace_end_time - trace_start_time) * 1000, "train/epoch": epoch, "train/step": step})
 
         xm.add_step_closure(
@@ -443,24 +442,24 @@ class Trainer:
           run_async=True,
         )
 
-      if step % self.config.save_steps == 0:
-        def save_closure(epoch, step, model, optimizer, scheduler, ckpt_mgr: CheckpointManager):
-          state_dict = {
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "scheduler": scheduler.state_dict(),
-            "step": step,
-            "epoch": epoch
-          }
-          ckpt_mgr.save_async(step, state_dict, force=True)
+      # if step % self.config.save_steps == 0:
+      #   def save_closure(epoch, step, model, optimizer, scheduler, ckpt_mgr: CheckpointManager):
+      #     state_dict = {
+      #       "model": model.state_dict(),
+      #       "optimizer": optimizer.state_dict(),
+      #       "scheduler": scheduler.state_dict(),
+      #       "step": step,
+      #       "epoch": epoch
+      #     }
+      #     ckpt_mgr.save_async(step, state_dict, force=True)
 
-          logger.info(f"Checkpoint saved at step {step} to {ckpt_mgr.base_path}")
+      #     logger.info(f"Checkpoint saved at step {step} to {ckpt_mgr.base_path}")
 
-        xm.add_step_closure(
-          save_closure,
-          args=(epoch, step, self.model, self.optimizer, self.lr_scheduler, self.ckpt_mgr),
-          run_async=True,
-        )
+      #   xm.add_step_closure(
+      #     save_closure,
+      #     args=(epoch, step, self.model, self.optimizer, self.lr_scheduler, self.ckpt_mgr),
+      #     run_async=True,
+      #   )
 
       # Capture profile at the prefer step
       if step == self.config.profile_step:
