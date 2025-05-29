@@ -444,6 +444,8 @@ class Trainer:
 
       if step % self.config.save_steps == 0:
         def save_closure(epoch, step, model, optimizer, scheduler):
+          # Wait for all XLA operations to complete before accessing state dicts
+          xm.wait_device_ops()
           state_dict = {
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
