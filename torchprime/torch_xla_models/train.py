@@ -8,10 +8,12 @@ from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 from timeit import default_timer as timer
+from unittest.mock import patch
 
 import datasets
 import hydra
 import torch
+import torch.distributed as dist
 import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.debug.profiler as xp
@@ -131,7 +133,9 @@ class Trainer:
 
     # Initialize checkpoint manager
     self.ckpt_dir = "gs://sfr-text-diffusion-model-research/" + config.checkpoint_dir
-    self.ckpt_mgr = CheckpointManager(self.ckpt_dir, save_interval=config.save_steps)
+    # Mock the function to always return True
+    with patch.object(dist, 'is_initialized', return_value=True):
+      self.ckpt_mgr = CheckpointManager(self.ckpt_dir, save_interval=config.save_steps)
     self.start_step = 0
     self.start_epoch = 0
 
