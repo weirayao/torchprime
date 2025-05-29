@@ -3,7 +3,7 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     model=qwen-3-1b \
     global_batch_size=8 \
     block_size=4096 \
-    max_steps=1000 \
+    max_steps=100 \
     checkpoint_dir=checkpoints/test-qwen3-1b \
     save_steps=10 \
     logging_steps=1 \
