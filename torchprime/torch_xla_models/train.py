@@ -498,13 +498,11 @@ def initialize_model_class(model_config, load_from_hf=True):
   
   # Load pretrained weights from HuggingFace model
   if load_from_hf:
-    gcs_model_path = "/home/haolin.chen/sfr-text-diffusion-model-research/huggingface/models/" + model_config.tokenizer_name 
-    logger.info(f"Loading model from {gcs_model_path}")
     hf_model = hf_model_class.from_pretrained(
-      gcs_model_path,
+      model_config.tokenizer_name,
       torch_dtype=torch.bfloat16,
     )
-    logger.info(f"Loaded model from {gcs_model_path}. Now loading state dict.")
+    logger.info("Loaded model from HuggingFace. Now loading state dict.")
     model.load_state_dict(hf_model.state_dict())
     del hf_model
   return model
