@@ -164,13 +164,16 @@ class Trainer:
   def _load_checkpoint(self):
     """Load optimizer, scheduler, and training state from checkpoint."""
     tracked_steps = self.ckpt_mgr.all_steps()
+    if not tracked_steps:
+      logger.warning("No checkpoint steps found. Starting from scratch.")
+      return
+    self.optimizer = prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
     state_dict = {
       "model": self.model.state_dict(),
       "optimizer": self.optimizer.state_dict(),
       "scheduler": self.lr_scheduler.state_dict(),
       "step": self.start_step,
     }
-    self.optimizer = prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
     if self.config.checkpoint_step in tracked_steps:
       logger.info(f"Loading checkpoint from step {self.config.checkpoint_step}")
       self.ckpt_mgr.restore(self.config.checkpoint_step, state_dict)
