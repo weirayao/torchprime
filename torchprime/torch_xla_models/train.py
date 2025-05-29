@@ -442,24 +442,27 @@ class Trainer:
           run_async=True,
         )
 
-      # if step % self.config.save_steps == 0:
-      #   def save_closure(epoch, step, model, optimizer, scheduler, ckpt_mgr: CheckpointManager):
-      #     state_dict = {
-      #       "model": model.state_dict(),
-      #       "optimizer": optimizer.state_dict(),
-      #       "scheduler": scheduler.state_dict(),
-      #       "step": step,
-      #       "epoch": epoch
-      #     }
-      #     ckpt_mgr.save_async(step, state_dict, force=True)
+      if step % self.config.save_steps == 0:
+        def save_closure(epoch, step, model, optimizer, scheduler):
+          state_dict = {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "scheduler": scheduler.state_dict(),
+            "step": step,
+            "epoch": epoch
+          }
+          dist_cp.save(
+              state_dict=state_dict,
+              storage_writer=dist_cp.FileSystemWriter(self.ckpt_dir),
+              planner=xc.SPMDSavePlanner(),
+          )
+          logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
 
-      #     logger.info(f"Checkpoint saved at step {step} to {ckpt_mgr.base_path}")
-
-      #   xm.add_step_closure(
-      #     save_closure,
-      #     args=(epoch, step, self.model, self.optimizer, self.lr_scheduler, self.ckpt_mgr),
-      #     run_async=True,
-      #   )
+        xm.add_step_closure(
+          save_closure,
+          args=(epoch, step, self.model, self.optimizer, self.lr_scheduler, self.ckpt_mgr),
+          run_async=True,
+        )
 
       # Capture profile at the prefer step
       if step == self.config.profile_step:
