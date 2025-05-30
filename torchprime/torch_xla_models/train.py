@@ -373,6 +373,7 @@ class Trainer:
             wandb.log(
               {
                 "train/loss": loss,
+                "train/ppl": math.exp(loss),
                 "train/step_time": (trace_end_time - trace_start_time) * 1000,
                 "train/epoch": epoch,
                 "train/step": step,
