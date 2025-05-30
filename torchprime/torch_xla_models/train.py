@@ -560,14 +560,17 @@ def main(config: DictConfig):
   # Set the model dtype to bfloat16, and set the default device to the XLA device.
   # This will capture the model constructor into a graph so that we can add
   # sharding annotations to the weights later, and run the constructor on the XLA device.
-  ckpt_step = getattr(config, 'checkpoint_step', None)
-  # NOTE: read HF model from GCS bucket if checkpoint_dir is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
+  # NOTE: read HF model from GCS bucket if checkpoint_step is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
+  load_from_checkpoint = hasattr(config, 'checkpoint_step')
   with set_default_dtype(torch.bfloat16), torch_xla.device():
-    model = initialize_model_class(config.model, load_from_hf=ckpt_step is None)
+    model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
 
   n_params = sum([p.numel() for p in model.parameters()])
   if is_main_process():
-    logger.info(f"Continuing training on pretrained model checkpoint - Total size={n_params} params")
+    if load_from_checkpoint:
+      logger.info(f"Continuing training on previous model checkpoint - Total size={n_params} params")
+    else:
+      logger.info(f"Training from scratch on pretrained model - Total size={n_params} params")
 
   # Downloading and loading a dataset from the hub.
   data = retry(
