@@ -311,7 +311,7 @@ class Trainer:
     train_loader = self._get_train_dataloader()
     train_iterator = iter(train_loader)
     for batch in train_iterator:
-      print(f"Device: {xr.process_index()}, batch: {batch}")
+      print(f"Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}")
       break
 
   def train_loop(self):
