@@ -417,7 +417,7 @@ class Qwen3ForCausalLM(nn.Module):
   ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:
     # weiran: diffullama
     sampling_eps = 1e-3
-    mask_token_id = 128002 # <|reserved_special_token_0|>
+    mask_token_id = 151669 # <mask>
     loss_func = nn.CrossEntropyLoss(reduction="none")
     # input_ids: [bs, seq_len]
     # source mask is all-false, so all tokens in the sequence can be masked for pretraining
