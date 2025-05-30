@@ -477,6 +477,7 @@ def initialize_model_class(model_config, load_from_hf=True):
   hf_model_class_mapping = {
     "llama.LlamaForCausalLM": "LlamaForCausalLM",
     "flex.LlamaForCausalLM": "LlamaForCausalLM", 
+    "flex.Qwen3ForCausalLM": "Qwen3ForCausalLM",
     "mixtral.MixtralForCausalLM": "MixtralForCausalLM",
     "llama4.Llama4TextForCausalLM": "Llama4ForCausalLM",
     "qwen.Qwen3ForCausalLM": "Qwen3ForCausalLM",
