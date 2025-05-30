@@ -34,6 +34,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     export HF_HOME="~/huggingface"; \
     export HF_TOKEN="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"; \
     cd torchprime; \
+    git fetch; \
     git checkout haolin/data; \
     git pull; \
     source venv/bin/activate; \
