@@ -142,7 +142,8 @@ class Qwen3Attention(nn.Module):
     self.num_key_value_groups = self.num_heads // self.num_key_value_heads
     self.scaling = self.head_dim**-0.5
     self.attention_dropout = getattr(config, "attention_dropout", 0.0)
-    self.is_causal = True
+    # weiran: diffullama
+    self.is_causal = False
     
     self.q_proj = nn.Linear(
       self.hidden_size, 
@@ -407,7 +408,7 @@ class Qwen3ForCausalLM(nn.Module):
       if module.padding_idx is not None:
         module.weight.data[module.padding_idx].zero_()
 
-  @xp.trace_me("LlamaForCausalLM")
+  @xp.trace_me("Qwen3ForCausalLM")
   def forward(
     self,
     input_ids: torch.LongTensor,
