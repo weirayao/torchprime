@@ -306,6 +306,14 @@ class Trainer:
         classes_to_checkpoint.add(cls)
     return tuple(classes_to_checkpoint)
 
+  def data_loop(self):
+    # For now we assume that we wil never train for mor than one epoch
+    train_loader = self._get_train_dataloader()
+    train_iterator = iter(train_loader)
+    for batch in train_iterator:
+      print(f"Device: {xr.process_index()}, batch: {batch}")
+      break
+
   def train_loop(self):
     if self.config.checkpoint_step is not None:
       self._load_checkpoint()
@@ -596,7 +604,7 @@ def main(config: DictConfig):
 
   # TODO(https://github.com/pytorch/xla/issues/8954): Remove `jax_env_context`.
   with jax_env_context():
-    trainer.train_loop()
+    trainer.data_loop()
 
 
 if __name__ == "__main__":
