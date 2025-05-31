@@ -20,6 +20,7 @@ import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
 import transformers
 import wandb
+from datasets.distributed import split_dataset_by_node
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, IterableDataset
@@ -583,6 +584,7 @@ def main(config: DictConfig):
       block_size=config.block_size,
     )
   )
+  data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
   trainer = Trainer(
     model=model,
     config=config,
