@@ -310,9 +310,9 @@ class Trainer:
     # For now we assume that we wil never train for mor than one epoch
     train_loader = self._get_train_dataloader()
     train_iterator = iter(train_loader)
-    for batch in train_iterator:
-      print(f"Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}")
-      break
+    for _ in range(xr.process_count()):
+      batch = next(train_iterator)
+      print(f"Step {_}, Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}")
 
   def train_loop(self):
     if self.config.checkpoint_step is not None:
