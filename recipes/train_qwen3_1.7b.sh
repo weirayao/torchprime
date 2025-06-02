@@ -8,9 +8,9 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/debug_data.py 
     checkpoint_step=20 \
     save_steps=10 \
     logging_steps=1 \
-    ici_mesh.fsdp=1 \
+    ici_mesh.fsdp=8 \
     ici_mesh.tensor=1 \
-    ici_mesh.data=8 \
+    ici_mesh.data=1 \
     ici_mesh.expert=1 \
     model/remat=qwen-scan
 # fsdp * tensor * data * expert == global_batch_size
