@@ -23,6 +23,7 @@ import wandb
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, IterableDataset
+from datasets.distributed import split_dataset_by_node
 from torch_xla._internal.jax_workarounds import jax_env_context
 from torch_xla.distributed.fsdp import checkpoint_module
 from torch_xla.distributed.spmd.xla_sharding import apply_xla_patch_to_nn_linear
@@ -591,6 +592,7 @@ def main(config: DictConfig):
       block_size=config.block_size,
     )
   )
+  data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
   trainer = Trainer(
     model=model,
     config=config,
