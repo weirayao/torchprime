@@ -315,8 +315,11 @@ class Trainer:
     train_iterator = iter(train_loader)
     for _ in range(xr.process_count()):
       batch = next(train_iterator)
+      is_sharded = isinstance(batch['input_ids'], xs.XLAShardedTensor)
       visualize_tensor_sharding(batch['input_ids'], use_color=False)
-      print(f"Step {_}, Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}")
+      print(f"Step {_}, Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}, is_sharded: {is_sharded}")
+      if is_sharded:
+        print(f"Step {_}, Device: {xr.process_index()}, Sharding spec: {batch['input_ids'].sharding_spec()}, Mesh: {batch['input_ids'].mesh_shape}, Local shard: {batch['input_ids'].local_shards()}")
   def train_loop(self):
     if self.config.checkpoint_step is not None:
       self._load_checkpoint()
