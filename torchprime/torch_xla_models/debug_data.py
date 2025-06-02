@@ -216,6 +216,7 @@ class Trainer:
       sampler=sampler,
       drop_last=True,
     )
+    print(f"Global batch size: {self.global_batch_size}, per-process batch size: {batch_size}, device: {self.device}, process: {xr.process_index()}")
     loader = pl.MpDeviceLoader(
       dataloader, self.device, input_sharding=self.input_sharding_spec
     )
