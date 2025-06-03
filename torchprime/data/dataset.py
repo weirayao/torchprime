@@ -60,19 +60,27 @@ def make_gcs_dataset(
   for name in names:
     extension, data_type = DATASET_TYPES[name]
     data_files = glob(f"{MOUNTED_GCS_DIR}/data/xgen_cleaned_data/{name}/*{extension}")
+    print(f"Loading dataset {name}")
     dataset = load_dataset(
       data_type,
       data_files=data_files,
       streaming=True,
       split="train",
     )
+    # Remove all columns except 'text' to avoid issues with varying column schemas
+    dataset = dataset.remove_columns([col for col in dataset.column_names if col != "text"])
+
+    print(f"Shuffling dataset {name}")
     dataset = dataset.shuffle(seed=seed, buffer_size=32768)
 
+    print(f"Pretokenizing dataset {name}")
     dataset = dataset.map(
       lambda examples: tokenizer(examples["text"]),
       batched=True,
       remove_columns=["text"],
     )
+
+    print(f"Grouping dataset {name}")
     dataset = dataset.map(
       lambda examples: group_texts(examples, block_size),
       batched=True,
