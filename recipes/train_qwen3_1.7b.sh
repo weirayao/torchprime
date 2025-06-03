@@ -6,7 +6,7 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/debug_data.py 
     global_batch_size=8 \
     max_steps=30 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/test-qwen3-1b \
-    checkpoint_step=20 \
+    resume_from_checkpoint=20 \
     save_steps=10 \
     logging_steps=1 \
     ici_mesh.fsdp=8 \

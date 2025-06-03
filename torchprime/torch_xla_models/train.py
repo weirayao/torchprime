@@ -166,15 +166,15 @@ class Trainer:
       "scheduler": self.lr_scheduler.state_dict(),
       "step": self.start_step,
     }
-    if self.config.checkpoint_step in tracked_steps:
-      logger.info(f"Loading checkpoint from step {self.config.checkpoint_step}")
-      self.ckpt_mgr.restore(self.config.checkpoint_step, state_dict)
-    elif self.config.checkpoint_step == "latest":
+    if self.config.resume_from_checkpoint in tracked_steps:
+      logger.info(f"Loading checkpoint from step {self.config.resume_from_checkpoint}")
+      self.ckpt_mgr.restore(self.config.resume_from_checkpoint, state_dict)
+    elif self.config.resume_from_checkpoint == "latest":
       last_step = max(tracked_steps)
-      logger.warning(f"Checkpoint step {self.config.checkpoint_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
+      logger.warning(f"Checkpoint step {self.config.resume_from_checkpoint} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
       self.ckpt_mgr.restore(last_step, state_dict)
     else:
-      raise ValueError(f"Invalid checkpoint step: {self.config.checkpoint_step}. Must be one of {tracked_steps} or 'latest'.")
+      raise ValueError(f"Invalid checkpoint step: {self.config.resume_from_checkpoint}. Must be one of {tracked_steps} or 'latest'.")
 
     self.model.load_state_dict(state_dict["model"])
     self.optimizer.load_state_dict(state_dict["optimizer"])
@@ -308,7 +308,7 @@ class Trainer:
     return tuple(classes_to_checkpoint)
 
   def train_loop(self):
-    if self.config.checkpoint_step is not None:
+    if self.config.resume_from_checkpoint is not None:
       self._load_checkpoint()
     self.model.train()
     self.model.zero_grad()
@@ -561,8 +561,8 @@ def main(config: DictConfig):
   # Set the model dtype to bfloat16, and set the default device to the XLA device.
   # This will capture the model constructor into a graph so that we can add
   # sharding annotations to the weights later, and run the constructor on the XLA device.
-  # NOTE: read HF model from GCS bucket if checkpoint_step is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
-  load_from_checkpoint = hasattr(config, 'checkpoint_step')
+  # NOTE: read HF model from GCS bucket if resume_from_checkpoint is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
+  load_from_checkpoint = hasattr(config, 'resume_from_checkpoint')
   with set_default_dtype(torch.bfloat16), torch_xla.device():
     model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
 
