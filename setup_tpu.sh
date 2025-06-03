@@ -28,7 +28,8 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     pip install "torch_xla[tpu] @ https://storage.googleapis.com/pytorch-xla-releases/wheels/tpuvm/torch_xla-2.8.0.dev-cp310-cp310-linux_x86_64.whl" -f https://storage.googleapis.com/libtpu-wheels/index.html; \
     python -m pip install --upgrade pip; \
     python -m pip install --upgrade setuptools==69.5.1; \
-    pip install -e ".[dev]";'
+    pip install -e ".[dev]"; \
+    pip install gcsfs'
 
 # Install wandb
 gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
