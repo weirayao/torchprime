@@ -56,40 +56,40 @@ def make_gcs_dataset(
   if any(name not in DATASET_TYPES for name in names):
     raise ValueError(f"Dataset {names} not found in {DATASET_TYPES}")
 
-  datasets = []
+  data_mixture = []
   for name in names:
     extension, data_type = DATASET_TYPES[name]
     data_files = glob(f"{MOUNTED_GCS_DIR}/data/xgen_cleaned_data/{name}/*{extension}")
     print(f"Loading dataset {name}, data_files example: {data_files[0]}")
-    dataset = load_dataset(
+    data = load_dataset(
       data_type,
       data_files=data_files,
       streaming=True,
       split="train",
     )
-    columns = list(dataset.take(1)[0].keys())
+    columns = list(data.take(1))[0].keys()
 
     print(f"Shuffling dataset {name}")
-    dataset = dataset.shuffle(seed=seed, buffer_size=32768)
+    data = data.shuffle(seed=seed, buffer_size=32768)
 
     print(f"Pretokenizing dataset {name}")
-    dataset = dataset.map(
+    data = data.map(
       lambda examples: tokenizer(examples["text"]),
       batched=True,
       remove_columns=columns,
     )
 
     print(f"Grouping dataset {name}")
-    dataset = dataset.map(
+    data = data.map(
       lambda examples: group_texts(examples, block_size),
       batched=True,
     )
-    datasets.append(dataset)
+    data_mixture.append(data)
 
-  if len(datasets) == 1:
-    return datasets[0]
+  if len(data_mixture) == 1:
+    return data_mixture[0]
   else:
-    return interleave_datasets(datasets, probabilities=weights, seed=seed)
+    return interleave_datasets(data_mixture, probabilities=weights, seed=seed)
 
 
 def make_huggingface_dataset(
