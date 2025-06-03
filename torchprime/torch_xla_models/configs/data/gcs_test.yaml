@@ -1,0 +1,15 @@
+defaults:
+  - _self_  # refers to this config file
+
+block_size: 4096
+cache_dir: null
+# Huggingface dataset name, will OVERRIDE gcs_dataset_names if provided
+dataset_name: null
+dataset_config_name: null
+# GCS dataset names and mixing weights
+gcs_dataset_names:
+  - Redpajama-Arxiv
+  - python_edu
+weights:
+  - 0.5
+  - 0.5

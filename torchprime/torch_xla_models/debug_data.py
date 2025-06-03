@@ -27,6 +27,7 @@ from datasets.distributed import split_dataset_by_node
 from torch_xla._internal.jax_workarounds import jax_env_context
 from torch_xla.distributed.fsdp import checkpoint_module
 from torch_xla.distributed.spmd.xla_sharding import apply_xla_patch_to_nn_linear
+from torch_xla.distributed.spmd.debugging import visualize_tensor_sharding
 from transformers import (
   AutoTokenizer,
   default_data_collator,
@@ -215,9 +216,6 @@ class Trainer:
     else:
       # Each process will load the global batch, then discard the unneeded parts.
       # For IterableDataset, use global batch size as distributed sampling is handled upstream
-      # NOTE: right now some how the batch size is doubled when using streaming dataset
-      # Cursor says it is due to preprocessing, need further investigation
-      # TODO: We may need to do preprocessing offline and load the preprocessed data
       batch_size = self.global_batch_size
     dataloader = DataLoader(
       self.train_dataset,
@@ -227,6 +225,7 @@ class Trainer:
       sampler=sampler,
       drop_last=True,
     )
+    print(f"Global batch size: {self.global_batch_size}, per-process batch size: {batch_size}, device: {self.device}, process: {xr.process_index()}")
     loader = pl.MpDeviceLoader(
       dataloader, self.device, input_sharding=self.input_sharding_spec
     )
@@ -319,6 +318,20 @@ class Trainer:
         classes_to_checkpoint.add(cls)
     return tuple(classes_to_checkpoint)
 
+  def data_loop(self):
+    # For now we assume that we wil never train for mor than one epoch
+    train_loader = self._get_train_dataloader()
+    train_iterator = iter(train_loader)
+    for _ in range(100):
+      try:
+        batch = next(train_iterator)
+      except StopIteration:
+        train_iterator = iter(train_loader)
+        batch = next(train_iterator)
+      # visualize_tensor_sharding(batch['input_ids'], use_color=False)
+      print(f"Step {_}, Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}")
+      assert batch["input_ids"].shape == (self.global_batch_size * 2, self.config.data.block_size), f"Batch shape mismatch: {batch['input_ids'].shape} != {(self.global_batch_size * 2, self.config.data.block_size)}"
+
   def train_loop(self):
     if self.config.resume_from_checkpoint is not None:
       self._load_checkpoint()
@@ -386,7 +399,6 @@ class Trainer:
             wandb.log(
               {
                 "train/loss": loss,
-                "train/ppl": math.exp(loss),
                 "train/step_time": (trace_end_time - trace_start_time) * 1000,
                 "train/epoch": epoch,
                 "train/step": step,
@@ -611,7 +623,7 @@ def main(config: DictConfig):
     )
   else:
     raise ValueError("No dataset provided")
-  data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # Needed as we don't use sampler for streaming dataset
+  data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
   trainer = Trainer(
     model=model,
     config=config,
@@ -625,7 +637,7 @@ def main(config: DictConfig):
 
   # TODO(https://github.com/pytorch/xla/issues/8954): Remove `jax_env_context`.
   with jax_env_context():
-    trainer.train_loop()
+    trainer.data_loop()
 
 
 if __name__ == "__main__":
