@@ -595,6 +595,8 @@ def main(config: DictConfig):
         seed=config.seed,
         block_size=config.data.block_size,
       )
+      retry_count=10,
+      retry_delay=10,
     )
   else:
     raise ValueError("No dataset provided")
