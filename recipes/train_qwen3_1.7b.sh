@@ -1,11 +1,10 @@
 XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
-    data=wikitext \
+    data=gcs_test \
     model=qwen-3-1b \
     global_batch_size=4 \
-    max_steps=30 \
-    checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/test-qwen3-1b \
-    resume_from_checkpoint=20 \
-    save_steps=10 \
+    max_steps=100 \
+    checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/test-qwen3-1b-gcs \
+    save_steps=20 \
     logging_steps=1 \
     ici_mesh.fsdp=8 \
     ici_mesh.tensor=1 \
