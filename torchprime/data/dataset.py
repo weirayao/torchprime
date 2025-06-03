@@ -65,7 +65,6 @@ def make_gcs_dataset(
       data_files=data_files,
       streaming=True,
       split="train",
-      num_proc=int(0.8 * os.cpu_count()),
     )
     dataset = dataset.shuffle(seed=seed, buffer_size=32768)
 
