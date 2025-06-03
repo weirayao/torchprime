@@ -106,10 +106,9 @@ def make_huggingface_dataset(
     name,
     config_name,
     cache_dir=cache_dir,
+    split=split,
     streaming=True
   )
-  assert isinstance(data, DatasetDict)
-  data = data[split]
 
   # column_names = list(data.features)
   column_names = list(list(data.take(1))[0].keys())
