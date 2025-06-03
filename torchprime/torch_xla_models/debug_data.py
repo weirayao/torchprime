@@ -323,7 +323,11 @@ class Trainer:
     train_loader = self._get_train_dataloader()
     train_iterator = iter(train_loader)
     for _ in range(100):
-      batch = next(train_iterator)
+      try:
+        batch = next(train_iterator)
+      except StopIteration:
+        train_iterator = iter(train_loader)
+        batch = next(train_iterator)
       # visualize_tensor_sharding(batch['input_ids'], use_color=False)
       print(f"Step {_}, Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}")
       assert batch["input_ids"].shape == (self.global_batch_size * 2, self.config.data.block_size), f"Batch shape mismatch: {batch['input_ids'].shape} != {(self.global_batch_size * 2, self.config.data.block_size)}"

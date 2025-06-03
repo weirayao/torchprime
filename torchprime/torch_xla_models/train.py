@@ -20,10 +20,10 @@ import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
 import transformers
 import wandb
-from datasets.distributed import split_dataset_by_node
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, IterableDataset
+from datasets.distributed import split_dataset_by_node
 from torch_xla._internal.jax_workarounds import jax_env_context
 from torch_xla.distributed.fsdp import checkpoint_module
 from torch_xla.distributed.spmd.xla_sharding import apply_xla_patch_to_nn_linear
@@ -187,25 +187,37 @@ class Trainer:
 
     num_replicas = xr.process_count()
     logger.info(f"Num replicas: {num_replicas}")
-    if self.minibatch:
-      sampler = torch.utils.data.DistributedSampler(
-        self.train_dataset,
-        num_replicas=num_replicas,
-        rank=xr.process_index(),
-      )
+    if isinstance(self.train_dataset, IterableDataset):
+      # For IterableDataset, don't use DistributedSampler as it doesn't have len()
+      # Distributed sampling should be handled by split_dataset_by_node before creating the trainer
+      sampler = None
+      logger.info("Using IterableDataset without DistributedSampler")
     else:
-      # Without minibatch, every process loads the global batch the same way.
-      sampler = torch.utils.data.DistributedSampler(
-        self.train_dataset,
-        num_replicas=1,
-        rank=0,
-      )
+      # For regular Dataset, use DistributedSampler
+      if self.minibatch:
+        sampler = torch.utils.data.DistributedSampler(
+          self.train_dataset,
+          num_replicas=num_replicas,
+          rank=xr.process_index(),
+        )
+      else:
+        # Without minibatch, every process loads the global batch the same way.
+        sampler = torch.utils.data.DistributedSampler(
+          self.train_dataset,
+          num_replicas=1,
+          rank=0,
+        )
+      
     assert self.global_batch_size is not None
-    if self.minibatch:
+    if self.minibatch and not isinstance(self.train_dataset, IterableDataset):
       # Each process loads the per-host batch size.
       batch_size = self.global_batch_size // num_replicas
     else:
       # Each process will load the global batch, then discard the unneeded parts.
+      # For IterableDataset, use global batch size as distributed sampling is handled upstream
+      # NOTE: right now some how the batch size is doubled when using streaming dataset
+      # Cursor says it is due to preprocessing, need further investigation
+      # TODO: We may need to do preprocessing offline and load the preprocessed data
       batch_size = self.global_batch_size
     dataloader = DataLoader(
       self.train_dataset,
@@ -594,13 +606,11 @@ def main(config: DictConfig):
         tokenizer=tokenizer,
         seed=config.seed,
         block_size=config.data.block_size,
-      ),
-      retry_count=10,
-      retry_delay=10,
+      )
     )
   else:
     raise ValueError("No dataset provided")
-
+  data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # Needed as we don't use sampler for streaming dataset
   trainer = Trainer(
     model=model,
     config=config,
