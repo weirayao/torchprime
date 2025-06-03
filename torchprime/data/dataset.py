@@ -67,7 +67,8 @@ def make_gcs_dataset(
       streaming=True,
       split="train",
     )
-    columns = list(data.take(1))[0].keys()
+    # Get columns from first example but convert dict_keys to list immediately
+    columns = list(list(data.take(1))[0].keys())
 
     print(f"Shuffling dataset {name}")
     data = data.shuffle(seed=seed, buffer_size=32768)
