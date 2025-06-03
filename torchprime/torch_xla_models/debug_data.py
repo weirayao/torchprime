@@ -39,7 +39,7 @@ from transformers.optimization import Adafactor
 from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
 
-from torchprime.data.dataset import make_huggingface_dataset
+from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
 from torchprime.metrics.mfu import compute_mfu
@@ -167,15 +167,15 @@ class Trainer:
       "scheduler": self.lr_scheduler.state_dict(),
       "step": self.start_step,
     }
-    if self.config.checkpoint_step in tracked_steps:
-      logger.info(f"Loading checkpoint from step {self.config.checkpoint_step}")
-      self.ckpt_mgr.restore(self.config.checkpoint_step, state_dict)
-    elif self.config.checkpoint_step == "latest":
+    if self.config.resume_from_checkpoint in tracked_steps:
+      logger.info(f"Loading checkpoint from step {self.config.resume_from_checkpoint}")
+      self.ckpt_mgr.restore(self.config.resume_from_checkpoint, state_dict)
+    elif self.config.resume_from_checkpoint == "latest":
       last_step = max(tracked_steps)
-      logger.warning(f"Checkpoint step {self.config.checkpoint_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
+      logger.warning(f"Checkpoint step {self.config.resume_from_checkpoint} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
       self.ckpt_mgr.restore(last_step, state_dict)
     else:
-      raise ValueError(f"Invalid checkpoint step: {self.config.checkpoint_step}. Must be one of {tracked_steps} or 'latest'.")
+      raise ValueError(f"Invalid checkpoint step: {self.config.resume_from_checkpoint}. Must be one of {tracked_steps} or 'latest'.")
 
     self.model.load_state_dict(state_dict["model"])
     self.optimizer.load_state_dict(state_dict["optimizer"])
@@ -315,13 +315,11 @@ class Trainer:
     train_iterator = iter(train_loader)
     for _ in range(xr.process_count()):
       batch = next(train_iterator)
-      is_sharded = isinstance(batch['input_ids'], xs.XLAShardedTensor)
       visualize_tensor_sharding(batch['input_ids'], use_color=False)
-      print(f"Step {_}, Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}, is_sharded: {is_sharded}")
-      if is_sharded:
-        print(f"Step {_}, Device: {xr.process_index()}, Sharding spec: {batch['input_ids'].sharding_spec()}, Mesh: {batch['input_ids'].mesh_shape}, Local shard: {batch['input_ids'].local_shards()}")
+      print(f"Step {_}, Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}")
+
   def train_loop(self):
-    if self.config.checkpoint_step is not None:
+    if self.config.resume_from_checkpoint is not None:
       self._load_checkpoint()
     self.model.train()
     self.model.zero_grad()
@@ -574,8 +572,8 @@ def main(config: DictConfig):
   # Set the model dtype to bfloat16, and set the default device to the XLA device.
   # This will capture the model constructor into a graph so that we can add
   # sharding annotations to the weights later, and run the constructor on the XLA device.
-  # NOTE: read HF model from GCS bucket if checkpoint_step is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
-  load_from_checkpoint = hasattr(config, 'checkpoint_step')
+  # NOTE: read HF model from GCS bucket if resume_from_checkpoint is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
+  load_from_checkpoint = hasattr(config, 'resume_from_checkpoint')
   with set_default_dtype(torch.bfloat16), torch_xla.device():
     model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
 
@@ -586,17 +584,32 @@ def main(config: DictConfig):
     else:
       logger.info(f"Training from scratch on pretrained model - Total size={n_params} params")
 
-  # Downloading and loading a dataset from the hub.
-  data = retry(
-    lambda: make_huggingface_dataset(
-      name=config.dataset_name,
-      config_name=config.dataset_config_name,
-      split="train",
-      cache_dir=config.cache_dir,
-      tokenizer=tokenizer,
-      block_size=config.block_size,
+  if config.data.dataset_name:
+    # Downloading and loading a dataset from the hub.
+    data = retry(
+      lambda: make_huggingface_dataset(
+        name=config.data.dataset_name,
+        config_name=config.data.dataset_config_name,
+        split="train",
+        cache_dir=config.data.cache_dir,
+        tokenizer=tokenizer,
+        block_size=config.data.block_size,
+      )
     )
-  )
+  elif config.data.gcs_dataset_names:
+    # Downloading and loading a dataset from GCS bucket.
+    data = retry(
+      lambda: make_gcs_dataset(
+        names=config.data.gcs_dataset_names,
+        weights=config.data.weights,
+        cache_dir=config.data.cache_dir,
+        tokenizer=tokenizer,
+        seed=config.seed,
+        block_size=config.data.block_size,
+      )
+    )
+  else:
+    raise ValueError("No dataset provided")
   data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
   trainer = Trainer(
     model=model,

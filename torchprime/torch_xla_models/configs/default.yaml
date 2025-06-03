@@ -6,14 +6,13 @@
 defaults:
   - _self_ # refers to this config file
   - model: llama-3-8b # refers to model/llama-3-8b.yaml
+  - data: wikitext
 
-dataset_name: wikitext
-dataset_config_name: wikitext-2-raw-v1
 global_batch_size: 4
 logging_steps: 10
 max_steps: 15
-block_size: 8192
-cache_dir: /tmp/
+
+
 seed: 42
 profile_step: 2
 
@@ -26,7 +25,7 @@ output_dir: outputs
 
 # Checkpoint directory
 checkpoint_dir: checkpoints/
-checkpoint_step: null
+resume_from_checkpoint: null
 save_steps: 1000
 
 optimizer:

@@ -1,5 +1,7 @@
 export HF_TOKEN="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"
+export MOUNTED_GCS_DIR="/home/haolin.chen/sfr-text-diffusion-model-research"
 XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/debug_data.py \
+    data=wikitext \
     model=qwen-3-1b \
     global_batch_size=8 \
     block_size=4096 \

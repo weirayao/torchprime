@@ -1,5 +1,120 @@
-from datasets import Dataset, DatasetDict, load_dataset
+import random
+import os
+from itertools import chain
+from typing import Sequence, Union
+from glob import glob
+from datasets import Dataset, DatasetDict, load_dataset, IterableDataset as HuggingFaceIterableDataset
+from torch.utils.data import IterableDataset as TorchIterableDataset
 from transformers.tokenization_utils import PreTrainedTokenizerBase
+
+MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
+if MOUNTED_GCS_DIR is None:
+  raise ValueError("MOUNTED_GCS_DIR is not set or GCS is not mounted.")
+
+class CombinedIterableDataset(HuggingFaceIterableDataset, TorchIterableDataset):
+  def __init__(
+    self,
+    datasets: list[HuggingFaceIterableDataset],
+    seed: int = 42,
+    weights: Sequence[float] = None,
+  ):
+    self.datasets = datasets
+    self.seed = seed
+    self.weights = weights
+    if self.weights is None:
+      self.weights = [1.0 / len(datasets)] * len(datasets)
+
+  def __iter__(self):
+    return CombinedDatasetIterator(self.datasets, self.seed, self.weights)
+
+
+class CombinedDatasetIterator:
+  def __init__(self, datasets, seed, weights):
+    self._datasets = [iter(el) for el in datasets]
+    self._weights = weights
+    self._rng = random.Random(seed)
+
+  def __next__(self):
+    (dataset,) = self._rng.choices(self._datasets, weights=self._weights, k=1)
+    return next(dataset)
+
+
+def group_texts(examples, block_size):
+  """Group texts into blocks of specified size for training."""
+  # Concatenate all texts.
+  concatenated_examples = {k: list(chain(*examples[k])) for k in examples}
+  total_length = len(concatenated_examples[list(examples.keys())[0]])
+  # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
+  # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
+  total_length = (total_length // block_size) * block_size
+  # Split by chunks of max_len.
+  result = {
+    k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+    for k, t in concatenated_examples.items()
+  }
+  result["labels"] = result["input_ids"].copy()
+  return result
+
+
+DATASET_TYPES = {
+  'DM_Mathematics': ('.json', 'json'),
+  'Falcon-refinedweb': ('.json', 'json'),
+  'Gutenberg': ('.json', 'json'),
+  'RedPajama': ('.json', 'json'),
+  'RedPajama_math': ('.json', 'json'),
+  'Redpajama-Arxiv': ('.json', 'json'),
+  'Wikipedia_en': ('.json', 'json'),
+  'c4_2023-14': ('.json', 'json'),
+  'cosmopedia_v2_parquet': ('.parquet', 'parquet'),
+  'dclm-baseline-1.0-shuffled': ('.json', 'json'),
+  'fineweb_edu_dedup': ('.parquet', 'parquet'),
+  'open-web-math': ('.json', 'json'),
+  'python_edu': ('.jsonl', 'json'),
+  'stackv2_Python_shuffled': ('.json', 'json'),
+  'the-stack-v2-train-smol': ('.json', 'json'),
+}
+
+
+def make_gcs_dataset(
+  names: list[str],
+  tokenizer: PreTrainedTokenizerBase,
+  cache_dir: str,
+  block_size: int,
+  seed: int = 42,
+  weights: Sequence[float] = None,
+) -> Union[Dataset, CombinedIterableDataset]:
+  if any(name not in DATASET_TYPES for name in names):
+    raise ValueError(f"Dataset {names} not found in {DATASET_TYPES}")
+
+  datasets = []
+  for name in names:
+    extension, data_type = DATASET_TYPES[name]
+    data_files = glob(f"{MOUNTED_GCS_DIR}/data/xgen_cleaned_data/{name}/*{extension}")
+    dataset = load_dataset(
+      data_type,
+      data_files=data_files,
+      streaming=True,
+      split="train",
+      cache_dir=cache_dir,
+    )
+
+    dataset = dataset.map(
+      lambda examples: tokenizer(examples["text"]),
+      batched=True,
+      remove_columns=["text"],
+      num_proc=int(0.8 * os.cpu_count()),
+    )
+    dataset = dataset.map(
+      lambda examples: group_texts(examples, block_size),
+      batched=True,
+      num_proc=int(0.8 * os.cpu_count()),
+    )
+    datasets.append(dataset)
+
+  if len(datasets) == 1:
+    return datasets[0]
+  else:
+    return CombinedIterableDataset(datasets, seed=seed, weights=weights)
 
 
 def make_huggingface_dataset(
@@ -27,97 +142,5 @@ def make_huggingface_dataset(
   )
 
   # Taken from run_clm.py. It's important to group texts evenly to avoid recompilations in TPU.
-  def group_texts(examples):
-    from itertools import chain
-
-    # Concatenate all texts.
-    concatenated_examples = {k: list(chain(*examples[k])) for k in examples}
-    total_length = len(concatenated_examples[list(examples.keys())[0]])
-    # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
-    # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
-    total_length = (total_length // block_size) * block_size
-    # Split by chunks of max_len.
-    result = {
-      k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
-      for k, t in concatenated_examples.items()
-    }
-    result["labels"] = result["input_ids"].copy()
-    return result
-
-  data = data.map(group_texts, batched=True)
+  data = data.map(lambda examples: group_texts(examples, block_size), batched=True)
   return data
-
-
-# def make_gcs_dataset(
-#   data_format: str,
-#   name: str,
-#   cache_dir: str,
-#   tokenizer: PreTrainedTokenizerBase,
-#   block_size: int,
-# ) -> Dataset:
-#   """
-#   Load dataset from GCS bucket or use HuggingFace datasets with GCS paths.
-  
-#   Args:
-#     data_format: Dataset format (parquet, csv, json, text)
-#     name: Can be a GCS path (gs://bucket/path) or HuggingFace dataset name
-#     split: Dataset split (train/validation/test)
-#     cache_dir: Local cache directory
-#     tokenizer: Tokenizer to use for processing text
-#     block_size: Block size for grouping texts
-    
-#   Returns:
-#     Processed Dataset ready for training
-#   """
-#   # Load dataset directly from GCS
-#   # This supports various formats: parquet, csv, json, text files
-#   # Try loading as a directory with automatic file discovery
-#   data = load_dataset(
-#     data_format,  # Specify the dataset type
-#     data_dir=name,  # Use data_dir for directory paths
-#     cache_dir=cache_dir,
-#     streaming=True,
-#   )
-
-#   # TODO: check columns
-#   # Determine text column name
-#   column_names = list(data.features)
-#   text_column = None
-#   for col in ["text", "content", "document", "sentence"]:
-#     if col in column_names:
-#       text_column = col
-#       break
-
-#   if text_column is None:
-#     raise ValueError(f"No text column found in dataset. Available columns: {column_names}")
-
-#   # Tokenize the dataset
-#   def tokenize_function(examples):
-#     return tokenizer(examples[text_column])
-
-#   data = data.map(
-#     tokenize_function,
-#     batched=True,
-#     remove_columns=column_names,
-#   )
-
-#   # Group texts into blocks
-#   def group_texts(examples):
-#     from itertools import chain
-
-#     # Concatenate all texts.
-#     concatenated_examples = {k: list(chain(*examples[k])) for k in examples}
-#     total_length = len(concatenated_examples[list(examples.keys())[0]])
-#     # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
-#     # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
-#     total_length = (total_length // block_size) * block_size
-#     # Split by chunks of max_len.
-#     result = {
-#       k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
-#       for k, t in concatenated_examples.items()
-#     }
-#     result["labels"] = result["input_ids"].copy()
-#     return result
-
-#   data = data.map(group_texts, batched=True)
-#   return data

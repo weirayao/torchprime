@@ -38,7 +38,7 @@ from transformers.optimization import Adafactor
 from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
 
-from torchprime.data.dataset import make_huggingface_dataset
+from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
 from torchprime.metrics.mfu import compute_mfu
@@ -573,18 +573,33 @@ def main(config: DictConfig):
     else:
       logger.info(f"Training from scratch on pretrained model - Total size={n_params} params")
 
-  # Downloading and loading a dataset from the hub.
-  data = retry(
-    lambda: make_huggingface_dataset(
-      name=config.dataset_name,
-      config_name=config.dataset_config_name,
-      split="train",
-      cache_dir=config.cache_dir,
-      tokenizer=tokenizer,
-      block_size=config.block_size,
+  if config.data.dataset_name:
+    # Downloading and loading a dataset from the hub.
+    data = retry(
+      lambda: make_huggingface_dataset(
+        name=config.data.dataset_name,
+        config_name=config.data.dataset_config_name,
+        split="train",
+        cache_dir=config.data.cache_dir,
+        tokenizer=tokenizer,
+        block_size=config.data.block_size,
+      )
     )
-  )
-  data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+  elif config.data.gcs_dataset_names:
+    # Downloading and loading a dataset from GCS bucket.
+    data = retry(
+      lambda: make_gcs_dataset(
+        names=config.data.gcs_dataset_names,
+        weights=config.data.weights,
+        cache_dir=config.data.cache_dir,
+        tokenizer=tokenizer,
+        seed=config.seed,
+        block_size=config.data.block_size,
+      )
+    )
+  else:
+    raise ValueError("No dataset provided")
+
   trainer = Trainer(
     model=model,
     config=config,
