@@ -17,6 +17,23 @@ community unlock top performance and efficiency on Google Cloud TPUs.
 `torchprime` is under active development, and we're eager for feedback and input
 from the PyTorch community.
 
+## Setup Guide
+
+High level steps:
+1. Create a TPU VM
+2. (**Important**) Ask Srinath to open all ports for all workers in your VM
+3. Setup environments. You can just run `bash setup_tpu.sh` with your TPU VM name and zone
+   1. Install python with venv
+   2. Install dependencies
+   3. Setup wandb; (**Important**) Add your wandb key in `setup_tpu.sh`
+   4. Install gcsfuse, mount local folder to GCS bucket (default is `~/sfr-text-diffusion-model-research`)
+4. Create your own branch `git checkout -b your_branch`
+5. Add your recipes under `recipes/your_recipe.sh`
+6. (**Important**) Add your `MOUNTED_GCS_DIR` `HF_HOME`, and `HF_TOKEN` and change the branch name to `your_branch` in `remote_run.sh`
+7. Before you run anything, commit and push local changes to remote 
+8. Run `bash remote_run.sh --recipes recipes/your_recipe.sh`
+
+
 ## Environment setup
 
 For development and debugging purposes it is useful to run `torchprime`
