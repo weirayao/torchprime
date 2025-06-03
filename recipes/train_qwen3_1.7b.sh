@@ -3,7 +3,7 @@ export MOUNTED_GCS_DIR="/home/haolin.chen/sfr-text-diffusion-model-research"
 XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/debug_data.py \
     data=wikitext \
     model=qwen-3-1b \
-    global_batch_size=8 \
+    global_batch_size=4 \
     max_steps=30 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/test-qwen3-1b \
     resume_from_checkpoint=20 \
