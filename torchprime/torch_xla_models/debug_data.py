@@ -326,7 +326,7 @@ class Trainer:
       batch = next(train_iterator)
       # visualize_tensor_sharding(batch['input_ids'], use_color=False)
       print(f"Step {_}, Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}")
-      assert batch["input_ids"].shape == (self.global_batch_size * 2, self.config.block_size), f"Batch shape mismatch: {batch['input_ids'].shape} != {(self.global_batch_size * 2, self.config.block_size)}"
+      assert batch["input_ids"].shape == (self.global_batch_size * 2, self.config.data.block_size), f"Batch shape mismatch: {batch['input_ids'].shape} != {(self.global_batch_size * 2, self.config.data.block_size)}"
 
   def train_loop(self):
     if self.config.resume_from_checkpoint is not None:
