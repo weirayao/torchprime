@@ -1,42 +1,14 @@
 import random
 import os
 from itertools import chain
-from typing import Sequence, Union
+from typing import Sequence
 from glob import glob
-from datasets import Dataset, DatasetDict, load_dataset, IterableDataset as HuggingFaceIterableDataset
-from torch.utils.data import IterableDataset as TorchIterableDataset
+from datasets import load_dataset, interleave_datasets, Dataset, DatasetDict, IterableDataset
 from transformers.tokenization_utils import PreTrainedTokenizerBase
 
 MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
 if MOUNTED_GCS_DIR is None:
   raise ValueError("MOUNTED_GCS_DIR is not set or GCS is not mounted.")
-
-class CombinedIterableDataset(HuggingFaceIterableDataset, TorchIterableDataset):
-  def __init__(
-    self,
-    datasets: list[HuggingFaceIterableDataset],
-    seed: int = 42,
-    weights: Sequence[float] = None,
-  ):
-    self.datasets = datasets
-    self.seed = seed
-    self.weights = weights
-    if self.weights is None:
-      self.weights = [1.0 / len(datasets)] * len(datasets)
-
-  def __iter__(self):
-    return CombinedDatasetIterator(self.datasets, self.seed, self.weights)
-
-
-class CombinedDatasetIterator:
-  def __init__(self, datasets, seed, weights):
-    self._datasets = [iter(el) for el in datasets]
-    self._weights = weights
-    self._rng = random.Random(seed)
-
-  def __next__(self):
-    (dataset,) = self._rng.choices(self._datasets, weights=self._weights, k=1)
-    return next(dataset)
 
 
 def group_texts(examples, block_size):
@@ -78,11 +50,10 @@ DATASET_TYPES = {
 def make_gcs_dataset(
   names: list[str],
   tokenizer: PreTrainedTokenizerBase,
-  cache_dir: str,
   block_size: int,
   seed: int = 42,
   weights: Sequence[float] = None,
-) -> Union[Dataset, CombinedIterableDataset]:
+) -> IterableDataset:
   if any(name not in DATASET_TYPES for name in names):
     raise ValueError(f"Dataset {names} not found in {DATASET_TYPES}")
 
@@ -95,8 +66,8 @@ def make_gcs_dataset(
       data_files=data_files,
       streaming=True,
       split="train",
-      cache_dir=cache_dir,
     )
+    dataset = dataset.shuffle(seed=seed, buffer_size=32768)
 
     dataset = dataset.map(
       lambda examples: tokenizer(examples["text"]),
@@ -114,7 +85,7 @@ def make_gcs_dataset(
   if len(datasets) == 1:
     return datasets[0]
   else:
-    return CombinedIterableDataset(datasets, seed=seed, weights=weights)
+    return interleave_datasets(datasets, probabilities=weights, seed=seed)
 
 
 def make_huggingface_dataset(

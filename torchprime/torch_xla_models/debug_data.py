@@ -602,7 +602,6 @@ def main(config: DictConfig):
       lambda: make_gcs_dataset(
         names=config.data.gcs_dataset_names,
         weights=config.data.weights,
-        cache_dir=config.data.cache_dir,
         tokenizer=tokenizer,
         seed=config.seed,
         block_size=config.data.block_size,

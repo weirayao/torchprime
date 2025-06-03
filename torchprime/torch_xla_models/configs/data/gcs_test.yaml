@@ -2,7 +2,7 @@ defaults:
   - _self_  # refers to this config file
 
 block_size: 8192
-cache_dir: ${oc.env:MOUNTED_GCS_DIR,}/tmp/
+cache_dir: null
 # Huggingface dataset name, will OVERRIDE gcs_dataset_names if provided
 dataset_name: null
 dataset_config_name: null
