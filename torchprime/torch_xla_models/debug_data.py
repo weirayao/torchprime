@@ -188,25 +188,36 @@ class Trainer:
 
     num_replicas = xr.process_count()
     logger.info(f"Num replicas: {num_replicas}")
-    if self.minibatch:
-      sampler = torch.utils.data.DistributedSampler(
-        self.train_dataset,
-        num_replicas=num_replicas,
-        rank=xr.process_index(),
-      )
+    
+    # Check if dataset is IterableDataset
+    if isinstance(self.train_dataset, IterableDataset):
+      # For IterableDataset, don't use DistributedSampler as it doesn't have len()
+      # Distributed sampling should be handled by split_dataset_by_node before creating the trainer
+      sampler = None
+      logger.info("Using IterableDataset without DistributedSampler")
     else:
-      # Without minibatch, every process loads the global batch the same way.
-      sampler = torch.utils.data.DistributedSampler(
-        self.train_dataset,
-        num_replicas=1,
-        rank=0,
-      )
+      # For regular Dataset, use DistributedSampler
+      if self.minibatch:
+        sampler = torch.utils.data.DistributedSampler(
+          self.train_dataset,
+          num_replicas=num_replicas,
+          rank=xr.process_index(),
+        )
+      else:
+        # Without minibatch, every process loads the global batch the same way.
+        sampler = torch.utils.data.DistributedSampler(
+          self.train_dataset,
+          num_replicas=1,
+          rank=0,
+        )
+      
     assert self.global_batch_size is not None
-    if self.minibatch:
+    if self.minibatch and not isinstance(self.train_dataset, IterableDataset):
       # Each process loads the per-host batch size.
       batch_size = self.global_batch_size // num_replicas
     else:
       # Each process will load the global batch, then discard the unneeded parts.
+      # For IterableDataset, use global batch size as distributed sampling is handled upstream
       batch_size = self.global_batch_size
     dataloader = DataLoader(
       self.train_dataset,
