@@ -67,8 +67,7 @@ def make_gcs_dataset(
       streaming=True,
       split="train",
     )
-    # Remove all columns except 'text' to avoid issues with varying column schemas
-    dataset = dataset.remove_columns([col for col in dataset.column_names if col != "text"])
+    columns = list(dataset.take(1)[0].keys())
 
     print(f"Shuffling dataset {name}")
     dataset = dataset.shuffle(seed=seed, buffer_size=32768)
@@ -77,7 +76,7 @@ def make_gcs_dataset(
     dataset = dataset.map(
       lambda examples: tokenizer(examples["text"]),
       batched=True,
-      remove_columns=["text"],
+      remove_columns=columns,
     )
 
     print(f"Grouping dataset {name}")
