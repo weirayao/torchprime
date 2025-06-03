@@ -1,4 +1,3 @@
-import random
 import os
 from itertools import chain
 from typing import Sequence
@@ -66,6 +65,7 @@ def make_gcs_dataset(
       data_files=data_files,
       streaming=True,
       split="train",
+      num_proc=int(0.8 * os.cpu_count()),
     )
     dataset = dataset.shuffle(seed=seed, buffer_size=32768)
 
@@ -73,12 +73,10 @@ def make_gcs_dataset(
       lambda examples: tokenizer(examples["text"]),
       batched=True,
       remove_columns=["text"],
-      num_proc=int(0.8 * os.cpu_count()),
     )
     dataset = dataset.map(
       lambda examples: group_texts(examples, block_size),
       batched=True,
-      num_proc=int(0.8 * os.cpu_count()),
     )
     datasets.append(dataset)
 
