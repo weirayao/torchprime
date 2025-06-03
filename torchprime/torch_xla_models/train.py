@@ -594,7 +594,7 @@ def main(config: DictConfig):
         tokenizer=tokenizer,
         seed=config.seed,
         block_size=config.data.block_size,
-      )
+      ),
       retry_count=10,
       retry_delay=10,
     )
