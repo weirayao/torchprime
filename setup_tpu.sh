@@ -1,5 +1,5 @@
 #! /bin/bash
-TPU_VM_NAME="sfr-haolin-chen-v4-16" # Change with your TPU VM name
+TPU_VM_NAME="sfr-weiran-yao-v4-512" # Change with your TPU VM name
 TPU_ZONE="us-central2-b"
 
 # Install python with venv
@@ -10,7 +10,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --worker=all \
     --command='
     sudo apt-get update; \
-    sudo apt-get install python3.10-venv'
+    sudo apt-get install python3.10-venv -y'
 
 # Install torchprime and other dependencies
 gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
@@ -54,7 +54,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     echo "deb [signed-by=/usr/share/keyrings/cloud.google.asc] https://packages.cloud.google.com/apt $GCSFUSE_REPO main" | sudo tee /etc/apt/sources.list.d/gcsfuse.list; \
     curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo tee /usr/share/keyrings/cloud.google.asc; \
     sudo apt-get update; \
-    sudo apt-get install gcsfuse; \
+    sudo apt-get install gcsfuse -y; \
     mkdir -p ~/sfr-text-diffusion-model-research; \
     umount ~/sfr-text-diffusion-model-research; \
     gcsfuse --implicit-dirs --metadata-cache-ttl-secs 0 sfr-text-diffusion-model-research ~/sfr-text-diffusion-model-research;'
