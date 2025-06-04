@@ -209,15 +209,11 @@ class Trainer:
         )
       
     assert self.global_batch_size is not None
-    if self.minibatch and not isinstance(self.train_dataset, IterableDataset):
+    if self.minibatch:
       # Each process loads the per-host batch size.
       batch_size = self.global_batch_size // num_replicas
     else:
       # Each process will load the global batch, then discard the unneeded parts.
-      # For IterableDataset, use global batch size as distributed sampling is handled upstream
-      # NOTE: right now some how the batch size is doubled when using streaming dataset
-      # Cursor says it is due to preprocessing, need further investigation
-      # TODO: We may need to do preprocessing offline and load the preprocessed data
       batch_size = self.global_batch_size
     dataloader = DataLoader(
       self.train_dataset,
