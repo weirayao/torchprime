@@ -210,7 +210,7 @@ class Trainer:
         )
       
     assert self.global_batch_size is not None
-    if self.minibatch and not isinstance(self.train_dataset, IterableDataset):
+    if self.minibatch:
       # Each process loads the per-host batch size.
       batch_size = self.global_batch_size // num_replicas
     else:
@@ -322,7 +322,7 @@ class Trainer:
     # For now we assume that we wil never train for mor than one epoch
     train_loader = self._get_train_dataloader()
     train_iterator = iter(train_loader)
-    for _ in range(100):
+    for _ in range(3):
       try:
         batch = next(train_iterator)
       except StopIteration:
@@ -330,7 +330,7 @@ class Trainer:
         batch = next(train_iterator)
       # visualize_tensor_sharding(batch['input_ids'], use_color=False)
       print(f"Step {_}, Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}")
-      assert batch["input_ids"].shape == (self.global_batch_size * 2, self.config.data.block_size), f"Batch shape mismatch: {batch['input_ids'].shape} != {(self.global_batch_size * 2, self.config.data.block_size)}"
+      assert batch["input_ids"].shape == (self.global_batch_size, self.config.data.block_size), f"Batch shape mismatch: {batch['input_ids'].shape} != {(self.global_batch_size * 2, self.config.data.block_size)}"
 
   def train_loop(self):
     if self.config.resume_from_checkpoint is not None:
