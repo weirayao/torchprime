@@ -36,7 +36,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     export MOUNTED_GCS_DIR="/home/haolin.chen/sfr-text-diffusion-model-research"; \
     cd torchprime; \
     git fetch; \
-    git checkout haolin/data; \
+    git checkout haolin/debug; \
     git pull; \
     source venv/bin/activate; \
     bash '"$RECIPE"'';
