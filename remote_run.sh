@@ -1,8 +1,8 @@
-TPU_VM_NAME="sfr-haolin-chen-v4-16"
+TPU_VM_NAME="sfr-weiran-yao-v4-512"
 TPU_ZONE="us-central2-b"
 
 # Default recipe if none is provided
-RECIPE="recipes/train_qwen3_1.7b.sh"
+RECIPE="recipes/train_qwen3_1b_512.sh"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
