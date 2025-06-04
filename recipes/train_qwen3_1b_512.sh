@@ -1,8 +1,8 @@
 XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     data=gcs_test \
     model=flex-qwen-1b \
-    global_batch_size=1024 \
-    max_steps=20 \
+    global_batch_size=768 \
+    max_steps=10 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/test-flex-qwen3-1b-gcs \
     save_steps=20 \
     logging_steps=1 \
