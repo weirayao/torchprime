@@ -322,7 +322,7 @@ class Trainer:
     # For now we assume that we wil never train for mor than one epoch
     train_loader = self._get_train_dataloader()
     train_iterator = iter(train_loader)
-    for _ in range(100):
+    for _ in range(3):
       try:
         batch = next(train_iterator)
       except StopIteration:
