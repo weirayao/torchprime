@@ -22,7 +22,7 @@ from the PyTorch community.
 High level steps:
 1. Create a TPU VM
 2. (**Important**) Ask Srinath to open all ports for all workers in your VM
-3. Setup environments. You can just run `bash setup_tpu.sh` with your TPU VM name and zone
+3. Setup environments. You can just run `bash setup_tpu.sh` **with your TPU VM name and zone**
    1. Install python with venv
    2. Install dependencies
    3. Setup wandb; (**Important**) Add your wandb key in `setup_tpu.sh`
@@ -30,6 +30,17 @@ High level steps:
 4. Create your own branch `git checkout -b your_branch`
 5. Add your recipes under `recipes/your_recipe.sh`
 6. (**Important**) Add your `MOUNTED_GCS_DIR` `HF_HOME`, and `HF_TOKEN` and change the branch name to `your_branch` in `remote_run.sh`
+   1. `MOUNTED_GCS_DIR` by default uses the home directory as the parent folder, it differs on the TPU VM if you use different local machine. Run
+  ```sh
+  gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
+      --zone=$TPU_ZONE \
+      --project=salesforce-research-internal \
+      --tunnel-through-iap \
+      --worker=all \
+      --command='pwd'
+  ```
+  to get your absolute home directory before you set `MOUNTED_GCS_DIR`.
+
 7. Before you run anything, commit and push local changes to remote 
 8. Run `bash remote_run.sh --recipes recipes/your_recipe.sh`
 

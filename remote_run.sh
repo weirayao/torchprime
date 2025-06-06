@@ -32,11 +32,11 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --worker=all \
     --command='
     export HF_HOME="~/huggingface"; \
-    export HF_TOKEN="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"; \
-    export MOUNTED_GCS_DIR="/home/haolin.chen/sfr-text-diffusion-model-research"; \
+    export HF_TOKEN="<your_huggingface_token>"; \
+    export MOUNTED_GCS_DIR="<your_absolute_home_dir>/sfr-text-diffusion-model-research"; \
     cd torchprime; \
     git fetch; \
-    git checkout haolin/debug; \
+    git checkout <your_branch>; \
     git pull; \
     source venv/bin/activate; \
     bash '"$RECIPE"'';
