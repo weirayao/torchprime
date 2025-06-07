@@ -11,5 +11,5 @@ gcs_dataset_names:
   - RedPajama
   - stackv2_Python_shuffled
 weights:
-  - 0.5
-  - 0.5
+  - 0.7
+  - 0.3
