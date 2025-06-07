@@ -447,7 +447,11 @@ class Qwen3ForCausalLM(nn.Module):
       logits.reshape(-1, logits.shape[-1]), target_ids.reshape(-1)
     ).reshape(target_ids.shape[0],-1)
     loss = loss.masked_fill(~loss_mask, 0)
-    loss = (dsigma[:, None] * loss).sum() / loss_mask.sum()
+    # weiran: divide by the number of tokens in the sequence instead of the number of masked tokens
+    # justification is dsigma already accounts for the number of masked tokens
+    # this is a hack to get something like per token loss
+    # https://github.com/ML-GSAI/SMDM/blob/main/pretrain/train_mdm_rl.py#L281-L283
+    loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
     return logits, loss
 
 @xp.trace_me("transition")
