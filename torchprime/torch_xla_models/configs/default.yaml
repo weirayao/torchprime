@@ -26,7 +26,7 @@ output_dir: outputs
 # Checkpoint directory
 checkpoint_dir: checkpoints/
 resume_from_checkpoint: null
-save_steps: 1000
+save_steps: 10000
 
 optimizer:
   learning_rate: 2.e-4 # 5.e-5
