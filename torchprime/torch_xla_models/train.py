@@ -387,6 +387,7 @@ class Trainer:
                 "train/epoch": epoch,
                 "train/step": step,
                 "train/lr": self.lr_scheduler.get_last_lr()[0],
+                "train/total_tokens": self.config.data.block_size * (step + 1) * self.global_batch_size,
               },
               step=step  # Explicitly set the wandb global step
             )
