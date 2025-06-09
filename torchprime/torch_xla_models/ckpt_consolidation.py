@@ -330,11 +330,15 @@ class Trainer:
     self._load_checkpoint()
     logger.info(f"Consolidating checkpoints from {self.config.checkpoint_dir} to {self.config.checkpoint_dir}/consolidated")
     cpu_model = self.model.cpu()
-    hf_model = load_hf_model(self.config.model)
-    hf_model.load_state_dict(cpu_model.state_dict())
-    hf_model.save_pretrained(f"{self.config.checkpoint_dir}/consolidated/{self.config.model.model_class}-{self.config.resume_from_checkpoint}")
-    logger.info(f"Consolidated checkpoint saved to {self.config.checkpoint_dir}/consolidated/{self.config.model.model_class}-{self.config.resume_from_checkpoint}")
-    del hf_model, cpu_model
+    print(cpu_model)
+    if is_main_process():
+      for param in cpu_model.named_parameters():
+        print(param)
+    # hf_model = load_hf_model(self.config.model)
+    # hf_model.load_state_dict(cpu_model.state_dict())
+    # hf_model.save_pretrained(f"{self.config.checkpoint_dir}/consolidated/{self.config.model.model_class}-{self.config.resume_from_checkpoint}")
+    # logger.info(f"Consolidated checkpoint saved to {self.config.checkpoint_dir}/consolidated/{self.config.model.model_class}-{self.config.resume_from_checkpoint}")
+    # del hf_model, cpu_model
     xm.wait_device_ops()
 
 
