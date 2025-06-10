@@ -1,4 +1,4 @@
-XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/ckpt_consolidation.py \
+XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     data=wikitext \
     model=flex-qwen-1b \
     global_batch_size=8 \
