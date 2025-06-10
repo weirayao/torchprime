@@ -356,7 +356,7 @@ class Trainer:
         else:
           model_state_dict[key] = value
       hf_model.load_state_dict(model_state_dict)
-      ckpt_suffix = self.config.resume_from_checkpoint.split("/")[-1]
+      ckpt_suffix = self.config.checkpoint_dir.split("/")[-1]
       consolidated_ckpt_dir = f"{MOUNTED_GCS_DIR}/consolidated_checkpoints/{ckpt_suffix}/{self.config.resume_from_checkpoint}"
       hf_model.save_pretrained(consolidated_ckpt_dir)    
       logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
