@@ -4,6 +4,7 @@ import math
 import os
 import sys
 from contextlib import contextmanager
+from collections import OrderedDict
 from functools import partial
 from pathlib import Path
 from timeit import default_timer as timer
@@ -67,6 +68,17 @@ def is_main_process():
   """Check if this is the main process (rank 0)."""
   return xr.process_index() == 0
 
+# Map torchprime model classes to their corresponding HuggingFace model classes
+HF_MODEL_CLASS_MAPPING = {
+  "llama.LlamaForCausalLM": "LlamaForCausalLM",
+  "flex.LlamaForCausalLM": "LlamaForCausalLM", 
+  "flex.Qwen3ForCausalLM": "Qwen3ForCausalLM",
+  "mixtral.MixtralForCausalLM": "MixtralForCausalLM",
+  "llama4.Llama4TextForCausalLM": "Llama4ForCausalLM",
+  "qwen.Qwen3ForCausalLM": "Qwen3ForCausalLM",
+}
+
+MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
 
 class Trainer:
   """The trainer."""
@@ -117,6 +129,7 @@ class Trainer:
     model = self._add_checkpoint_offload_scan_model(model)
     model = self._add_optimization_barrier_model(model)
     self.model = model
+    self.hf_model = load_hf_model(self.config.model)
 
     # Set up optimizers
     self.optimizer = Adafactor(
@@ -315,6 +328,28 @@ class Trainer:
         classes_to_checkpoint.add(cls)
     return tuple(classes_to_checkpoint)
 
+  def consolidate_checkpoint(self):    
+    ckpt_suffix = self.config.checkpoint_dir.split("/")[-1]
+    consolidated_ckpt_dir = f"{MOUNTED_GCS_DIR}/consolidated_checkpoints/{ckpt_suffix}/{self.config.resume_from_checkpoint}"
+    logger.info(f"Consolidating checkpoint to {consolidated_ckpt_dir}")
+    logger.info("Moving model to CPU...")
+    cpu_model = self.model.cpu()
+    # Create a new state dict with _orig_mod removed from keys
+    logger.info("Creating new state dict...")
+    state_dict = cpu_model.state_dict()
+    model_state_dict = OrderedDict()
+    for key, value in state_dict.items():
+      if '._orig_mod' in key:
+        # Remove ._orig_mod from the key
+        cleaned_key = key.replace('._orig_mod', '')
+        model_state_dict[cleaned_key] = value
+      else:
+        model_state_dict[key] = value
+    self.hf_model.load_state_dict(model_state_dict)
+    self.hf_model.save_pretrained(consolidated_ckpt_dir)    
+    logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
+
+
   def train_loop(self):
     if self.config.resume_from_checkpoint is not None:
       self._load_checkpoint()
@@ -412,6 +447,8 @@ class Trainer:
           logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
+        if is_main_process():
+          self.consolidate_checkpoint()
         xm.wait_device_ops()  # Ensure save is complete before logging
 
       # Capture profile at the prefer step
@@ -467,11 +504,30 @@ class Trainer:
     self.model.zero_grad()
     return loss
 
+def load_hf_model(model_config):
+  hf_model_class_name = HF_MODEL_CLASS_MAPPING.get(model_config.model_class)
+  if hf_model_class_name is None:
+    print(f"Error: No HuggingFace model mapping found for '{model_config.model_class}'")
+    print(f"Available mappings: {list(HF_MODEL_CLASS_MAPPING.keys())}")
+    sys.exit(1)
+
+# Dynamically import the HuggingFace model class
+  try:
+    transformers_module = importlib.import_module("transformers")
+    hf_model_class = getattr(transformers_module, hf_model_class_name)
+  except (ModuleNotFoundError, AttributeError) as e:
+    print(f"Error importing HuggingFace model class '{hf_model_class_name}': {e}")
+    sys.exit(1)
+
+  hf_model = hf_model_class.from_pretrained(
+    model_config.tokenizer_name,
+    torch_dtype=torch.bfloat16,
+  )
+  return hf_model
 
 def initialize_model_class(model_config, load_from_hf=True):
   """Import and initialize model_class specified by the config."""
-  full_model_class_string = model_config.model_class
-  module_name, model_class_name = full_model_class_string.rsplit(".", 1)
+  module_name, model_class_name = model_config.model_class.rsplit(".", 1)
   try:
     module = importlib.import_module(module_name)
   except ModuleNotFoundError as e:
@@ -483,37 +539,9 @@ def initialize_model_class(model_config, load_from_hf=True):
     print(f"Error: Function '{model_class_name}' not found in module '{module_name}'")
     sys.exit(1)
   model = model_class(model_config)
-  
-  # Map torchprime model classes to their corresponding HuggingFace model classes
-  hf_model_class_mapping = {
-    "llama.LlamaForCausalLM": "LlamaForCausalLM",
-    "flex.LlamaForCausalLM": "LlamaForCausalLM", 
-    "flex.Qwen3ForCausalLM": "Qwen3ForCausalLM",
-    "mixtral.MixtralForCausalLM": "MixtralForCausalLM",
-    "llama4.Llama4TextForCausalLM": "Llama4ForCausalLM",
-    "qwen.Qwen3ForCausalLM": "Qwen3ForCausalLM",
-  }
-  
-  hf_model_class_name = hf_model_class_mapping.get(full_model_class_string)
-  if hf_model_class_name is None:
-    print(f"Error: No HuggingFace model mapping found for '{full_model_class_string}'")
-    print(f"Available mappings: {list(hf_model_class_mapping.keys())}")
-    sys.exit(1)
-  
-  # Dynamically import the HuggingFace model class
-  try:
-    transformers_module = importlib.import_module("transformers")
-    hf_model_class = getattr(transformers_module, hf_model_class_name)
-  except (ModuleNotFoundError, AttributeError) as e:
-    print(f"Error importing HuggingFace model class '{hf_model_class_name}': {e}")
-    sys.exit(1)
-  
   # Load pretrained weights from HuggingFace model
   if load_from_hf:
-    hf_model = hf_model_class.from_pretrained(
-      model_config.tokenizer_name,
-      torch_dtype=torch.bfloat16,
-    )
+    hf_model = load_hf_model(model_config)
     logger.info("Loaded model from HuggingFace. Now loading state dict.")
     model.load_state_dict(hf_model.state_dict())
     del hf_model
