@@ -78,6 +78,8 @@ HF_MODEL_CLASS_MAPPING = {
   "qwen.Qwen3ForCausalLM": "Qwen3ForCausalLM",
 }
 
+MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
+
 class Trainer:
   """The trainer."""
 
@@ -333,20 +335,15 @@ class Trainer:
     cpu_model = self.model.cpu()
     hf_model = load_hf_model(self.config.model)
     if is_main_process():
-      print("--------------------------------CKPT Model------------------------------")
+      print("--------------------------------CKPT Model Worker 0------------------------------")
       print(cpu_model)
       print("State dict:")
-      print(cpu_model.state_dict())
-      print("Named parameters:")
-      for param in cpu_model.named_parameters():
-        print(param)
-      print("--------------------------------HF Model--------------------------------")
-      print(hf_model)
-      print("State dict:")
-      print(hf_model.state_dict())
-      print("Named parameters:")
-      for param in hf_model.named_parameters():
-        print(param)
+      for key, value in cpu_model.state_dict().items():
+        print(f"worker 0: {key}, {value}")
+    else:
+      print("--------------------------------CKPT Model Worker 1------------------------------")
+      for key, value in cpu_model.state_dict().items():
+        print(f"worker 1: {key}, {value}")
     # Create a new state dict with _orig_mod removed from keys
     state_dict = cpu_model.state_dict()
     model_state_dict = OrderedDict()
@@ -358,8 +355,10 @@ class Trainer:
         else:
             model_state_dict[key] = value
     hf_model.load_state_dict(model_state_dict)
-    hf_model.save_pretrained(f"{self.config.checkpoint_dir}/consolidated/{self.config.model.model_class}-{self.config.resume_from_checkpoint}")
-    logger.info(f"Consolidated checkpoint saved to {self.config.checkpoint_dir}/consolidated/{self.config.model.model_class}-{self.config.resume_from_checkpoint}")
+    ckpt_suffix = self.config.resume_from_checkpoint.split("/")[-1]
+    consolidated_ckpt_dir = f"{MOUNTED_GCS_DIR}/consolidated_checkpoints/{ckpt_suffix}/{self.config.resume_from_checkpoint}"
+    hf_model.save_pretrained(consolidated_ckpt_dir)    
+    logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
     del hf_model, cpu_model
     xm.wait_device_ops()
 
