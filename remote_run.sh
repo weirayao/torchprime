@@ -31,12 +31,12 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --tunnel-through-iap \
     --worker=all \
     --command='
-    export HF_HOME="<your_absolute_home_dir>/huggingface"; \
-    export HF_TOKEN="<your_huggingface_token>"; \
-    export MOUNTED_GCS_DIR="<your_absolute_home_dir>/sfr-text-diffusion-model-research"; \
+    export HF_HOME="/home/haolin.chen/huggingface"; \
+    export HF_TOKEN="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"; \
+    export MOUNTED_GCS_DIR="/home/haolin.chen/sfr-text-diffusion-model-research"; \
     cd torchprime; \
     git fetch; \
-    git checkout <your_branch>; \
+    git checkout haolin/inference; \
     git pull; \
     source venv/bin/activate; \
     bash '"$RECIPE"'';
