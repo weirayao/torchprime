@@ -4,6 +4,7 @@ import math
 import os
 import sys
 from contextlib import contextmanager
+from collections import OrderedDict
 from functools import partial
 from pathlib import Path
 from timeit import default_timer as timer
@@ -346,9 +347,19 @@ class Trainer:
       print("Named parameters:")
       for param in hf_model.named_parameters():
         print(param)
-    # hf_model.load_state_dict(cpu_model.state_dict())
-    # hf_model.save_pretrained(f"{self.config.checkpoint_dir}/consolidated/{self.config.model.model_class}-{self.config.resume_from_checkpoint}")
-    # logger.info(f"Consolidated checkpoint saved to {self.config.checkpoint_dir}/consolidated/{self.config.model.model_class}-{self.config.resume_from_checkpoint}")
+    # Flatten the state dict
+    state_dict = cpu_model.state_dict()
+    flattened_dict = OrderedDict()
+    for key, value in state_dict.items():
+        if '._orig_mod' in key:
+            # Remove ._orig_mod from the key
+            cleaned_key = key.replace('._orig_mod', '')
+            flattened_dict[cleaned_key] = value
+        else:
+            flattened_dict[key] = value
+    hf_model.load_state_dict(flattened_dict)
+    hf_model.save_pretrained(f"{self.config.checkpoint_dir}/consolidated/{self.config.model.model_class}-{self.config.resume_from_checkpoint}")
+    logger.info(f"Consolidated checkpoint saved to {self.config.checkpoint_dir}/consolidated/{self.config.model.model_class}-{self.config.resume_from_checkpoint}")
     del hf_model, cpu_model
     xm.wait_device_ops()
 
