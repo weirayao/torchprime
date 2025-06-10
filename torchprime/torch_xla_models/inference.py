@@ -8,7 +8,8 @@ import torch.distributed as dist
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from dataclasses import dataclass
+from transformers.tokenization_utils_base import BatchEncoding
+from dataclasses import dataclass, asdict
 
 # Import the initialize_model_class function from train.py
 from torchprime.torch_xla_models.train import initialize_model_class, set_default_dtype
@@ -21,6 +22,8 @@ def is_main_process():
   """Check if this is the main process (rank 0)."""
   return xr.process_index() == 0
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class GenerationConfig:
@@ -29,15 +32,46 @@ class GenerationConfig:
   temperature: float = 1.0
   top_p: float = 0.9
 
+def get_anneal_attn_mask(seq_len, bsz, dtype, device, attn_mask_ratio):
+    mask = torch.full((seq_len, seq_len), 0, device=device)
+    mask_cond = torch.arange(mask.size(-1), device=device)
+    mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 1)
+    causal_mask = mask.to(dtype)
+    
+    random_mask = torch.bernoulli(torch.full((seq_len, seq_len), 0.0, device=device) + attn_mask_ratio)
+
+    anneal_mask = torch.logical_or(causal_mask, random_mask)
+    expanded_mask = anneal_mask[None, None, :, :].expand(bsz, 1, seq_len, seq_len)
+    inverted_mask = 1.0 - expanded_mask.to(dtype)
+
+    return inverted_mask.masked_fill(inverted_mask.to(torch.bool), torch.finfo(dtype).min)
+
+
+def top_p_logits(logits, p=0.9):
+    sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+    # import pdb; pdb.set_trace();
+    cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+
+    # Remove tokens with cumulative probability above the threshold
+    sorted_indices_to_remove = cumulative_probs > p
+    # Shift the indices to the right to keep the first token above the threshold
+    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+    sorted_indices_to_remove[..., 0] = 0
+
+    mask = torch.zeros_like(logits, dtype=torch.bool, device=logits.device)
+    mask = mask.scatter_(-1, sorted_indices, sorted_indices_to_remove)
+    logits = logits.masked_fill(mask, torch.finfo(logits.dtype).min)
+    return logits
 
 def generate(
   model: AutoModelForCausalLM,
   tokenizer: AutoTokenizer,
-  inputs: dict[str, torch.Tensor],
+  inputs: BatchEncoding,
   args: GenerationConfig
 ):
   # Set model to evaluation mode
   model.eval()
+  logger.info(f"Start sampling with params: {asdict(args)}")
   temperature = args.temperature
   top_p = args.top_p
 
