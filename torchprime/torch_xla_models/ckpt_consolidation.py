@@ -344,23 +344,23 @@ class Trainer:
       print("--------------------------------CKPT Model Worker 1------------------------------")
       for key, value in cpu_model.state_dict().items():
         print(f"worker 1: {key}, {value}")
-    # # Create a new state dict with _orig_mod removed from keys
-    # if is_main_process():
-    #   state_dict = cpu_model.state_dict()
-    #   model_state_dict = OrderedDict()
-    #   for key, value in state_dict.items():
-    #       if '._orig_mod' in key:
-    #           # Remove ._orig_mod from the key
-    #           cleaned_key = key.replace('._orig_mod', '')
-    #           model_state_dict[cleaned_key] = value
-    #       else:
-    #           model_state_dict[key] = value
-    #   hf_model.load_state_dict(model_state_dict)
-    #   ckpt_suffix = self.config.resume_from_checkpoint.split("/")[-1]
-    #   consolidated_ckpt_dir = f"{MOUNTED_GCS_DIR}/consolidated_checkpoints/{ckpt_suffix}/{self.config.resume_from_checkpoint}"
-    #   hf_model.save_pretrained(consolidated_ckpt_dir)    
-    #   logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
-    # del hf_model, cpu_model
+    # Create a new state dict with _orig_mod removed from keys
+    if is_main_process():
+      state_dict = cpu_model.state_dict()
+      model_state_dict = OrderedDict()
+      for key, value in state_dict.items():
+        if '._orig_mod' in key:
+          # Remove ._orig_mod from the key
+          cleaned_key = key.replace('._orig_mod', '')
+          model_state_dict[cleaned_key] = value
+        else:
+          model_state_dict[key] = value
+      hf_model.load_state_dict(model_state_dict)
+      ckpt_suffix = self.config.resume_from_checkpoint.split("/")[-1]
+      consolidated_ckpt_dir = f"{MOUNTED_GCS_DIR}/consolidated_checkpoints/{ckpt_suffix}/{self.config.resume_from_checkpoint}"
+      hf_model.save_pretrained(consolidated_ckpt_dir)    
+      logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
+    del hf_model, cpu_model
     xm.wait_device_ops()
 
 

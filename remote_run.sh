@@ -31,7 +31,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --tunnel-through-iap \
     --worker=all \
     --command='
-    export HF_HOME="~/huggingface"; \
+    export HF_HOME="/home/haolin.chen/huggingface"; \
     export HF_TOKEN="<your_huggingface_token>"; \
     export MOUNTED_GCS_DIR="<your_absolute_home_dir>/sfr-text-diffusion-model-research"; \
     cd torchprime; \
