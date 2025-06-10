@@ -330,15 +330,20 @@ class Trainer:
     self._load_checkpoint()
     logger.info(f"Consolidating checkpoints from {self.config.checkpoint_dir} to {self.config.checkpoint_dir}/consolidated")
     cpu_model = self.model.cpu()
-    print("--------------------------------CKPT Model------------------------------")
-    print(cpu_model)
+    hf_model = load_hf_model(self.config.model)
     if is_main_process():
+      print("--------------------------------CKPT Model------------------------------")
+      print(cpu_model)
+      print("State dict:")
+      print(cpu_model.state_dict())
+      print("Named parameters:")
       for param in cpu_model.named_parameters():
         print(param)
-    print("--------------------------------HF Model--------------------------------")
-    hf_model = load_hf_model(self.config.model)
-    print(hf_model)
-    if is_main_process():
+      print("--------------------------------HF Model--------------------------------")
+      print(hf_model)
+      print("State dict:")
+      print(hf_model.state_dict())
+      print("Named parameters:")
       for param in hf_model.named_parameters():
         print(param)
     # hf_model.load_state_dict(cpu_model.state_dict())
