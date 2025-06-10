@@ -347,17 +347,17 @@ class Trainer:
       print("Named parameters:")
       for param in hf_model.named_parameters():
         print(param)
-    # Flatten the state dict
+    # Create a new state dict with _orig_mod removed from keys
     state_dict = cpu_model.state_dict()
-    flattened_dict = OrderedDict()
+    model_state_dict = OrderedDict()
     for key, value in state_dict.items():
         if '._orig_mod' in key:
             # Remove ._orig_mod from the key
             cleaned_key = key.replace('._orig_mod', '')
-            flattened_dict[cleaned_key] = value
+            model_state_dict[cleaned_key] = value
         else:
-            flattened_dict[key] = value
-    hf_model.load_state_dict(flattened_dict)
+            model_state_dict[key] = value
+    hf_model.load_state_dict(model_state_dict)
     hf_model.save_pretrained(f"{self.config.checkpoint_dir}/consolidated/{self.config.model.model_class}-{self.config.resume_from_checkpoint}")
     logger.info(f"Consolidated checkpoint saved to {self.config.checkpoint_dir}/consolidated/{self.config.model.model_class}-{self.config.resume_from_checkpoint}")
     del hf_model, cpu_model
