@@ -29,7 +29,7 @@ resume_from_checkpoint: null
 save_steps: 5000
 
 optimizer:
-  learning_rate: 2.88.e-4 # 5.e-5
+  learning_rate: 3.e-4 # 5.e-5
 lr_scheduler:
   type: linear
   warmup_steps: 1200 # around 1% of one epoch
