@@ -38,6 +38,7 @@ from torch_xla.experimental.distributed_checkpoint import CheckpointManager, pri
 from transformers.optimization import Adafactor
 from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
+from transformers import PreTrainedTokenizerBase
 
 from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset
 from torchprime.layers.sequential import HomogeneousSequential
@@ -88,6 +89,7 @@ class Trainer:
   def __init__(
     self,
     model: nn.Module,
+    tokenizer: PreTrainedTokenizerBase,
     config: DictConfig,
     train_dataset: Dataset | IterableDataset | None,
   ):
@@ -95,6 +97,7 @@ class Trainer:
     self.device = xm.xla_device()
     self.global_batch_size = self.config.global_batch_size
     self.train_dataset = train_dataset
+    self.tokenizer = tokenizer
 
     # Set up SPMD mesh and shard the model
     mesh = get_mesh(self.config)
@@ -328,8 +331,8 @@ class Trainer:
         classes_to_checkpoint.add(cls)
     return tuple(classes_to_checkpoint)
 
-  def consolidate_checkpoint(self):    
-    ckpt_suffix = self.config.checkpoint_dir.split("/")[-1]
+  def consolidate_checkpoint(self):
+    ckpt_suffix = self.ckpt_dir.split("/")[-1]
     consolidated_ckpt_dir = f"{MOUNTED_GCS_DIR}/consolidated_checkpoints/{ckpt_suffix}/{self.config.resume_from_checkpoint}"
     logger.info(f"Consolidating checkpoint to {consolidated_ckpt_dir}")
     logger.info("Moving model to CPU...")
@@ -346,7 +349,8 @@ class Trainer:
       else:
         model_state_dict[key] = value
     self.hf_model.load_state_dict(model_state_dict)
-    self.hf_model.save_pretrained(consolidated_ckpt_dir)    
+    self.hf_model.save_pretrained(consolidated_ckpt_dir)
+    self.tokenizer.save_pretrained(consolidated_ckpt_dir)
     logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
 
 
@@ -639,6 +643,7 @@ def main(config: DictConfig):
   data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # Needed as we don't use sampler for streaming dataset
   trainer = Trainer(
     model=model,
+    tokenizer=tokenizer,
     config=config,
     train_dataset=data,
   )

@@ -393,6 +393,7 @@ class Qwen3ForCausalLM(nn.Module):
     self.model = Qwen3Model(config)
     self.vocab_size = config.vocab_size
     self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+    self.mask_token_id = config.mask_token_id
 
     # Initialize weights and apply final processing
     self.apply(self._init_weights)
@@ -417,7 +418,7 @@ class Qwen3ForCausalLM(nn.Module):
   ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:
     # weiran: diffullama
     sampling_eps = 1e-3
-    mask_token_id = 151669 # <mask>
+    mask_token_id = self.mask_token_id
     loss_func = nn.CrossEntropyLoss(reduction="none")
     # input_ids: [bs, seq_len]
     # source mask is all-false, so all tokens in the sequence can be masked for pretraining
