@@ -8,8 +8,19 @@ dataset_name: null
 dataset_config_name: null
 # GCS dataset names and mixing weights
 gcs_dataset_names:
+  - DM_Mathematics
+  - Falcon-refinedweb
+  - Gutenberg
+  - RedPajama
+  - RedPajama_math
   - Redpajama-Arxiv
+  - Wikipedia_en
+  - c4_2023-14
+  - cosmopedia_v2_parquet
+  - dclm-baseline-1.0-shuffled
+  - fineweb_edu_dedup
+  - open-web-math
   - python_edu
-weights:
-  - 0.5
-  - 0.5
+  - stackv2_Python_shuffled
+  - the-stack-v2-train-smol
+weights: null
