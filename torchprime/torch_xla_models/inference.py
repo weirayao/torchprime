@@ -2,12 +2,13 @@ import logging
 import sys
 import torch
 import torch_xla
+import torch.distributions as dists
 import torch.nn.functional as F
 import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
 import torch.distributed as dist
 import hydra
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from transformers import AutoTokenizer, PreTrainedModel, PreTrainedTokenizerBase
 from transformers.tokenization_utils_base import BatchEncoding
 from dataclasses import dataclass, asdict
@@ -72,19 +73,168 @@ def top_p_logits(logits, p=0.9):
     return logits
 
 
+def sample_tokens_with_shift(
+    model: PreTrainedModel,
+    xt: torch.Tensor,
+    x: torch.Tensor,
+    annealed_attention_mask: torch.Tensor,
+    maskable_mask: torch.Tensor,
+    temperature: float,
+    top_p: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Sample tokens from the model output with top-p filtering and handle shifting.
+
+    Args:
+        model: The model to use for inference
+        xt: Current input tokens (with masks)
+        x: Original input tokens (for shifting)
+        annealed_attention_mask: Attention mask for the model
+        maskable_mask: Mask indicating which positions can be modified
+        temperature: Temperature for sampling
+        top_p: Top-p threshold for filtering
+
+    Returns:
+        Updated x0 tensor with sampled tokens and their scores
+    """
+    # Get model predictions
+    logits = model(xt, attention_mask=annealed_attention_mask)
+
+    # Apply temperature scaling and top-p filtering
+    scaled_logits = logits / temperature
+    filtered_logits = top_p_logits(scaled_logits, p=top_p)
+
+    # Convert to probability distribution and sample
+    scores = torch.log_softmax(filtered_logits, dim=-1)
+    sampled_tokens = dists.Categorical(logits=scores).sample()
+    sampled_scores = torch.gather(scores, -1, sampled_tokens.unsqueeze(-1)).squeeze(-1)
+
+    # Shift tokens and scores left by 1 position
+    x0 = torch.cat([x[:, 0:1], sampled_tokens[:, :-1]], dim=1)
+    x0_scores = torch.cat([sampled_scores[:, 0:1], sampled_scores[:, :-1]], dim=1)
+
+    # Apply mask to keep original tokens in non-maskable positions
+    x0 = xt.masked_scatter(maskable_mask, x0[maskable_mask])
+    return x0, x0_scores
+
+
+@torch.no_grad()
 def generate(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     inputs: BatchEncoding,
     args: GenerationConfig,
-):
+    verbose: bool = False,
+) -> torch.Tensor:
     # Set model to evaluation mode
     model.eval()
     logger.info(f"Start sampling with params: {asdict(args)}")
     temperature = args.temperature
     top_p = args.top_p
 
-    x = inputs.input_ids.to(model.device)
+    x: torch.Tensor = inputs.input_ids.to(model.device)
+    src_mask: torch.Tensor = inputs.attention_mask.bool().to(model.device)
+
+    seq_len = x.size(1)
+    batch_size = x.size(0)
+    annealed_attention_mask = get_anneal_attn_mask(
+        seq_len, batch_size, dtype=model.dtype, device=model.device, attn_mask_ratio=1.0
+    )  # all 0
+    maskable_mask = ~src_mask
+
+    # first forward, all position except src is [M]
+    xt: torch.Tensor = x.masked_fill(maskable_mask, tokenizer.mask_token_id)
+    if verbose:
+        logger.info(f"t=T(in): {tokenizer.decode(xt.tolist()[0])}")
+    x0, x0_scores = sample_tokens_with_shift(
+        model, xt, x, annealed_attention_mask, maskable_mask, temperature, top_p
+    )
+    if verbose:
+        logger.info(f"t=T(out): {tokenizer.decode(x0.tolist()[0])}")
+
+    for t in range(args.diffusion_steps - 1, 0, -1):
+        # select rate% tokens to be still [MASK]
+        p_to_x0 = 1 / (t + 1)
+
+        masked_to_x0 = maskable_mask & (
+            torch.rand_like(x0, dtype=torch.float) < p_to_x0
+        )
+        xt.masked_scatter_(masked_to_x0, x0[masked_to_x0])
+        maskable_mask = maskable_mask.masked_fill(masked_to_x0, False)
+        if verbose:
+            logger.info(f"t={t}(in): {tokenizer.decode(xt.tolist()[0])}")
+
+        x0, x0_scores = sample_tokens_with_shift(
+            model, xt, x, annealed_attention_mask, maskable_mask, temperature, top_p
+        )
+        if verbose:
+            logger.info(f"t={t}(out): {tokenizer.decode(x0.tolist()[0])}")
+
+    return x0[:, 1:]  # shift left by 1
+
+
+def prepare_inputs(
+    tokenizer: PreTrainedTokenizerBase,
+    messages: list[dict],
+    max_new_tokens: int,
+    enable_thinking: bool = True,
+) -> tuple[dict[str, torch.Tensor], BatchEncoding]:
+    """
+    Prepare model inputs by applying chat template, tokenizing, and extending with mask tokens.
+
+    Args:
+        tokenizer: The tokenizer to use
+        messages: List of chat messages in the format [{"role": "user", "content": "..."}]
+        max_new_tokens: Number of new tokens to generate
+        enable_thinking: Whether to enable thinking mode in chat template
+
+    Returns:
+        BatchEncoding with input_ids and attention_mask extended for generation
+    """
+    # Apply chat template
+    text_inputs = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+        enable_thinking=enable_thinking,
+    )
+    print(f"Input text: {text_inputs}")
+
+    # Tokenize input
+    ar_inputs = tokenizer([text_inputs], return_tensors="pt")
+
+    # Extend input_ids with mask tokens for generation
+    ddlm_inputs = {
+        "input_ids": torch.cat(
+            [
+                ar_inputs.input_ids,
+                torch.full(
+                    size=(
+                        ar_inputs.input_ids.shape[0],
+                        max_new_tokens,
+                    ),
+                    fill_value=tokenizer.mask_token_id,
+                    dtype=ar_inputs.input_ids.dtype,
+                ),
+            ],
+            dim=1,
+        ),
+        "src_mask": torch.cat(
+            [
+                ar_inputs.attention_mask,
+                torch.zeros(
+                    size=(
+                        ar_inputs.attention_mask.shape[0],
+                        max_new_tokens,
+                    ),
+                    dtype=ar_inputs.attention_mask.dtype,
+                ),
+            ],
+            dim=1,
+        ),
+    }
+
+    return ddlm_inputs, ar_inputs
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="default_inference")
@@ -93,9 +243,7 @@ def main(config: DictConfig):
     print(f"Using device: {device}")
 
     model_config = config.model
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_config.tokenizer_name
-    )
+    tokenizer = AutoTokenizer.from_pretrained(model_config.tokenizer_name)
     if not hasattr(tokenizer, "mask_token_id"):
         tokenizer.add_tokens("<|mask|>", special_tokens=True)
         tokenizer.add_special_tokens(
@@ -107,21 +255,17 @@ def main(config: DictConfig):
 
     prompt = "Give me a short introduction to large language model."
     messages = [{"role": "user", "content": prompt}]
-    # Apply chat template
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=True,  # Switches between thinking and non-thinking modes
-    )
-    print(f"Input text: {text}")
-
-    # Tokenize input and move to TPU device
-    model_inputs = tokenizer([text], return_tensors="pt")
     generation_config = GenerationConfig(**config.generation)
-    generation = generate(model, tokenizer, model_inputs, generation_config)
+
+    ddlm_inputs, ar_inputs = prepare_inputs(
+        tokenizer, messages, generation_config.max_new_tokens, enable_thinking=True
+    )
+
+    generation = generate(
+        model, tokenizer, ddlm_inputs, generation_config, verbose=True
+    )
     # Move results back to CPU for processing
-    output_ids = generation[0][len(model_inputs.input_ids[0]) :].cpu().tolist()
+    output_ids = generation[0][len(ar_inputs.input_ids[0]) :].cpu().tolist()
 
     # Parse thinking content (if present)
     try:
