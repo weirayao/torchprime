@@ -30,6 +30,7 @@ from torch_xla.distributed.fsdp import checkpoint_module
 from torch_xla.distributed.spmd.xla_sharding import apply_xla_patch_to_nn_linear
 from transformers import (
   AutoTokenizer,
+  PreTrainedTokenizerBase,
   default_data_collator,
   get_scheduler,
   set_seed,
@@ -88,6 +89,7 @@ class Trainer:
   def __init__(
     self,
     model: nn.Module,
+    tokenizer: PreTrainedTokenizerBase,
     config: DictConfig,
     train_dataset: Dataset | IterableDataset | None,
   ):
@@ -129,6 +131,7 @@ class Trainer:
     model = self._add_checkpoint_offload_scan_model(model)
     model = self._add_optimization_barrier_model(model)
     self.model = model
+    self.tokenizer = tokenizer
     self.hf_model = load_hf_model(self.config.model)
 
     # Set up optimizers
@@ -348,6 +351,7 @@ class Trainer:
           model_state_dict[key] = value
       self.hf_model.load_state_dict(model_state_dict)
       self.hf_model.save_pretrained(consolidated_ckpt_dir)
+      self.tokenizer.save_pretrained(consolidated_ckpt_dir)
     logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
 
 
@@ -448,8 +452,7 @@ class Trainer:
           logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
-        # if is_main_process(): TODO: this causes long hanging during training, disable for now.
-        self.consolidate_checkpoint() # NOTE: could be the is_main_process() that causes the long hanging
+        self.consolidate_checkpoint()
         xm.wait_device_ops()  # Ensure save is complete before logging
 
       # Capture profile at the prefer step
@@ -640,6 +643,7 @@ def main(config: DictConfig):
   data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # Needed as we don't use sampler for streaming dataset
   trainer = Trainer(
     model=model,
+    tokenizer=tokenizer,
     config=config,
     train_dataset=data,
   )
