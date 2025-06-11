@@ -29,10 +29,10 @@ resume_from_checkpoint: null
 save_steps: 5000
 
 optimizer:
-  learning_rate: 8.e-5
+  learning_rate: 2.e-4
 lr_scheduler:
   type: linear
-  warmup_steps: 1200
+  warmup_steps: 2400
 
 # The virtual device mesh shape to use within a TPU slice. This is also called
 # the "ICI mesh", since devices within a slice enjoy a faster network called
