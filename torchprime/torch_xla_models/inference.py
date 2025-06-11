@@ -122,7 +122,7 @@ def sample_tokens_with_shift(
 def generate(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
-    inputs: BatchEncoding,
+    inputs: dict[str, torch.Tensor],
     args: GenerationConfig,
     verbose: bool = False,
 ) -> torch.Tensor:
@@ -132,8 +132,11 @@ def generate(
     temperature = args.temperature
     top_p = args.top_p
 
-    x: torch.Tensor = inputs.input_ids.to(model.device)
-    src_mask: torch.Tensor = inputs.attention_mask.bool().to(model.device)
+    x = inputs["input_ids"].to(model.device)
+    if "src_mask" not in inputs:
+        src_mask = torch.zeros_like(x, dtype=torch.bool).to(model.device)
+    else:
+        src_mask = inputs["src_mask"].bool().to(model.device)
 
     seq_len = x.size(1)
     batch_size = x.size(0)
@@ -146,7 +149,7 @@ def generate(
     xt: torch.Tensor = x.masked_fill(maskable_mask, tokenizer.mask_token_id)
     if verbose:
         logger.info(f"t=T(in): {tokenizer.decode(xt.tolist()[0])}")
-    x0, x0_scores = sample_tokens_with_shift(
+    x0, _ = sample_tokens_with_shift(
         model, xt, x, annealed_attention_mask, maskable_mask, temperature, top_p
     )
     if verbose:
@@ -164,7 +167,7 @@ def generate(
         if verbose:
             logger.info(f"t={t}(in): {tokenizer.decode(xt.tolist()[0])}")
 
-        x0, x0_scores = sample_tokens_with_shift(
+        x0, _ = sample_tokens_with_shift(
             model, xt, x, annealed_attention_mask, maskable_mask, temperature, top_p
         )
         if verbose:
