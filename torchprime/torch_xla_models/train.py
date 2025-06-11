@@ -328,25 +328,26 @@ class Trainer:
         classes_to_checkpoint.add(cls)
     return tuple(classes_to_checkpoint)
 
-  def consolidate_checkpoint(self):    
+  def consolidate_checkpoint(self): 
     ckpt_suffix = self.config.checkpoint_dir.split("/")[-1]
     consolidated_ckpt_dir = f"{MOUNTED_GCS_DIR}/consolidated_checkpoints/{ckpt_suffix}/{self.config.resume_from_checkpoint}"
     logger.info(f"Consolidating checkpoint to {consolidated_ckpt_dir}")
     logger.info("Moving model to CPU...")
     cpu_model = self.model.cpu()
     # Create a new state dict with _orig_mod removed from keys
-    logger.info("Creating new state dict...")
-    state_dict = cpu_model.state_dict()
-    model_state_dict = OrderedDict()
-    for key, value in state_dict.items():
-      if '._orig_mod' in key:
-        # Remove ._orig_mod from the key
-        cleaned_key = key.replace('._orig_mod', '')
-        model_state_dict[cleaned_key] = value
-      else:
-        model_state_dict[key] = value
-    self.hf_model.load_state_dict(model_state_dict)
-    self.hf_model.save_pretrained(consolidated_ckpt_dir)    
+    if is_main_process():
+      logger.info("Creating new state dict...")
+      state_dict = cpu_model.state_dict()
+      model_state_dict = OrderedDict()
+      for key, value in state_dict.items():
+        if '._orig_mod' in key:
+          # Remove ._orig_mod from the key
+          cleaned_key = key.replace('._orig_mod', '')
+          model_state_dict[cleaned_key] = value
+        else:
+          model_state_dict[key] = value
+      self.hf_model.load_state_dict(model_state_dict)
+      self.hf_model.save_pretrained(consolidated_ckpt_dir)
     logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
 
 
@@ -448,7 +449,7 @@ class Trainer:
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
         # if is_main_process(): TODO: this causes long hanging during training, disable for now.
-        #   self.consolidate_checkpoint()
+        self.consolidate_checkpoint() # NOTE: could be the is_main_process() that causes the long hanging
         xm.wait_device_ops()  # Ensure save is complete before logging
 
       # Capture profile at the prefer step
