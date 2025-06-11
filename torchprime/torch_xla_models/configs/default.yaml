@@ -10,11 +10,11 @@ defaults:
 
 global_batch_size: 4
 logging_steps: 10
-max_steps: 15
+max_steps: 240000
 
 
 seed: 42
-profile_step: 2
+profile_step: -1
 
 # This might be overwritten when using tp run to launch the run using XPK
 profile_dir: profile
@@ -26,13 +26,13 @@ output_dir: outputs
 # Checkpoint directory
 checkpoint_dir: checkpoints/
 resume_from_checkpoint: null
-save_steps: 1000
+save_steps: 5000
 
 optimizer:
-  learning_rate: 5.e-5
+  learning_rate: 3.e-4
 lr_scheduler:
   type: linear
-  warmup_steps: 0
+  warmup_steps: 1200
 
 # The virtual device mesh shape to use within a TPU slice. This is also called
 # the "ICI mesh", since devices within a slice enjoy a faster network called
