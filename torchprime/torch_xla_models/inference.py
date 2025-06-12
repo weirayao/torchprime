@@ -142,7 +142,7 @@ def generate(
     seq_len = x.size(1)
     batch_size = x.size(0)
     annealed_attention_mask = get_anneal_attn_mask(
-        seq_len, batch_size, dtype=model.dtype, device=device, attn_mask_ratio=1.0
+        seq_len, batch_size, dtype=torch.bfloat16, device=device, attn_mask_ratio=1.0
     )  # all 0
     maskable_mask = ~src_mask
 
