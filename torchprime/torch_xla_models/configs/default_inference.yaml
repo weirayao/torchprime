@@ -8,10 +8,10 @@ defaults:
   - model: flex-qwen-1b # refers to model/llama-3-8b.yaml
 
 generation:
-  - diffusion_steps: 10
-  - max_new_tokens: 100
-  - temperature: 1.0
-  - top_p: 0.95
+  diffusion_steps: 10
+  max_new_tokens: 100
+  temperature: 1.0
+  top_p: 0.95
 
 # These are default values for model activation rematerialization configuration.
 # They can be overridden on the command line or by importing one of the presets
