@@ -8,7 +8,7 @@ import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
 import torch.distributed as dist
 import hydra
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from transformers import AutoTokenizer, PreTrainedModel, PreTrainedTokenizerBase
 from transformers.tokenization_utils_base import BatchEncoding
 from dataclasses import dataclass, asdict
@@ -243,7 +243,8 @@ def prepare_inputs(
 @hydra.main(version_base=None, config_path="configs", config_name="default_inference")
 def main(config: DictConfig):
     device = xm.xla_device()
-    print(f"Using device: {device}")
+    logger.info(f"Using device: {device}")
+    logger.info(f"Config: {OmegaConf.to_yaml(config)}")
 
     model_config = config.model
     tokenizer = AutoTokenizer.from_pretrained(model_config.tokenizer_name)

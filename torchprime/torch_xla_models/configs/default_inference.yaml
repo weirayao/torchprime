@@ -13,34 +13,6 @@ generation:
   - temperature: 1.0
   - top_p: 0.95
 
-# Checkpoint directory
-checkpoint_dir: checkpoints/
-resume_from_checkpoint: null
-save_steps: 1000
-
-
-# The virtual device mesh shape to use within a TPU slice. This is also called
-# the "ICI mesh", since devices within a slice enjoy a faster network called
-# "Inter-Chip Interconnect".
-ici_mesh:
-  data: 1
-  fsdp: 4
-  tensor: 1
-  expert: 1
-
-# Shape of the logical mesh where each element is a TPU slice. This is called
-# "Data Center Network (DCN) mesh" because TPU slices are usually connected
-# together with slower data center networking, with the faster ICI network
-# used within a slice.
-#
-# As an example, to enable 2-way data parallelism across 2 TPU slices, you may
-# specify `dcn_mesh.data=2`.
-dcn_mesh:
-  data: 1
-  fsdp: 1
-  tensor: 1
-  expert: 1
-
 # These are default values for model activation rematerialization configuration.
 # They can be overridden on the command line or by importing one of the presets
 # in the `model/remat` directory.
