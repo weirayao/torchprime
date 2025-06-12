@@ -131,17 +131,18 @@ def generate(
     logger.info(f"Start sampling with params: {asdict(args)}")
     temperature = args.temperature
     top_p = args.top_p
+    device = xm.xla_device()
 
-    x = inputs["input_ids"].to(model.device)
+    x = inputs["input_ids"].to(device)
     if "src_mask" not in inputs:
-        src_mask = torch.zeros_like(x, dtype=torch.bool).to(model.device)
+        src_mask = torch.zeros_like(x, dtype=torch.bool).to(device)
     else:
-        src_mask = inputs["src_mask"].bool().to(model.device)
+        src_mask = inputs["src_mask"].bool().to(device)
 
     seq_len = x.size(1)
     batch_size = x.size(0)
     annealed_attention_mask = get_anneal_attn_mask(
-        seq_len, batch_size, dtype=model.dtype, device=model.device, attn_mask_ratio=1.0
+        seq_len, batch_size, dtype=model.dtype, device=device, attn_mask_ratio=1.0
     )  # all 0
     maskable_mask = ~src_mask
 
