@@ -447,8 +447,8 @@ class Trainer:
           logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
-        if is_main_process():
-          self.consolidate_checkpoint()
+        # if is_main_process(): TODO: this causes long hanging during training, disable for now.
+        #   self.consolidate_checkpoint()
         xm.wait_device_ops()  # Ensure save is complete before logging
 
       # Capture profile at the prefer step
