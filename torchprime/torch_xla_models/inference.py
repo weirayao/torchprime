@@ -98,7 +98,7 @@ def sample_tokens_with_shift(
         Updated x0 tensor with sampled tokens and their scores
     """
     # Get model predictions
-    logits = model(xt, attention_mask=annealed_attention_mask)
+    logits, _ = model(xt, attention_mask=annealed_attention_mask)
 
     # Apply temperature scaling and top-p filtering
     scaled_logits = logits / temperature
