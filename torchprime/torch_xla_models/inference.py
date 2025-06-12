@@ -110,12 +110,13 @@ def sample_tokens_with_shift(
         x0 = dists.Categorical(logits=scores).sample()
         x0_scores = torch.gather(scores, -1, x0.unsqueeze(-1)).squeeze(-1)
 
-    # Shift tokens and scores right by 1 position
-    x0 = torch.cat([x[:, 0:1], x0[:, :-1]], dim=1)
-    x0_scores = torch.cat([x0_scores[:, 0:1], x0_scores[:, :-1]], dim=1)
+    # Shift tokens and scores right by 1 position NOTE: we already cut one token in forward pass
+    x0 = torch.cat([x[:, 0:1], x0], dim=1)
+    # x0_scores = torch.cat([x0_scores[:, 0:1], x0_scores[:, :-1]], dim=1)
 
     # Apply mask to keep original tokens in non-maskable positions
     x0 = xt.masked_scatter(maskable_mask, x0[maskable_mask])
+    # x0 = torch.where(maskable_mask, x0, xt) NOTE: alternative?
     return x0, x0_scores
 
 
