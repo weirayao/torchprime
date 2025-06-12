@@ -73,7 +73,7 @@ def top_p_logits(logits, p=0.9):
     return logits
 
 
-def sample_tokens_with_shift(
+def sample(
     model: PreTrainedModel,
     xt: torch.Tensor,
     x: torch.Tensor,
@@ -100,24 +100,26 @@ def sample_tokens_with_shift(
     """
     # Get model predictions
     logits, _ = model(xt, attention_mask=annealed_attention_mask)
-    logits = top_p_logits(logits / temperature, p=top_p)
+    logits = top_p_logits(logits / temperature + 1e-5, p=top_p)
 
     # Convert to probability distribution and sample
     scores = torch.log_softmax(logits, dim=-1)
-    if greedy:
-        x0_scores, x0 = scores.max(-1)
+    if greedy: # TODO: rethink greedy sampling
+        _, x0 = scores.max(-1)
     else:
         x0 = dists.Categorical(logits=scores).sample()
-        x0_scores = torch.gather(scores, -1, x0.unsqueeze(-1)).squeeze(-1)
+        # x0_scores = torch.gather(scores, -1, x0.unsqueeze(-1)).squeeze(-1)
 
-    # Shift tokens and scores right by 1 position NOTE: we already cut one token in forward pass
+    # NOTE: we already cut one token in forward pass, so we don't need to cut x0 here
+    # Shift tokens and scores right by 1 position
     x0 = torch.cat([x[:, 0:1], x0], dim=1)
     # x0_scores = torch.cat([x0_scores[:, 0:1], x0_scores[:, :-1]], dim=1)
 
-    # Apply mask to keep original tokens in non-maskable positions
+    # replace output of non-[MASK] positions with xt
+    # x0: predicted tokens
+    # x0[maskable_mask]: predicted tokens in masked positions
     x0 = xt.masked_scatter(maskable_mask, x0[maskable_mask])
-    # x0 = torch.where(maskable_mask, x0, xt) NOTE: alternative?
-    return x0, x0_scores
+    return x0
 
 
 @torch.no_grad()
@@ -151,12 +153,12 @@ def generate(
     # first forward, all position except src is [M]
     xt: torch.Tensor = x.masked_fill(maskable_mask, tokenizer.mask_token_id)
     if verbose:
-        logger.info(f"t=T(in): {tokenizer.decode(xt.tolist()[0])}")
-    x0, _ = sample_tokens_with_shift(
+        logger.info(f"t={args.diffusion_steps}(in): {tokenizer.decode(xt.tolist()[0])}")
+    x0 = sample(
         model, xt, x, annealed_attention_mask, maskable_mask, temperature, top_p
     )
     if verbose:
-        logger.info(f"t=T(out): {tokenizer.decode(x0.tolist()[0])}")
+        logger.info(f"t={args.diffusion_steps}(out): {tokenizer.decode(x0.tolist()[0])}")
 
     for t in range(args.diffusion_steps - 1, 0, -1):
         # select rate% tokens to be still [MASK]
@@ -164,13 +166,13 @@ def generate(
 
         masked_to_x0 = maskable_mask & (
             torch.rand_like(x0, dtype=torch.float) < p_to_x0
-        )
+        ) # a token is previously [MASK] has probability p_to_x0 to be replaced by x0
         xt.masked_scatter_(masked_to_x0, x0[masked_to_x0])
         maskable_mask = maskable_mask.masked_fill(masked_to_x0, False)
         if verbose:
             logger.info(f"t={t}(in): {tokenizer.decode(xt.tolist()[0])}")
 
-        x0, _ = sample_tokens_with_shift(
+        x0 = sample(
             model, xt, x, annealed_attention_mask, maskable_mask, temperature, top_p
         )
         if verbose:
@@ -181,7 +183,7 @@ def generate(
 
 def prepare_inputs(
     tokenizer: PreTrainedTokenizerBase,
-    messages: list[dict],
+    messages: str | list[dict],
     max_new_tokens: int,
     enable_thinking: bool = True,
 ) -> tuple[dict[str, torch.Tensor], BatchEncoding]:
@@ -198,16 +200,22 @@ def prepare_inputs(
         BatchEncoding with input_ids and attention_mask extended for generation
     """
     # Apply chat template
-    text_inputs = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=enable_thinking,
-    )
+    if isinstance(messages, str):
+        text_inputs = tokenizer.pad_token + messages # NOTE: we shift one token and we don't apply chat template
+        if not enable_thinking:
+            text_inputs += "<think> </think>"
+    else:
+        text_inputs = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=enable_thinking,
+        )
     print(f"Input text: {text_inputs}")
 
     # Tokenize input
     ar_inputs = tokenizer([text_inputs], return_tensors="pt")
+
 
     # Extend input_ids with mask tokens for generation
     mask_token_ids = torch.full(
@@ -257,12 +265,13 @@ def main(config: DictConfig):
     xm.wait_device_ops()
 
     logger.info("Preparing inputs...")
-    prompt = "Give me a short introduction to large language model."
-    messages = [{"role": "user", "content": prompt}]
+    prompt = "Write a short introduction to large language model: "
+    # messages = [{"role": "user", "content": prompt}]
+    messages = prompt
     generation_config = GenerationConfig(**OmegaConf.to_container(config.generation))
 
     ddlm_inputs, ar_inputs = prepare_inputs(
-        tokenizer, messages, generation_config.max_new_tokens, enable_thinking=True
+        tokenizer, messages, generation_config.max_new_tokens, enable_thinking=False
     )
 
     logger.info("Generating...")
