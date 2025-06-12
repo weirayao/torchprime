@@ -2,7 +2,7 @@ TPU_VM_NAME="sfr-haolin-chen-v4-16"
 TPU_ZONE="us-central2-b"
 
 # Default recipe if none is provided
-RECIPE="recipes/train_qwen3_1.7b.sh"
+RECIPE="recipes/test_inference.sh"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -37,6 +37,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     cd torchprime; \
     git fetch; \
     git checkout haolin/inference; \
-    git pull; \
+    git reset --hard HEAD; \
+    git pull --rebase -f; \
     source venv/bin/activate; \
     bash '"$RECIPE"'';
