@@ -247,7 +247,7 @@ def main(config: DictConfig):
 
     model_config = config.model
     tokenizer = AutoTokenizer.from_pretrained(model_config.tokenizer_name)
-    if not hasattr(tokenizer, "mask_token_id"):
+    if tokenizer.mask_token is None:
         tokenizer.add_tokens("<|mask|>", special_tokens=True)
         tokenizer.add_special_tokens(
             {"mask_token": "<|mask|>"}, replace_additional_special_tokens=False
