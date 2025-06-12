@@ -242,9 +242,8 @@ def prepare_inputs(
 
 @hydra.main(version_base=None, config_path="configs", config_name="default_inference")
 def main(config: DictConfig):
-    device = xm.xla_device()
-    logger.info(f"Using device: {device}")
-    logger.info(f"Config: {OmegaConf.to_yaml(config)}")
+    if is_main_process():
+        logger.info(f"Config: {OmegaConf.to_yaml(config)}")
 
     model_config = config.model
     tokenizer = AutoTokenizer.from_pretrained(model_config.tokenizer_name)
@@ -254,17 +253,21 @@ def main(config: DictConfig):
             {"mask_token": "<|mask|>"}, replace_additional_special_tokens=False
         )
 
+    logger.info("Initializing model...")
     with set_default_dtype(torch.bfloat16), torch_xla.device():
         model = initialize_model_class(model_config)
+    xm.wait_device_ops()
 
+    logger.info("Preparing inputs...")
     prompt = "Give me a short introduction to large language model."
     messages = [{"role": "user", "content": prompt}]
-    generation_config = GenerationConfig(**config.generation)
+    generation_config = GenerationConfig(**OmegaConf.to_container(config.generation))
 
     ddlm_inputs, ar_inputs = prepare_inputs(
         tokenizer, messages, generation_config.max_new_tokens, enable_thinking=True
     )
 
+    logger.info("Generating...")
     generation = generate(
         model, tokenizer, ddlm_inputs, generation_config, verbose=True
     )

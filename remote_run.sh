@@ -37,7 +37,6 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     cd torchprime; \
     git fetch; \
     git checkout haolin/inference; \
-    git reset --hard HEAD; \
-    git pull --rebase -f; \
+    git pull; \
     source venv/bin/activate; \
     bash '"$RECIPE"'';

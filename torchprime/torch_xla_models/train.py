@@ -509,6 +509,7 @@ class Trainer:
     return loss
 
 def load_hf_model(model_config):
+  logger.info(f"Loading HuggingFace model from {model_config.tokenizer_name}")
   hf_model_class_name = HF_MODEL_CLASS_MAPPING.get(model_config.model_class)
   if hf_model_class_name is None:
     print(f"Error: No HuggingFace model mapping found for '{model_config.model_class}'")
