@@ -99,19 +99,16 @@ def sample_tokens_with_shift(
     """
     # Get model predictions
     logits, _ = model(xt, attention_mask=annealed_attention_mask)
-
-    # Apply temperature scaling and top-p filtering
-    scaled_logits = logits / temperature
-    filtered_logits = top_p_logits(scaled_logits, p=top_p)
+    logits = top_p_logits(logits / temperature, p=top_p)
 
     # Convert to probability distribution and sample
-    scores = torch.log_softmax(filtered_logits, dim=-1)
-    sampled_tokens = dists.Categorical(logits=scores).sample()
-    sampled_scores = torch.gather(scores, -1, sampled_tokens.unsqueeze(-1)).squeeze(-1)
+    scores = torch.log_softmax(logits, dim=-1)
+    x0 = dists.Categorical(logits=scores).sample()
+    x0_scores = torch.gather(scores, -1, x0.unsqueeze(-1)).squeeze(-1)
 
     # Shift tokens and scores left by 1 position
-    x0 = torch.cat([x[:, 0:1], sampled_tokens[:, :-1]], dim=1)
-    x0_scores = torch.cat([sampled_scores[:, 0:1], sampled_scores[:, :-1]], dim=1)
+    x0 = torch.cat([x[:, 0:1], x0[:, :-1]], dim=1)
+    x0_scores = torch.cat([x0_scores[:, 0:1], x0_scores[:, :-1]], dim=1)
 
     # Apply mask to keep original tokens in non-maskable positions
     x0 = xt.masked_scatter(maskable_mask, x0[maskable_mask])
