@@ -18,7 +18,8 @@ from torchprime.torch_xla_models.train import initialize_model_class, set_defaul
 
 # Initialize XLA runtime for TPU
 xr.use_spmd()
-# dist.init_process_group(backend="gloo", init_method="xla://")
+if not dist.is_initialized():
+    dist.init_process_group(backend="gloo", init_method="xla://")
 
 
 def is_main_process():

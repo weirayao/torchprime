@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 xr.use_spmd()
 assert xr.is_spmd() is True
 
-dist.init_process_group(backend='gloo', init_method='xla://')
+if not dist.is_initialized():
+  dist.init_process_group(backend='gloo', init_method='xla://')
 
 def is_main_process():
   """Check if this is the main process (rank 0)."""
