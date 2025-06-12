@@ -81,6 +81,7 @@ def sample_tokens_with_shift(
     maskable_mask: torch.Tensor,
     temperature: float,
     top_p: float,
+    greedy: bool = False
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Sample tokens from the model output with top-p filtering and handle shifting.
@@ -103,10 +104,13 @@ def sample_tokens_with_shift(
 
     # Convert to probability distribution and sample
     scores = torch.log_softmax(logits, dim=-1)
-    x0 = dists.Categorical(logits=scores).sample()
-    x0_scores = torch.gather(scores, -1, x0.unsqueeze(-1)).squeeze(-1)
+    if greedy:
+        x0_scores, x0 = scores.max(-1)
+    else:
+        x0 = dists.Categorical(logits=scores).sample()
+        x0_scores = torch.gather(scores, -1, x0.unsqueeze(-1)).squeeze(-1)
 
-    # Shift tokens and scores left by 1 position
+    # Shift tokens and scores right by 1 position
     x0 = torch.cat([x[:, 0:1], x0[:, :-1]], dim=1)
     x0_scores = torch.cat([x0_scores[:, 0:1], x0_scores[:, :-1]], dim=1)
 
@@ -141,7 +145,7 @@ def generate(
     annealed_attention_mask = get_anneal_attn_mask(
         seq_len, batch_size, dtype=torch.bfloat16, device=device, attn_mask_ratio=1.0
     )  # all 0
-    maskable_mask = ~src_mask
+    init_maskable_mask = maskable_mask = ~src_mask
 
     # first forward, all position except src is [M]
     xt: torch.Tensor = x.masked_fill(maskable_mask, tokenizer.mask_token_id)
@@ -205,31 +209,26 @@ def prepare_inputs(
     ar_inputs = tokenizer([text_inputs], return_tensors="pt")
 
     # Extend input_ids with mask tokens for generation
+    mask_token_ids = torch.full(
+        size=(
+            ar_inputs.input_ids.shape[0],
+            max_new_tokens,
+        ),
+        fill_value=tokenizer.mask_token_id,
+        dtype=ar_inputs.input_ids.dtype,
+    )
     ddlm_inputs = {
         "input_ids": torch.cat(
             [
                 ar_inputs.input_ids,
-                torch.full(
-                    size=(
-                        ar_inputs.input_ids.shape[0],
-                        max_new_tokens,
-                    ),
-                    fill_value=tokenizer.mask_token_id,
-                    dtype=ar_inputs.input_ids.dtype,
-                ),
+                mask_token_ids,
             ],
             dim=1,
         ),
         "src_mask": torch.cat(
             [
-                ar_inputs.attention_mask,
-                torch.zeros(
-                    size=(
-                        ar_inputs.attention_mask.shape[0],
-                        max_new_tokens,
-                    ),
-                    dtype=ar_inputs.attention_mask.dtype,
-                ),
+                torch.ones_like(ar_inputs.input_ids),
+                torch.zeros_like(mask_token_ids),
             ],
             dim=1,
         ),
