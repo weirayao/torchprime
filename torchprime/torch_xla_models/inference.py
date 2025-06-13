@@ -149,7 +149,7 @@ def generate(
     # annealed_attention_mask = get_anneal_attn_mask(
     #     seq_len, batch_size, dtype=torch.bfloat16, device=device, attn_mask_ratio=1.0
     # ) # NOTE: should be all one?
-    attention_mask = torch.ones_like(x).to(device)
+    attention_mask = torch.ones_like(x).to(device) # NOTE: this is actually not used in the model
     init_maskable_mask = maskable_mask = ~src_mask
 
     # first forward, all position except src is [M]
@@ -267,7 +267,7 @@ def main(config: DictConfig):
     xm.wait_device_ops()
 
     logger.info("Preparing inputs...")
-    prompt = "Write"
+    prompt = "Donald John Trump (born June 14, 1946) is an American <|mask|>, media personality, and businessman who is the 47th <|mask|> of the <|mask|> <|mask|>."
     # messages = [{"role": "user", "content": prompt}]
     messages = prompt
     generation_config = GenerationConfig(**OmegaConf.to_container(config.generation))
