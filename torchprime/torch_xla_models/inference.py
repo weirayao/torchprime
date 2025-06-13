@@ -143,7 +143,7 @@ def generate(
     #     src_mask = torch.zeros_like(x, dtype=torch.bool).to(device)
     # else:
     #     src_mask = inputs["src_mask"].bool().to(device)
-    src_mask = torch.zeros_like(x, dtype=torch.bool).to(device)
+    src_mask = (x != tokenizer.mask_token_id).to(device)
 
     seq_len = x.size(1)
     batch_size = x.size(0)

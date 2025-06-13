@@ -4,4 +4,8 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/inference.py \
     generation.max_new_tokens=0 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex-qwen3-1b-gcs-pretrain-all-data \
     resume_from_checkpoint=15000 \
+    ici_mesh.fsdp=8 \
+    ici_mesh.tensor=1 \
+    ici_mesh.data=1 \
+    ici_mesh.expert=1 \
     model/remat=qwen-scan

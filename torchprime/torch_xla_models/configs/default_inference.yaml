@@ -17,6 +17,45 @@ checkpoint_dir: checkpoints/
 resume_from_checkpoint: null
 
 
+# Only used for initializing the trainer
+global_batch_size: 4
+logging_steps: 10
+max_steps: 15
+seed: 42
+profile_step: 2
+
+# This might be overwritten when using tp run to launch the run using XPK
+profile_dir: profile
+profile_duration: 100000
+
+# This might be overwritten when using tp run to launch the run using XPK
+output_dir: outputs
+
+optimizer:
+  learning_rate: 5.e-5
+lr_scheduler:
+  type: linear
+  warmup_steps: 0
+
+ici_mesh:
+  data: 1
+  fsdp: 4
+  tensor: 1
+  expert: 1
+
+# Shape of the logical mesh where each element is a TPU slice. This is called
+# "Data Center Network (DCN) mesh" because TPU slices are usually connected
+# together with slower data center networking, with the faster ICI network
+# used within a slice.
+#
+# As an example, to enable 2-way data parallelism across 2 TPU slices, you may
+# specify `dcn_mesh.data=2`.
+dcn_mesh:
+  data: 1
+  fsdp: 1
+  tensor: 1
+  expert: 1
+
 # These are default values for model activation rematerialization configuration.
 # They can be overridden on the command line or by importing one of the presets
 # in the `model/remat` directory.
