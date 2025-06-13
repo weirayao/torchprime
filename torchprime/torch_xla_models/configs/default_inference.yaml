@@ -13,6 +13,10 @@ generation:
   temperature: 1.0
   top_p: 0.95
 
+checkpoint_dir: checkpoints/
+resume_from_checkpoint: null
+
+
 # These are default values for model activation rematerialization configuration.
 # They can be overridden on the command line or by importing one of the presets
 # in the `model/remat` directory.

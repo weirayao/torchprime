@@ -14,7 +14,7 @@ from transformers.tokenization_utils_base import BatchEncoding
 from dataclasses import dataclass, asdict
 
 # Import the initialize_model_class function from train.py
-from torchprime.torch_xla_models.train import initialize_model_class, set_default_dtype
+from torchprime.torch_xla_models.train import initialize_model_class, set_default_dtype, Trainer
 
 # Initialize XLA runtime for TPU
 xr.use_spmd()
@@ -268,6 +268,13 @@ def main(config: DictConfig):
         model = initialize_model_class(model_config)
     xm.wait_device_ops()
 
+    logger.info(f"hf model weights: {model.state_dict()['model.embed_tokens.weight']}")
+
+    trainer = Trainer(model=model, tokenizer=tokenizer, config=config, train_dataset=None)
+    trainer._load_checkpoint()
+
+    logger.info(f"ckpt model weights: {trainer.model.state_dict()['model.embed_tokens.weight']}")
+
     logger.info("Preparing inputs...")
     prompt = "Donald John Trump (born June 14, 1946) is an American <|mask|>, media personality, and businessman who is the 47th <|mask|> of the <|mask|> <|mask|>."
     # messages = [{"role": "user", "content": prompt}]
@@ -280,7 +287,7 @@ def main(config: DictConfig):
 
     logger.info("Generating...")
     generation = generate(
-        model, tokenizer, ddlm_inputs, generation_config, verbose=True
+        trainer.model, tokenizer, ddlm_inputs, generation_config, verbose=True
     )
     # Move results back to CPU for processing
     output_ids = generation[0][len(ar_inputs.input_ids[0]) :].cpu().tolist()
