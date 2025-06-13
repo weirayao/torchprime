@@ -155,6 +155,7 @@ def generate(
 
     # first forward, all position except src is [M]
     # xt: torch.Tensor = x.masked_fill(maskable_mask, tokenizer.mask_token_id)
+    xt = x
     if verbose:
         logger.info(f"t={args.diffusion_steps}(in): {tokenizer.decode(xt.tolist()[0])}")
     x0 = sample(
