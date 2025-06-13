@@ -1,4 +1,4 @@
-TPU_VM_NAME="sfr-haolin-chen-v4-16"
+TPU_VM_NAME="sfr-cqin-v4-16"
 TPU_ZONE="us-central2-b"
 
 # Default recipe if none is provided
@@ -31,12 +31,12 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --tunnel-through-iap \
     --worker=all \
     --command='
-    export HF_HOME="<your_absolute_home_dir>/huggingface"; \
+    export HF_HOME="~/huggingface"; \
     export HF_TOKEN="<your_huggingface_token>"; \
-    export MOUNTED_GCS_DIR="<your_absolute_home_dir>/sfr-text-diffusion-model-research"; \
+    export MOUNTED_GCS_DIR="/home/cqin/sfr-text-diffusion-model-research"; \
     cd torchprime; \
     git fetch; \
-    git checkout <your_branch>; \
+    git checkout cqin/dev; \
     git pull; \
     source venv/bin/activate; \
     bash '"$RECIPE"'';
