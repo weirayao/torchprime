@@ -270,7 +270,7 @@ def main(config: DictConfig):
     ddlm_inputs, ar_inputs = prepare_inputs(
         tokenizer, messages, generation_config.max_new_tokens, enable_thinking=False
     )
-    dataset = Dataset.from_list([ddlm_inputs])  # Create a single-element dataset with ddlm_inputs
+    dataset = Dataset.from_list([ddlm_inputs] * config.global_batch_size)  # Create a single-element dataset with ddlm_inputs
 
     trainer = Trainer(model=model, tokenizer=tokenizer, config=config, train_dataset=dataset)
     trainer._load_checkpoint()
@@ -279,8 +279,12 @@ def main(config: DictConfig):
     logger.info("Generating...")
     loader = trainer._get_train_dataloader()
     iterator = iter(loader)
-    batch = next(iterator)
-    logger.info(f"batch: {batch}")
+    try:
+        batch = next(iterator)
+        logger.info(f"batch: {batch}")
+    except StopIteration:
+        logger.info("No more batches")
+        batch = None
 
     generation = generate(
         trainer.model, tokenizer, batch, generation_config, verbose=True
