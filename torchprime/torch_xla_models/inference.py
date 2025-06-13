@@ -203,8 +203,8 @@ def prepare_inputs(
     # Apply chat template
     if isinstance(messages, str):
         text_inputs = tokenizer.pad_token + messages # NOTE: we shift one token and we don't apply chat template
-        if not enable_thinking:
-            text_inputs += "<think> </think>"
+        # if not enable_thinking:
+        #     text_inputs += "<think> </think>"
     else:
         text_inputs = tokenizer.apply_chat_template(
             messages,
@@ -266,7 +266,7 @@ def main(config: DictConfig):
     xm.wait_device_ops()
 
     logger.info("Preparing inputs...")
-    prompt = "Write a short introduction to large language model: "
+    prompt = "Write"
     # messages = [{"role": "user", "content": prompt}]
     messages = prompt
     generation_config = GenerationConfig(**OmegaConf.to_container(config.generation))
