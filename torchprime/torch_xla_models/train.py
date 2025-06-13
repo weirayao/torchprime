@@ -343,6 +343,7 @@ class Trainer:
     logger.info("Moving model to CPU...")
     cpu_model = self.model.cpu()
     # Create a new state dict with _orig_mod removed from keys
+    # FIXME: still problematic, need to fix, the weights differ after reloading the huggingface model, compared to directly loading the checkpoint
     if is_main_process():
       logger.info("Creating new state dict...")
       state_dict = cpu_model.state_dict()

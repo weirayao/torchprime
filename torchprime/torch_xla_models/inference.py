@@ -139,23 +139,17 @@ def generate(
     device = xm.xla_device()
 
     x = inputs["input_ids"].to(device)
-    # if "src_mask" not in inputs:
-    #     src_mask = torch.zeros_like(x, dtype=torch.bool).to(device)
-    # else:
-    #     src_mask = inputs["src_mask"].bool().to(device)
-    src_mask = (x != tokenizer.mask_token_id).to(device)
+    if "src_mask" not in inputs:
+        src_mask = (x != tokenizer.mask_token_id).to(device)
+    else:
+        src_mask = inputs["src_mask"].bool().to(device)
 
-    seq_len = x.size(1)
-    batch_size = x.size(0)
-    # annealed_attention_mask = get_anneal_attn_mask(
-    #     seq_len, batch_size, dtype=torch.bfloat16, device=device, attn_mask_ratio=1.0
-    # ) # NOTE: should be all one?
     attention_mask = torch.ones_like(x).to(device) # NOTE: this is actually not used in the model
-    init_maskable_mask = maskable_mask = ~src_mask
+    maskable_mask = ~src_mask
 
     # first forward, all position except src is [M]
     # xt: torch.Tensor = x.masked_fill(maskable_mask, tokenizer.mask_token_id)
-    xt = x
+    xt = x.clone() # NOTE: we already did the masking in prepare_inputs
     if verbose:
         logger.info(f"t={args.diffusion_steps}(in): {tokenizer.decode(xt.tolist()[0])}")
     x0 = sample(
@@ -230,25 +224,21 @@ def prepare_inputs(
         fill_value=tokenizer.mask_token_id,
         dtype=ar_inputs.input_ids.dtype,
     )
+
+    input_ids = torch.cat(
+        [
+            ar_inputs.input_ids,
+            mask_token_ids,
+        ],
+        dim=1,
+    )
+    src_mask = torch.where(input_ids == tokenizer.mask_token_id, 0, 1)
     ddlm_inputs = {
-        "input_ids": torch.cat(
-            [
-                ar_inputs.input_ids,
-                mask_token_ids,
-            ],
-            dim=1,
-        ),
-        "src_mask": torch.cat(
-            [
-                torch.ones_like(ar_inputs.input_ids),
-                torch.zeros_like(mask_token_ids),
-            ],
-            dim=1,
-        ),
+        "input_ids": input_ids,
+        "src_mask": src_mask,
     }
 
     return ddlm_inputs, ar_inputs
-
 
 @hydra.main(version_base=None, config_path="configs", config_name="default_inference")
 def main(config: DictConfig):
