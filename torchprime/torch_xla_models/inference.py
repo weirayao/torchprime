@@ -78,7 +78,7 @@ def sample(
     model: PreTrainedModel,
     xt: torch.Tensor,
     x: torch.Tensor,
-    annealed_attention_mask: torch.Tensor,
+    attention_mask: torch.Tensor,
     maskable_mask: torch.Tensor,
     temperature: float,
     top_p: float,
@@ -91,7 +91,7 @@ def sample(
         model: The model to use for inference
         xt: Current input tokens (with masks)
         x: Original input tokens (for shifting)
-        annealed_attention_mask: Attention mask for the model
+        attention_mask: Attention mask for the model
         maskable_mask: Mask indicating which positions can be modified
         temperature: Temperature for sampling
         top_p: Top-p threshold for filtering
@@ -100,8 +100,8 @@ def sample(
         Updated x0 tensor with sampled tokens and their scores
     """
     # Get model predictions
-    logits, _ = model(xt, attention_mask=annealed_attention_mask)
-    logits = top_p_logits(logits / temperature + 1e-5, p=top_p)
+    logits, _ = model(xt, attention_mask=attention_mask)
+    # logits = top_p_logits(logits / temperature + 1e-5, p=top_p)
 
     # Convert to probability distribution and sample
     scores = torch.log_softmax(logits, dim=-1)
@@ -146,9 +146,10 @@ def generate(
 
     seq_len = x.size(1)
     batch_size = x.size(0)
-    annealed_attention_mask = get_anneal_attn_mask(
-        seq_len, batch_size, dtype=torch.bfloat16, device=device, attn_mask_ratio=1.0
-    )  # all 0
+    # annealed_attention_mask = get_anneal_attn_mask(
+    #     seq_len, batch_size, dtype=torch.bfloat16, device=device, attn_mask_ratio=1.0
+    # ) # NOTE: should be all one?
+    attention_mask = torch.ones_like(x).to(device)
     init_maskable_mask = maskable_mask = ~src_mask
 
     # first forward, all position except src is [M]
@@ -156,7 +157,7 @@ def generate(
     if verbose:
         logger.info(f"t={args.diffusion_steps}(in): {tokenizer.decode(xt.tolist()[0])}")
     x0 = sample(
-        model, xt, x, annealed_attention_mask, maskable_mask, temperature, top_p, greedy=True
+        model, xt, x, attention_mask, maskable_mask, temperature, top_p, greedy=True
     )
     if verbose:
         logger.info(f"t={args.diffusion_steps}(out): {tokenizer.decode(x0.tolist()[0])}")
@@ -174,7 +175,7 @@ def generate(
             logger.info(f"t={t}(in): {tokenizer.decode(xt.tolist()[0])}")
 
         x0 = sample(
-            model, xt, x, annealed_attention_mask, maskable_mask, temperature, top_p, greedy=True
+            model, xt, x, attention_mask, maskable_mask, temperature, top_p, greedy=True
         )
         if verbose:
             logger.info(f"t={t}(out): {tokenizer.decode(x0.tolist()[0])}")
