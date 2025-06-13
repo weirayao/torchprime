@@ -156,7 +156,7 @@ def generate(
     if verbose:
         logger.info(f"t={args.diffusion_steps}(in): {tokenizer.decode(xt.tolist()[0])}")
     x0 = sample(
-        model, xt, x, annealed_attention_mask, maskable_mask, temperature, top_p
+        model, xt, x, annealed_attention_mask, maskable_mask, temperature, top_p, greedy=True
     )
     if verbose:
         logger.info(f"t={args.diffusion_steps}(out): {tokenizer.decode(x0.tolist()[0])}")
@@ -174,7 +174,7 @@ def generate(
             logger.info(f"t={t}(in): {tokenizer.decode(xt.tolist()[0])}")
 
         x0 = sample(
-            model, xt, x, annealed_attention_mask, maskable_mask, temperature, top_p
+            model, xt, x, annealed_attention_mask, maskable_mask, temperature, top_p, greedy=True
         )
         if verbose:
             logger.info(f"t={t}(out): {tokenizer.decode(x0.tolist()[0])}")

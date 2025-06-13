@@ -2,7 +2,7 @@ TPU_VM_NAME="sfr-haolin-chen-v4-16"
 TPU_ZONE="us-central2-b"
 
 # Default recipe if none is provided
-RECIPE="recipes/ckpt_consolidation.sh"
+RECIPE="recipes/test_inference.sh"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
