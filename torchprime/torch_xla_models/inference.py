@@ -139,10 +139,11 @@ def generate(
     device = xm.xla_device()
 
     x = inputs["input_ids"].to(device)
-    if "src_mask" not in inputs:
-        src_mask = torch.zeros_like(x, dtype=torch.bool).to(device)
-    else:
-        src_mask = inputs["src_mask"].bool().to(device)
+    # if "src_mask" not in inputs:
+    #     src_mask = torch.zeros_like(x, dtype=torch.bool).to(device)
+    # else:
+    #     src_mask = inputs["src_mask"].bool().to(device)
+    src_mask = torch.zeros_like(x, dtype=torch.bool).to(device)
 
     seq_len = x.size(1)
     batch_size = x.size(0)
