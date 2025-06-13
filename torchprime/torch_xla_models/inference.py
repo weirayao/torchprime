@@ -9,7 +9,8 @@ import torch_xla.runtime as xr
 import torch.distributed as dist
 import hydra
 from omegaconf import DictConfig, OmegaConf
-from transformers import AutoTokenizer, PreTrainedModel, PreTrainedTokenizerBase
+from datasets import Dataset
+from transformers import AutoTokenizer, PreTrainedModel, PreTrainedTokenizerBase, default_data_collator
 from transformers.tokenization_utils_base import BatchEncoding
 from dataclasses import dataclass, asdict
 
@@ -260,11 +261,6 @@ def main(config: DictConfig):
 
     logger.info(f"hf model weights: {model.state_dict()['model.embed_tokens.weight']}")
 
-    trainer = Trainer(model=model, tokenizer=tokenizer, config=config, train_dataset=None)
-    trainer._load_checkpoint()
-
-    logger.info(f"ckpt model weights: {trainer.model.state_dict()['model.embed_tokens.weight']}")
-
     logger.info("Preparing inputs...")
     prompt = "Donald John Trump (born June 14, 1946) is an American <|mask|>, media personality, and businessman who is the 47th <|mask|> of the <|mask|> <|mask|>."
     # messages = [{"role": "user", "content": prompt}]
@@ -274,10 +270,20 @@ def main(config: DictConfig):
     ddlm_inputs, ar_inputs = prepare_inputs(
         tokenizer, messages, generation_config.max_new_tokens, enable_thinking=False
     )
+    dataset = Dataset.from_list([ddlm_inputs])  # Create a single-element dataset with ddlm_inputs
+
+    trainer = Trainer(model=model, tokenizer=tokenizer, config=config, train_dataset=dataset)
+    trainer._load_checkpoint()
+    logger.info(f"ckpt model weights: {trainer.model.state_dict()['model.embed_tokens.weight']}")
 
     logger.info("Generating...")
+    loader = trainer._get_train_dataloader()
+    iterator = iter(loader)
+    batch = next(iterator)
+    logger.info(f"batch: {batch}")
+
     generation = generate(
-        trainer.model, tokenizer, ddlm_inputs, generation_config, verbose=True
+        trainer.model, tokenizer, batch, generation_config, verbose=True
     )
     # Move results back to CPU for processing
     output_ids = generation[0][len(ar_inputs.input_ids[0]) :].cpu().tolist()
