@@ -203,7 +203,7 @@ def prepare_inputs(
     """
     # Apply chat template
     if isinstance(messages, str):
-        text_inputs = tokenizer.pad_token + messages # NOTE: we shift one token and we don't apply chat template
+        text_inputs = messages # NOTE: we shift one token and we don't apply chat template
         # if not enable_thinking:
         #     text_inputs += "<think> </think>"
     else:
