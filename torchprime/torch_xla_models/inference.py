@@ -110,7 +110,7 @@ def sample(
     else:
         x0 = dists.Categorical(logits=scores).sample()
         # x0_scores = torch.gather(scores, -1, x0.unsqueeze(-1)).squeeze(-1)
-
+    logger.info(f"x0: {x0}")
     # NOTE: we already cut one token in forward pass, so we don't need to cut x0 here
     # Shift tokens and scores right by 1 position
     x0 = torch.cat([x[:, 0:1], x0], dim=1)
