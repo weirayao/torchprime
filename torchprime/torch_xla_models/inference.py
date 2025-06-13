@@ -8,6 +8,7 @@ import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
 import torch.distributed as dist
 import hydra
+import copy
 from omegaconf import DictConfig, OmegaConf
 from datasets import Dataset
 from transformers import AutoTokenizer, PreTrainedModel, PreTrainedTokenizerBase, default_data_collator
@@ -152,12 +153,12 @@ def generate(
     # xt: torch.Tensor = x.masked_fill(maskable_mask, tokenizer.mask_token_id)
     xt = x.clone() # NOTE: we already did the masking in prepare_inputs
     if verbose:
-        logger.info(f"t={args.diffusion_steps}(in): {tokenizer.decode(xt.detach().cpu().tolist()[0])}")
+        logger.info(f"t={args.diffusion_steps}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
     x0 = sample(
         model, xt, x, attention_mask, maskable_mask, temperature, top_p, greedy=True
     )
     if verbose:
-        logger.info(f"t={args.diffusion_steps}(out): {tokenizer.decode(x0.detach().cpu().tolist()[0])}")
+        logger.info(f"t={args.diffusion_steps}(out): {tokenizer.batch_decode(x0.detach().cpu())}")
 
     for t in range(args.diffusion_steps - 1, 0, -1):
         # select rate% tokens to be still [MASK]
@@ -169,13 +170,13 @@ def generate(
         xt.masked_scatter_(masked_to_x0, x0[masked_to_x0])
         maskable_mask = maskable_mask.masked_fill(masked_to_x0, False)
         if verbose:
-            logger.info(f"t={t}(in): {tokenizer.decode(xt.detach().cpu().tolist()[0])}")
+            logger.info(f"t={t}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
 
         x0 = sample(
             model, xt, x, attention_mask, maskable_mask, temperature, top_p, greedy=True
         )
         if verbose:
-            logger.info(f"t={t}(out): {tokenizer.decode(x0.detach().cpu().tolist()[0])}")
+            logger.info(f"t={t}(out): {tokenizer.batch_decode(x0.detach().cpu())}")
 
     return x0[:, 1:]  # shift left by 1
 
@@ -232,7 +233,7 @@ def prepare_inputs(
             mask_token_ids,
         ],
         dim=1,
-    )
+    ).squeeze(0)
     src_mask = torch.where(input_ids == tokenizer.mask_token_id, 0, 1)
     ddlm_inputs = {
         "input_ids": input_ids,
@@ -270,7 +271,7 @@ def main(config: DictConfig):
     ddlm_inputs, ar_inputs = prepare_inputs(
         tokenizer, messages, generation_config.max_new_tokens, enable_thinking=False
     )
-    dataset = Dataset.from_list([ddlm_inputs] * config.global_batch_size)  # Create a single-element dataset with ddlm_inputs
+    dataset = Dataset.from_list([copy.deepcopy(ddlm_inputs) for _ in range(config.global_batch_size)])  # Create a single-element dataset with ddlm_inputs
 
     trainer = Trainer(model=model, tokenizer=tokenizer, config=config, train_dataset=dataset)
     trainer._load_checkpoint()
