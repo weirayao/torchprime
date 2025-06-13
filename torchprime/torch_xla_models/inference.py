@@ -283,8 +283,9 @@ def main(config: DictConfig):
         batch = next(iterator)
         logger.info(f"batch: {batch}")
     except StopIteration:
-        logger.info("No more batches")
-        batch = None
+        logger.info("No more batches, reset iterator")
+        iterator = iter(loader)
+        batch = next(iterator)
 
     generation = generate(
         trainer.model, tokenizer, batch, generation_config, verbose=True
