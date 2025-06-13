@@ -32,7 +32,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --worker=all \
     --command='
     export HF_HOME="~/huggingface"; \
-    export HF_TOKEN="<your_huggingface_token>"; \
+    export HF_TOKEN="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"; \
     export MOUNTED_GCS_DIR="/home/cqin/sfr-text-diffusion-model-research"; \
     cd torchprime; \
     git fetch; \

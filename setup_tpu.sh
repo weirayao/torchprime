@@ -41,7 +41,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     cd torchprime; \
     source venv/bin/activate; \
     pip install wandb; \
-    export WANDB_API_KEY="<your_wandb_key>"; \
+    export WANDB_API_KEY="<local-13554988c6f407ff2f10f686b3dc102c7cb7e5e5>"; \
     wandb login $WANDB_API_KEY --relogin --host=https://salesforceairesearch.wandb.io'
 
 # Install gcsfuse and mount GCS bucket to TPU VM
