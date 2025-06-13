@@ -152,12 +152,12 @@ def generate(
     # xt: torch.Tensor = x.masked_fill(maskable_mask, tokenizer.mask_token_id)
     xt = x.clone() # NOTE: we already did the masking in prepare_inputs
     if verbose:
-        logger.info(f"t={args.diffusion_steps}(in): {tokenizer.decode(xt.tolist()[0])}")
+        logger.info(f"t={args.diffusion_steps}(in): {tokenizer.decode(xt.detach().cpu().tolist()[0])}")
     x0 = sample(
         model, xt, x, attention_mask, maskable_mask, temperature, top_p, greedy=True
     )
     if verbose:
-        logger.info(f"t={args.diffusion_steps}(out): {tokenizer.decode(x0.tolist()[0])}")
+        logger.info(f"t={args.diffusion_steps}(out): {tokenizer.decode(x0.detach().cpu().tolist()[0])}")
 
     for t in range(args.diffusion_steps - 1, 0, -1):
         # select rate% tokens to be still [MASK]
@@ -169,13 +169,13 @@ def generate(
         xt.masked_scatter_(masked_to_x0, x0[masked_to_x0])
         maskable_mask = maskable_mask.masked_fill(masked_to_x0, False)
         if verbose:
-            logger.info(f"t={t}(in): {tokenizer.decode(xt.tolist()[0])}")
+            logger.info(f"t={t}(in): {tokenizer.decode(xt.detach().cpu().tolist()[0])}")
 
         x0 = sample(
             model, xt, x, attention_mask, maskable_mask, temperature, top_p, greedy=True
         )
         if verbose:
-            logger.info(f"t={t}(out): {tokenizer.decode(x0.tolist()[0])}")
+            logger.info(f"t={t}(out): {tokenizer.decode(x0.detach().cpu().tolist()[0])}")
 
     return x0[:, 1:]  # shift left by 1
 
