@@ -343,20 +343,22 @@ class Trainer:
     logger.info("Moving model to CPU...")
     cpu_model = self.model.cpu()
     # Create a new state dict with _orig_mod removed from keys
-    logger.info("Creating new state dict...")
-    state_dict = cpu_model.state_dict()
-    model_state_dict = OrderedDict()
-    for key, value in state_dict.items():
-      if '._orig_mod' in key:
-        # Remove ._orig_mod from the key
-        cleaned_key = key.replace('._orig_mod', '')
-        model_state_dict[cleaned_key] = value
-      else:
-        model_state_dict[key] = value
-    self.hf_model.load_state_dict(model_state_dict)
-    self.hf_model.save_pretrained(consolidated_ckpt_dir)
-    self.tokenizer.save_pretrained(consolidated_ckpt_dir)
-    logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
+    if is_main_process():
+      logger.info("Creating new state dict...")
+      state_dict = cpu_model.state_dict()
+      model_state_dict = OrderedDict()
+      for key, value in state_dict.items():
+        if '._orig_mod' in key:
+          # Remove ._orig_mod from the key
+          cleaned_key = key.replace('._orig_mod', '')
+          model_state_dict[cleaned_key] = value
+        else:
+          model_state_dict[key] = value
+      self.hf_model.load_state_dict(model_state_dict)
+      self.hf_model.save_pretrained(consolidated_ckpt_dir)
+      self.tokenizer.save_pretrained(consolidated_ckpt_dir)
+      logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
+    xm.wait_device_ops()
 
 
   def train_loop(self):
