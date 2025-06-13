@@ -15,6 +15,7 @@ generation:
 
 checkpoint_dir: checkpoints/
 resume_from_checkpoint: null
+save_steps: 10
 
 
 # Only used for initializing the trainer
