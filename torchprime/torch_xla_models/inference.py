@@ -75,7 +75,7 @@ def top_p_logits(logits, p=0.9):
     logits = logits.masked_fill(mask, torch.finfo(logits.dtype).min)
     return logits
 
-
+@torch.no_grad()
 def sample(
     model: PreTrainedModel,
     xt: torch.Tensor,
@@ -136,6 +136,8 @@ def generate(
 ) -> torch.Tensor:
     # Set model to evaluation mode
     model.eval()
+    for param in model.parameters():
+        param.requires_grad_(False)
     logger.info(f"Start sampling with params: {asdict(args)}")
     temperature = args.temperature
     top_p = args.top_p
