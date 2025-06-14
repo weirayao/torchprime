@@ -136,8 +136,6 @@ def generate(
 ) -> torch.Tensor:
     # Set model to evaluation mode
     model.eval()
-    for param in model.parameters():
-        param.requires_grad_(False)
     logger.info(f"Start sampling with params: {asdict(args)}")
     temperature = args.temperature
     top_p = args.top_p
