@@ -416,6 +416,13 @@ class Qwen3ForCausalLM(nn.Module):
     labels: torch.LongTensor | None = None,
     attention_mask: torch.FloatTensor | None = None,
   ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:
+    if not self.training:
+      # haolin: during inference the masking is done when preprocessing the input, we don't need src_mask and noising
+      hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
+      logits = self.lm_head(hidden_states)
+      logits = logits.float()[..., :-1, :].contiguous() # NOTE: we don't need the logits of the last token
+      return logits, None
+
     # weiran: diffullama
     sampling_eps = 1e-3
     mask_token_id = self.mask_token_id
@@ -430,7 +437,7 @@ class Qwen3ForCausalLM(nn.Module):
       input_ids, sigma[:, None], maskable_mask=~src_mask, mask_token_id=mask_token_id
     )
     loss_mask = noisy_input_ids == mask_token_id
-    
+
     hidden_states = self.model(input_ids=noisy_input_ids, attention_mask=attention_mask)
     # hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
     logits = self.lm_head(hidden_states)

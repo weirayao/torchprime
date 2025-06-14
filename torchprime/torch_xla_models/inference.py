@@ -101,6 +101,7 @@ def sample(
     Returns:
         Updated x0 tensor with sampled tokens and their scores
     """
+    print(xt.shape, attention_mask.shape, maskable_mask.shape)
     # Get model predictions
     logits, _ = model(xt, attention_mask=attention_mask)
     # logits = top_p_logits(logits / temperature + 1e-5, p=top_p)
