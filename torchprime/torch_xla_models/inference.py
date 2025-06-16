@@ -35,7 +35,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GenerationConfig:
     diffusion_steps: int = 10
-    max_new_tokens: int = 100
+    max_tokens: int = 256
+    max_new_tokens: int | None = None
     temperature: float = 1.0
     top_p: float = 0.9
 
@@ -185,7 +186,7 @@ def generate(
 def prepare_inputs(
     tokenizer: PreTrainedTokenizerBase,
     messages: str | list[dict],
-    max_new_tokens: int,
+    args: GenerationConfig,
     enable_thinking: bool = True,
 ) -> tuple[dict[str, torch.Tensor], BatchEncoding]:
     """
@@ -217,12 +218,14 @@ def prepare_inputs(
     # Tokenize input
     ar_inputs = tokenizer([text_inputs], return_tensors="pt")
 
+    # Use max_tokens if provided and > 0, otherwise use max_new_tokens
+    num_new_tokens = args.max_tokens - ar_inputs.input_ids.shape[1] if args.max_tokens > 0 else args.max_new_tokens
 
     # Extend input_ids with mask tokens for generation
     mask_token_ids = torch.full(
         size=(
             ar_inputs.input_ids.shape[0],
-            max_new_tokens,
+            num_new_tokens,
         ),
         fill_value=tokenizer.mask_token_id,
         dtype=ar_inputs.input_ids.dtype,
@@ -270,7 +273,7 @@ def main(config: DictConfig):
     generation_config = GenerationConfig(**OmegaConf.to_container(config.generation))
 
     ddlm_inputs, ar_inputs = prepare_inputs(
-        tokenizer, messages, generation_config.max_new_tokens, enable_thinking=False
+        tokenizer, messages, generation_config, enable_thinking=False
     )
     dataset = Dataset.from_list([copy.deepcopy(ddlm_inputs) for _ in range(config.global_batch_size)])  # Create a single-element dataset with ddlm_inputs
 

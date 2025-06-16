@@ -9,7 +9,8 @@ defaults:
 
 generation:
   diffusion_steps: 10
-  max_new_tokens: 100
+  max_tokens: 256
+  max_new_tokens: null
   temperature: 1.0
   top_p: 0.95
 
