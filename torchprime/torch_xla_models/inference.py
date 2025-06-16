@@ -295,27 +295,34 @@ def main(config: DictConfig):
     generation = generate(
         trainer.model, tokenizer, batch, generation_config, verbose=True
     )
-    # Move results back to CPU for processing
-    output_ids = generation[0][len(ar_inputs.input_ids[0]) :].cpu().tolist()
+    
+    generation = generation.cpu().tolist()
+    if is_main_process():
+        print("=" * 50 + "GENERATION" + "=" * 50)
+        for i in range(len(generation)):
+            print(f"Generation {i}: {tokenizer.decode(generation[i], skip_special_tokens=True)}")
+            print("=" * 50)
+    # # Move results back to CPU for processing
+    # output_ids = generation[len(ar_inputs.input_ids[0]) :].cpu().tolist()
 
-    # Parse thinking content (if present)
-    try:
-        # Find the index of </think> token (151668)
-        index = len(output_ids) - output_ids[::-1].index(151668)
-    except ValueError:
-        index = 0
+    # # Parse thinking content (if present)
+    # try:
+    #     # Find the index of </think> token (151668)
+    #     index = len(output_ids) - output_ids[::-1].index(151668)
+    # except ValueError:
+    #     index = 0
 
-    # Decode thinking and main content
-    thinking_content = tokenizer.decode(
-        output_ids[:index], skip_special_tokens=True
-    ).strip("\n")
-    content = tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
-    print("\n" + "=" * 50)
-    print("RESULTS:")
-    print("=" * 50)
-    print(f"Thinking content: {thinking_content}")
-    print(f"Content: {content}")
-    print("=" * 50)
+    # # Decode thinking and main content
+    # thinking_content = tokenizer.decode(
+    #     output_ids[:index], skip_special_tokens=True
+    # ).strip("\n")
+    # content = tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
+    # print("\n" + "=" * 50)
+    # print("RESULTS:")
+    # print("=" * 50)
+    # print(f"Thinking content: {thinking_content}")
+    # print(f"Content: {content}")
+    # print("=" * 50)
 
 
 if __name__ == "__main__":
