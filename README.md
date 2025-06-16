@@ -23,10 +23,11 @@ High level steps:
 1. Create a TPU VM
 2. (**Important**) Ask Srinath to open all ports for all workers in your VM
 3. Setup environments. You can just run `bash setup_tpu.sh` **with your TPU VM name and zone**
-   1. Install python with venv
-   2. Install dependencies
-   3. Setup wandb; (**Important**) Add your wandb key in `setup_tpu.sh`
-   4. Install gcsfuse, mount local folder to GCS bucket (default is `~/sfr-text-diffusion-model-research`)
+   1. Prepare `.env` according to `env.example`
+   2. Install python with venv
+   3. Install dependencies
+   4. Setup wandb; (**Important**)
+   5. Install gcsfuse, mount local folder to GCS bucket (default is `~/sfr-text-diffusion-model-research`)
 4. Create your own branch `git checkout -b your_branch`
 5. Add your recipes under `recipes/your_recipe.sh`
 6. (**Important**) Add your `MOUNTED_GCS_DIR` `HF_HOME`, and `HF_TOKEN` and change the branch name to `your_branch` in `remote_run.sh`
@@ -41,8 +42,8 @@ High level steps:
   ```
   to get your absolute home directory before you set `MOUNTED_GCS_DIR`.
 
-7. Before you run anything, commit and push local changes to remote 
-8. Run `bash remote_run.sh --recipes recipes/your_recipe.sh`
+1. Before you run anything, commit and push local changes to remote 
+2. Change the tpu/branch/recipe names in `remote_run.sh` and run training! Or use recipe with: `bash remote_run.sh --recipes recipes/your_recipe.sh`
 
 
 ## Environment setup

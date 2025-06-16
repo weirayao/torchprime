@@ -2,6 +2,9 @@ import os
 from itertools import chain
 from typing import Sequence
 from glob import glob
+from dotenv import load_dotenv
+load_dotenv()
+
 from datasets import load_dataset, interleave_datasets, Dataset, DatasetDict, IterableDataset
 from transformers.tokenization_utils import PreTrainedTokenizerBase
 
