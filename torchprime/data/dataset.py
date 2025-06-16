@@ -90,7 +90,7 @@ def make_gcs_dataset(
   if len(data_mixture) == 1:
     return data_mixture[0]
   else:
-    return interleave_datasets(data_mixture, probabilities=weights, seed=seed)
+    return interleave_datasets(data_mixture, probabilities=weights, seed=seed, stopping_strategy="all_exhausted")
 
 
 def make_huggingface_dataset(
