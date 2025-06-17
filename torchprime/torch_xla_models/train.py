@@ -9,6 +9,9 @@ from functools import partial
 from pathlib import Path
 from timeit import default_timer as timer
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import datasets
 import hydra
 import torch
@@ -368,6 +371,7 @@ class Trainer:
     if hasattr(self, 'start_step') and self.start_step > 0:
       logger.info(f"    Resuming from step: {self.start_step}")
     if is_main_process():
+      wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
       wandb.init(project="text-diffusion-model-research", name=self.config.model.model_class)
       # Log the configuration to wandb
       wandb.config.update(OmegaConf.to_container(self.config, resolve=True))

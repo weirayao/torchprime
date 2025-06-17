@@ -78,3 +78,5 @@ htmlcov/
 gha-creds-*.json
 wandb/
 checkpoints/
+
+.env
