@@ -1,7 +1,6 @@
-TPU_VM_NAME="sfr-haolin-chen-v4-16"
+TPU_VM_NAME="<your_tpu_vm_name>"
 TPU_ZONE="us-central2-b"
-
-# Default recipe if none is provided
+BRANCH="<your_branch>"
 RECIPE="recipes/test_inference.sh"
 
 # Parse command line arguments
@@ -31,12 +30,9 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --tunnel-through-iap \
     --worker=all \
     --command='
-    export HF_HOME="/home/haolin.chen/huggingface"; \
-    export HF_TOKEN="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"; \
-    export MOUNTED_GCS_DIR="/home/haolin.chen/sfr-text-diffusion-model-research"; \
     cd torchprime; \
     git fetch; \
-    git checkout haolin/inference; \
+    git checkout '"$BRANCH"'; \
     git pull; \
     source venv/bin/activate; \
     bash '"$RECIPE"'';
