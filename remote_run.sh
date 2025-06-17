@@ -32,11 +32,13 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --worker=all \
     --command='
     export HF_HOME="~/huggingface"; \
-    export HF_TOKEN="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"; \
+    export HF_TOKEN=<HF_TOKEN>; \
     export MOUNTED_GCS_DIR="/home/cqin/sfr-text-diffusion-model-research"; \
     cd torchprime; \
     git fetch; \
     git checkout cqin/dev; \
     git pull; \
     source venv/bin/activate; \
+    export WANDB_API_KEY="local-13554988c6f407ff2f10f686b3dc102c7cb7e5e5"; \
+    wandb login $WANDB_API_KEY --relogin --host=https://salesforceairesearch.wandb.io; \
     bash '"$RECIPE"'';
