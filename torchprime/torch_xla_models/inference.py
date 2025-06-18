@@ -170,6 +170,7 @@ def generate(
     # xt: torch.Tensor = x.masked_fill(maskable_mask, tokenizer.mask_token_id)
     xt = x.clone() # NOTE: we already did the masking in prepare_inputs
     if verbose:
+        print(xt)
         logger.info(f"t={args.diffusion_steps}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
     x0 = sample(
         model, xt, x, attention_mask, maskable_mask, temperature, top_p, top_k, greedy=True
