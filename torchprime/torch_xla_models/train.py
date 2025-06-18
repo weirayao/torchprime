@@ -41,6 +41,7 @@ from torch_xla.experimental.distributed_checkpoint import CheckpointManager, pri
 from transformers.optimization import Adafactor
 from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
+from transformers import PreTrainedTokenizerBase
 
 from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset
 from torchprime.layers.sequential import HomogeneousSequential
@@ -65,7 +66,8 @@ logger = logging.getLogger(__name__)
 xr.use_spmd()
 assert xr.is_spmd() is True
 
-dist.init_process_group(backend='gloo', init_method='xla://')
+if not dist.is_initialized():
+  dist.init_process_group(backend='gloo', init_method='xla://')
 
 def is_main_process():
   """Check if this is the main process (rank 0)."""
@@ -91,6 +93,7 @@ class Trainer:
   def __init__(
     self,
     model: nn.Module,
+    tokenizer: PreTrainedTokenizerBase,
     config: DictConfig,
     train_dataset: Dataset | IterableDataset | None,
   ):
@@ -98,6 +101,7 @@ class Trainer:
     self.device = xm.xla_device()
     self.global_batch_size = self.config.global_batch_size
     self.train_dataset = train_dataset
+    self.tokenizer = tokenizer
 
     # Set up SPMD mesh and shard the model
     mesh = get_mesh(self.config)
@@ -331,26 +335,34 @@ class Trainer:
         classes_to_checkpoint.add(cls)
     return tuple(classes_to_checkpoint)
 
-  def consolidate_checkpoint(self):    
-    ckpt_suffix = self.config.checkpoint_dir.split("/")[-1]
+  def consolidate_checkpoint(self):
+    if self.config.resume_from_checkpoint is not None:
+      self._load_checkpoint()
+    else:
+      raise ValueError("Consolidate checkpoint requires resume_from_checkpoint to be set")
+    ckpt_suffix = self.ckpt_dir.split("/")[-1]
     consolidated_ckpt_dir = f"{MOUNTED_GCS_DIR}/consolidated_checkpoints/{ckpt_suffix}/{self.config.resume_from_checkpoint}"
     logger.info(f"Consolidating checkpoint to {consolidated_ckpt_dir}")
     logger.info("Moving model to CPU...")
     cpu_model = self.model.cpu()
     # Create a new state dict with _orig_mod removed from keys
-    logger.info("Creating new state dict...")
-    state_dict = cpu_model.state_dict()
-    model_state_dict = OrderedDict()
-    for key, value in state_dict.items():
-      if '._orig_mod' in key:
-        # Remove ._orig_mod from the key
-        cleaned_key = key.replace('._orig_mod', '')
-        model_state_dict[cleaned_key] = value
-      else:
-        model_state_dict[key] = value
-    self.hf_model.load_state_dict(model_state_dict)
-    self.hf_model.save_pretrained(consolidated_ckpt_dir)    
-    logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
+    # FIXME: still problematic, need to fix, the weights differ after reloading the huggingface model, compared to directly loading the checkpoint
+    if is_main_process():
+      logger.info("Creating new state dict...")
+      state_dict = cpu_model.state_dict()
+      model_state_dict = OrderedDict()
+      for key, value in state_dict.items():
+        if '._orig_mod' in key:
+          # Remove ._orig_mod from the key
+          cleaned_key = key.replace('._orig_mod', '')
+          model_state_dict[cleaned_key] = value
+        else:
+          model_state_dict[key] = value
+      self.hf_model.load_state_dict(model_state_dict)
+      self.hf_model.save_pretrained(consolidated_ckpt_dir)
+      self.tokenizer.save_pretrained(consolidated_ckpt_dir)
+      logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
+    xm.wait_device_ops()
 
 
   def train_loop(self):
@@ -509,6 +521,7 @@ class Trainer:
     return loss
 
 def load_hf_model(model_config):
+  logger.info(f"Loading HuggingFace model from {model_config.tokenizer_name}")
   hf_model_class_name = HF_MODEL_CLASS_MAPPING.get(model_config.model_class)
   if hf_model_class_name is None:
     print(f"Error: No HuggingFace model mapping found for '{model_config.model_class}'")
@@ -643,6 +656,7 @@ def main(config: DictConfig):
   data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # Needed as we don't use sampler for streaming dataset
   trainer = Trainer(
     model=model,
+    tokenizer=tokenizer,
     config=config,
     train_dataset=data,
   )

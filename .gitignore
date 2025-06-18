@@ -80,3 +80,4 @@ wandb/
 checkpoints/
 
 .env
+*.ipynb
