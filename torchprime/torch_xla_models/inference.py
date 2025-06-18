@@ -38,29 +38,30 @@ class GenerationConfig:
     max_tokens: int = 256
     max_new_tokens: int | None = None
     temperature: float = 1.0
-    top_p: float = 0.9
+    top_p: float | None = None
+    top_k: int | None = None
 
 
-def get_anneal_attn_mask(seq_len, bsz, dtype, device, attn_mask_ratio):
-    mask = torch.full((seq_len, seq_len), 0, device=device)
-    mask_cond = torch.arange(mask.size(-1), device=device)
-    mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 1)
-    causal_mask = mask.to(dtype)
+# def get_anneal_attn_mask(seq_len, bsz, dtype, device, attn_mask_ratio):
+#     mask = torch.full((seq_len, seq_len), 0, device=device)
+#     mask_cond = torch.arange(mask.size(-1), device=device)
+#     mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 1)
+#     causal_mask = mask.to(dtype)
 
-    random_mask = torch.bernoulli(
-        torch.full((seq_len, seq_len), 0.0, device=device) + attn_mask_ratio
-    )
+#     random_mask = torch.bernoulli(
+#         torch.full((seq_len, seq_len), 0.0, device=device) + attn_mask_ratio
+#     )
 
-    anneal_mask = torch.logical_or(causal_mask, random_mask)
-    expanded_mask = anneal_mask[None, None, :, :].expand(bsz, 1, seq_len, seq_len)
-    inverted_mask = 1.0 - expanded_mask.to(dtype)
+#     anneal_mask = torch.logical_or(causal_mask, random_mask)
+#     expanded_mask = anneal_mask[None, None, :, :].expand(bsz, 1, seq_len, seq_len)
+#     inverted_mask = 1.0 - expanded_mask.to(dtype)
 
-    return inverted_mask.masked_fill(
-        inverted_mask.to(torch.bool), torch.finfo(dtype).min
-    )
+#     return inverted_mask.masked_fill(
+#         inverted_mask.to(torch.bool), torch.finfo(dtype).min
+#     )
 
 
-def top_p_logits(logits, p=0.9):
+def top_p_logits(logits, p: float = 0.9):
     sorted_logits, sorted_indices = torch.sort(logits, descending=True)
     # import pdb; pdb.set_trace();
     cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
@@ -76,6 +77,13 @@ def top_p_logits(logits, p=0.9):
     logits = logits.masked_fill(mask, torch.finfo(logits.dtype).min)
     return logits
 
+def top_k_logits(logits, top_k: int):
+    top_k = min(top_k, logits.size(-1))  # Safety check
+    # Remove all tokens with a probability less than the last token of the top-k
+    indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
+    logits = logits.masked_fill(indices_to_remove, torch.finfo(logits.dtype).min)
+    return logits
+
 @torch.no_grad()
 def sample(
     model: PreTrainedModel,
@@ -84,7 +92,8 @@ def sample(
     attention_mask: torch.Tensor,
     maskable_mask: torch.Tensor,
     temperature: float,
-    top_p: float,
+    top_p: float | None = None,
+    top_k: int | None = None,
     greedy: bool = False
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
@@ -105,11 +114,16 @@ def sample(
     print(xt.shape, attention_mask.shape, maskable_mask.shape)
     # Get model predictions
     logits, _ = model(xt, attention_mask=attention_mask)
-    # logits = top_p_logits(logits / temperature + 1e-5, p=top_p)
+    if temperature > 0:
+        logits = logits / (temperature + 1e-5)
+    if top_p is not None and top_p < 1:
+        logits = top_p_logits(logits, top_p)
+    if top_k is not None:
+        logits = top_k_logits(logits, top_k)
 
     # Convert to probability distribution and sample
     scores = torch.log_softmax(logits, dim=-1)
-    if greedy: # TODO: rethink greedy sampling
+    if greedy or temperature == 0: # TODO: rethink greedy sampling
         _, x0 = scores.max(-1)
     else:
         x0 = dists.Categorical(logits=scores).sample()
@@ -140,7 +154,8 @@ def generate(
     logger.info(f"Start sampling with params: {asdict(args)}")
     temperature = args.temperature
     top_p = args.top_p
-    device = xm.xla_device()
+    top_k = args.top_k
+    device = torch_xla.device()
 
     x = inputs["input_ids"].to(device)
     if "src_mask" not in inputs:
@@ -157,7 +172,7 @@ def generate(
     if verbose:
         logger.info(f"t={args.diffusion_steps}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
     x0 = sample(
-        model, xt, x, attention_mask, maskable_mask, temperature, top_p, greedy=True
+        model, xt, x, attention_mask, maskable_mask, temperature, top_p, top_k, greedy=True
     )
     if verbose:
         logger.info(f"t={args.diffusion_steps}(out): {tokenizer.batch_decode(x0.detach().cpu())}")
@@ -175,7 +190,7 @@ def generate(
             logger.info(f"t={t}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
 
         x0 = sample(
-            model, xt, x, attention_mask, maskable_mask, temperature, top_p, greedy=True
+            model, xt, x, attention_mask, maskable_mask, temperature, top_p, top_k, greedy=True
         )
         if verbose:
             logger.info(f"t={t}(out): {tokenizer.batch_decode(x0.detach().cpu())}")
@@ -219,25 +234,39 @@ def prepare_inputs(
     ar_inputs = tokenizer([text_inputs], return_tensors="pt")
 
     # Use max_tokens if provided and > 0, otherwise use max_new_tokens
-    num_new_tokens = args.max_tokens - ar_inputs.input_ids.shape[1] if args.max_tokens > 0 else args.max_new_tokens
-
-    # Extend input_ids with mask tokens for generation
-    mask_token_ids = torch.full(
-        size=(
-            ar_inputs.input_ids.shape[0],
-            num_new_tokens,
-        ),
-        fill_value=tokenizer.mask_token_id,
-        dtype=ar_inputs.input_ids.dtype,
+    num_new_tokens = (
+        args.max_tokens - ar_inputs.input_ids.shape[1]
+        if args.max_tokens > 0
+        else args.max_new_tokens if args.max_new_tokens is not None else 0
     )
 
-    input_ids = torch.cat(
-        [
-            ar_inputs.input_ids,
-            mask_token_ids,
-        ],
-        dim=1,
-    ).squeeze(0)
+    # Extend input_ids with mask tokens for generation
+    if num_new_tokens > 0:
+        mask_token_ids = torch.full(
+            size=(
+                ar_inputs.input_ids.shape[0],
+                num_new_tokens,
+            ),
+            fill_value=tokenizer.mask_token_id,
+            dtype=ar_inputs.input_ids.dtype,
+        )
+
+        input_ids = torch.cat(
+            [
+                ar_inputs.input_ids,
+                mask_token_ids,
+            ],
+            dim=1,
+        ).squeeze(0)
+    else:
+        input_ids = ar_inputs.input_ids
+    # Left pad input_ids to nearest multiple of 256
+    seq_len = input_ids.shape[0]
+    pad_len = (256 - seq_len % 256) % 256  # Calculate padding needed
+    if pad_len > 0:
+        pad_ids = torch.full((pad_len,), tokenizer.pad_token_id, dtype=input_ids.dtype)
+        input_ids = torch.cat([pad_ids, input_ids])
+
     src_mask = torch.where(input_ids == tokenizer.mask_token_id, 0, 1)
     ddlm_inputs = {
         "input_ids": input_ids,

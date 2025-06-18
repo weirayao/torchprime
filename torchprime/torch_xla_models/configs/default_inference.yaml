@@ -13,6 +13,7 @@ generation:
   max_new_tokens: null
   temperature: 1.0
   top_p: 0.95
+  top_k: 32
 
 checkpoint_dir: checkpoints/
 resume_from_checkpoint: null
