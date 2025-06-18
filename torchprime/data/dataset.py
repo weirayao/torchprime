@@ -61,7 +61,7 @@ def make_gcs_dataset(
     raise ValueError(f"Dataset {names} not found in {DATASET_TYPES}")
   
   def tokenize_fn(examples):
-    texts = [example["text"] + tokenizer.eos_token for example in examples["text"]]
+    texts = [example + tokenizer.eos_token for example in examples["text"]]
     return tokenizer(texts)
 
   data_mixture = []
