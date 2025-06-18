@@ -1,15 +1,26 @@
 defaults:
   - _self_  # refers to this config file
 
-block_size: 4096
+block_size: 8192
 cache_dir: null
 # Huggingface dataset name, will OVERRIDE gcs_dataset_names if provided
 dataset_name: null
 dataset_config_name: null
 # GCS dataset names and mixing weights
 gcs_dataset_names:
-  - Redpajama-Arxiv
   - python_edu
-weights:
-  - 0.5
-  - 0.5
+  - the-stack-v2-train-smol
+  - Wikipedia_en
+  - Gutenberg
+  - cosmopedia_v2_parquet
+  - fineweb_edu_dedup
+  - Redpajama-Arxiv
+  - open-web-math
+  - DM_Mathematics
+  - c4_2023-14
+  - Falcon-refinedweb
+  - RedPajama
+  - RedPajama_math
+  - stackv2_Python_shuffled
+  - dclm-baseline-1.0-shuffled
+weights: null
