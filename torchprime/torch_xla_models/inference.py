@@ -170,7 +170,6 @@ def generate(
     # xt: torch.Tensor = x.masked_fill(maskable_mask, tokenizer.mask_token_id)
     xt = x.clone() # NOTE: we already did the masking in prepare_inputs
     if verbose:
-        print(xt)
         logger.info(f"t={args.diffusion_steps}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
     x0 = sample(
         model, xt, x, attention_mask, maskable_mask, temperature, top_p, top_k, greedy=True
@@ -266,7 +265,7 @@ def prepare_inputs(
     pad_len = (256 - seq_len % 256) % 256  # Calculate padding needed
     if pad_len > 0:
         pad_ids = torch.full((input_ids.shape[0], pad_len), tokenizer.pad_token_id, dtype=input_ids.dtype)
-        input_ids = torch.cat([pad_ids, input_ids], dim=1)
+        input_ids = torch.cat([pad_ids, input_ids], dim=1).squeeze(0)
 
     src_mask = torch.where(input_ids == tokenizer.mask_token_id, 0, 1)
     ddlm_inputs = {
