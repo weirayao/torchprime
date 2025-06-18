@@ -94,7 +94,6 @@ def sample(
     temperature: float,
     top_p: float | None = None,
     top_k: int | None = None,
-    greedy: bool = False
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Sample tokens from the model output with top-p filtering and handle shifting.
@@ -116,17 +115,17 @@ def sample(
     logits, _ = model(xt, attention_mask=attention_mask)
     if temperature > 0:
         logits = logits / (temperature + 1e-5)
-    if top_p is not None and top_p < 1:
-        logits = top_p_logits(logits, top_p)
-    if top_k is not None:
-        logits = top_k_logits(logits, top_k)
+        if top_p is not None and top_p < 1:
+            logits = top_p_logits(logits, top_p)
+        if top_k is not None:
+            logits = top_k_logits(logits, top_k)
 
     # Convert to probability distribution and sample
-    scores = torch.log_softmax(logits, dim=-1)
-    if greedy or temperature == 0: # TODO: rethink greedy sampling
-        _, x0 = scores.max(-1)
+    probs = torch.softmax(logits, dim=-1)
+    if temperature == 0:
+        _, x0 = probs.max(-1)
     else:
-        x0 = dists.Categorical(logits=scores).sample()
+        x0 = dists.Categorical(probs=probs).sample()
         # x0_scores = torch.gather(scores, -1, x0.unsqueeze(-1)).squeeze(-1)
     logger.info(f"x0: {x0}")
     # NOTE: we already cut one token in forward pass, so we don't need to cut x0 here
@@ -172,7 +171,7 @@ def generate(
     if verbose:
         logger.info(f"t={args.diffusion_steps}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
     x0 = sample(
-        model, xt, x, attention_mask, maskable_mask, temperature, top_p, top_k, greedy=True
+        model, xt, x, attention_mask, maskable_mask, temperature, top_p, top_k
     )
     if verbose:
         logger.info(f"t={args.diffusion_steps}(out): {tokenizer.batch_decode(x0.detach().cpu())}")
@@ -190,7 +189,7 @@ def generate(
             logger.info(f"t={t}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
 
         x0 = sample(
-            model, xt, x, attention_mask, maskable_mask, temperature, top_p, top_k, greedy=True
+            model, xt, x, attention_mask, maskable_mask, temperature, top_p, top_k
         )
         if verbose:
             logger.info(f"t={t}(out): {tokenizer.batch_decode(x0.detach().cpu())}")
