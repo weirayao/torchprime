@@ -62,7 +62,7 @@ def make_gcs_dataset(
   
   def tokenize_fn(examples):
     texts = [example + tokenizer.eos_token for example in examples["text"]]
-    print(f"tokenized texts: {texts[:10]}")
+    print(f"tokenized text list length: {len(texts)}")
     return tokenizer(texts)
 
   data_mixture = []
