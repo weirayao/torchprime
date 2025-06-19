@@ -86,6 +86,7 @@ class Trainer:
     self.device = xm.xla_device()
     self.global_batch_size = self.config.global_batch_size
     self.train_dataset = train_dataset
+    self.tokenizer = tokenizer
 
     # Set up SPMD mesh and shard the model
     mesh = get_mesh(self.config)
@@ -631,6 +632,7 @@ def main(config: DictConfig):
     model=model,
     config=config,
     train_dataset=data,
+    tokenizer=tokenizer,
   )
 
   # Synchronize all processes before starting training
