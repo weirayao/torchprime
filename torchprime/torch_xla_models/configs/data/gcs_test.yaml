@@ -8,6 +8,5 @@ dataset_name: null
 dataset_config_name: null
 # GCS dataset names and mixing weights
 gcs_dataset_names:
-  - Gutenberg
-  - DM_Mathematics
+  - Wikipedia_en
 weights: null
