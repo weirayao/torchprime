@@ -62,6 +62,7 @@ def make_gcs_dataset(
   
   def tokenize_fn(examples):
     texts = [example + tokenizer.eos_token for example in examples["text"]]
+    print(f"tokenized texts: {texts[:10]}")
     return tokenizer(texts)
 
   data_mixture = []
@@ -85,7 +86,7 @@ def make_gcs_dataset(
     first_example = list(data.take(1))[0]
     print(f"debug: First example keys: {list(first_example.keys())}")
     print(f"debug: First example text type: {type(first_example['text'])}")
-    print(f"debug: First example text: {repr(first_example['text'])[:200]}...")
+    print(f"debug: First example text: {first_example['text'][:200]}...")
       
     data = data.map(
       tokenize_fn,
