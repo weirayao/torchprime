@@ -69,6 +69,7 @@ def make_gcs_dataset(
   for name in names:
     extension, data_type = DATASET_TYPES[name]
     data_files = glob(f"{MOUNTED_GCS_DIR}/data/xgen_cleaned_data/{name}/*{extension}")
+    print(f"total number of data files: {len(data_files)}")
     print(f"Loading dataset {name}, data_files example: {data_files[0]}")
     data = load_dataset(
       data_type,
