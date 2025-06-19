@@ -81,6 +81,7 @@ class Trainer:
     model: nn.Module,
     config: DictConfig,
     train_dataset: Dataset | IterableDataset | None,
+    tokenizer: AutoTokenizer,
   ):
     self.config = config
     self.device = xm.xla_device()
