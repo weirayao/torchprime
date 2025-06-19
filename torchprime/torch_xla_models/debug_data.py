@@ -332,6 +332,7 @@ class Trainer:
         batch = next(train_iterator)
       # visualize_tensor_sharding(batch['input_ids'], use_color=False)
       print(f"Step {_}, Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}")
+      print(f"Decode: {self.tokenizer.batch_decode(batch['input_ids'])}")
       assert batch["input_ids"].shape == (self.global_batch_size, self.config.data.block_size), f"Batch shape mismatch: {batch['input_ids'].shape} != {(self.global_batch_size * 2, self.config.data.block_size)}"
 
   def train_loop(self):
