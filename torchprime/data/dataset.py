@@ -81,11 +81,11 @@ def make_gcs_dataset(
     print(f"Shuffling dataset {name}")
     data = data.shuffle(seed=seed, buffer_size=32768)
 
-    print(f"debug data length: {len(data)}")
-    data_text = data[0]["text"]
-    print(f"Pretokenizing dataset {name}")
-    print(f"debug data text length: {len(data_text)}")
-    print(f"debug data text: {data_text[0]}")
+    print(f"debug: Getting first example from dataset")
+    first_example = list(data.take(1))[0]
+    print(f"debug: First example keys: {list(first_example.keys())}")
+    print(f"debug: First example text type: {type(first_example['text'])}")
+    print(f"debug: First example text: {repr(first_example['text'])[:200]}...")
       
     data = data.map(
       tokenize_fn,
