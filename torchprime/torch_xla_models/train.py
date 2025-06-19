@@ -640,6 +640,8 @@ def main(config: DictConfig):
     )
   else:
     raise ValueError("No dataset provided")
+  n_blocks = sum(1 for _ in data)
+  print(f"total number of blocs: {n_blocks}")
   data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # Needed as we don't use sampler for streaming dataset
   trainer = Trainer(
     model=model,
