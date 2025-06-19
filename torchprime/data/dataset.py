@@ -102,9 +102,9 @@ def make_gcs_dataset(
     for example in ds:
       # each example["input_ids"] is a list of token IDs
       name_tokens += len(example["input_ids"])
-    print(f"  {name:25s}: {name_tokens:,} tokens")
+    print(f"{name}: {name_tokens} tokens")
     total_tokens += name_tokens
-  print(f"Total tokens across all datasets: {total_tokens:,}\n")
+  print(f"Total tokens across all datasets: {total_tokens}\n")
 
   if len(data_mixture) == 1:
     return data_mixture[0]
