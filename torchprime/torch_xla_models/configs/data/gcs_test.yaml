@@ -9,5 +9,4 @@ dataset_config_name: null
 # GCS dataset names and mixing weights
 gcs_dataset_names:
   - python_edu
-  - Wikipedia_en
 weights: null
