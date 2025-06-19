@@ -95,17 +95,6 @@ def make_gcs_dataset(
     )
     data_mixture.append(data)
   
-  print("Counting tokens per dataset...")
-  total_tokens = 0
-  for name, ds in zip(names, data_mixture):
-    name_tokens = 0
-    for example in ds:
-      # each example["input_ids"] is a list of token IDs
-      name_tokens += len(example["input_ids"])
-    print(f"{name}: {name_tokens} tokens")
-    total_tokens += name_tokens
-  print(f"Total tokens across all datasets: {total_tokens}\n")
-
   if len(data_mixture) == 1:
     return data_mixture[0]
   else:
