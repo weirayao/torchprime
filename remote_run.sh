@@ -1,6 +1,6 @@
-TPU_VM_NAME="<your_tpu_vm_name>"
+TPU_VM_NAME="sfr-haolin-chen-v4-16"
 TPU_ZONE="us-central2-b"
-BRANCH="<your_branch>"
+BRANCH="haolin/debug-2"
 RECIPE="recipes/train_qwen3_1.7b.sh"
 
 # Parse command line arguments
