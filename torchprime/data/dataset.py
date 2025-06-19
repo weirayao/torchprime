@@ -61,16 +61,13 @@ def make_gcs_dataset(
     raise ValueError(f"Dataset {names} not found in {DATASET_TYPES}")
   
   def tokenize_fn(examples):
-    print(f"type of example text: {type(examples['text'])}")
     texts = [example + tokenizer.eos_token for example in examples["text"]]
-    print(f"tokenized text list length: {len(texts)}")
     return tokenizer(texts)
 
   data_mixture = []
   for name in names:
     extension, data_type = DATASET_TYPES[name]
     data_files = glob(f"{MOUNTED_GCS_DIR}/data/xgen_cleaned_data/{name}/*{extension}")
-    print(f"total number of data files: {len(data_files)}")
     print(f"Loading dataset {name}, data_files example: {data_files[0]}")
     data = load_dataset(
       data_type,
@@ -84,59 +81,36 @@ def make_gcs_dataset(
     print(f"Shuffling dataset {name}")
     data = data.shuffle(seed=seed, buffer_size=32768)
 
-    print(f"debug: Getting first example from dataset")
-    first_example = list(data.take(1))[0]
-    print(f"debug: First example keys: {list(first_example.keys())}")
-    print(f"debug: First example text type: {type(first_example['text'])}")
-    print(f"debug: First example text: {first_example['text'][:200]}...")
-      
+    print(f"Pretokenizing dataset {name}")
     data = data.map(
       tokenize_fn,
       batched=True,
       remove_columns=columns,
     )
-    # Check tokens after tokenization
-    print(f"debug: Checking tokens after tokenization...")
-    try:
-      tokenized_example = list(data.take(1))[0]
-      print(f"debug: Tokenized example keys: {list(tokenized_example.keys())}")
-      if 'input_ids' in tokenized_example:
-        print(f"debug: input_ids length: {len(tokenized_example['input_ids'])}")
-        print(f"debug: First 20 input_ids: {tokenized_example['input_ids'][:20]}")
-      if 'attention_mask' in tokenized_example:
-        print(f"debug: attention_mask length: {len(tokenized_example['attention_mask'])}")
-        print(f"debug: First 20 attention_mask: {tokenized_example['attention_mask'][:20]}")
-    except Exception as e:
-      print(f"debug: Error checking tokenized data: {e}")
 
     print(f"Grouping dataset {name}")
     data = data.map(
       lambda examples: group_texts(examples, block_size),
       batched=True,
     )
-    # Check tokens after grouping
-    print(f"debug: Checking tokens after grouping...")
-    try:
-      grouped_example = list(data.take(1))[0]
-      print(f"debug: Grouped example keys: {list(grouped_example.keys())}")
-      if 'input_ids' in grouped_example:
-        print(f"debug: Number of input_ids chunks: {len(grouped_example['input_ids'])}")
-        print(f"debug: First chunk length: {len(grouped_example['input_ids'][0])}")
-        print(f"debug: First chunk first 20 tokens: {grouped_example['input_ids'][0][:20]}")
-      if 'labels' in grouped_example:
-        print(f"debug: Number of labels chunks: {len(grouped_example['labels'])}")
-        print(f"debug: First chunk length: {len(grouped_example['labels'][0])}")
-    except Exception as e:
-      print(f"debug: Error checking grouped data: {e}")
     data_mixture.append(data)
+  
+  print("Counting tokens per dataset...")
+  total_tokens = 0
+  for name, ds in zip(names, data_mixture):
+    name_tokens = 0
+    for example in ds:
+      # each example["input_ids"] is a list of token IDs
+      name_tokens += len(example["input_ids"])
+    print(f"  {name:25s}: {name_tokens:,} tokens")
+    total_tokens += name_tokens
+  print(f"Total tokens across all datasets: {total_tokens:,}\n")
 
   if len(data_mixture) == 1:
     return data_mixture[0]
   else:
     return concatenate_datasets(data_mixture)
-    # return interleave_datasets(data_mixture, probabilities=weights, seed=seed)
-
-
+    
 def make_huggingface_dataset(
   name: str,
   config_name: str,
