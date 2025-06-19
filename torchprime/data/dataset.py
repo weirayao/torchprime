@@ -61,7 +61,7 @@ def make_gcs_dataset(
     raise ValueError(f"Dataset {names} not found in {DATASET_TYPES}")
   
   def tokenize_fn(examples):
-    print(f"tokenized example text list length: {len(examples['text'])}")
+    print(f"type of example text: {type(examples['text'])}")
     texts = [example + tokenizer.eos_token for example in examples["text"]]
     print(f"tokenized text list length: {len(texts)}")
     return tokenizer(texts)
