@@ -8,7 +8,6 @@ dataset_name: null
 dataset_config_name: null
 # GCS dataset names and mixing weights
 gcs_dataset_names:
-  - Redpajama-Arxiv
   - python_edu
 weights:
   - 0.5
