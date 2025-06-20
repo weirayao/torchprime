@@ -654,7 +654,7 @@ def main(config: DictConfig):
   elif config.data.gcs_dataset_names:
     data = []
     for _ in range(config.global_batch_size):
-      data.append({"input_ids": torch.full((config.data.block_size), _, dtype=torch.int32)})
+      data.append({"input_ids": torch.full((config.data.block_size,), _, dtype=torch.int32)})
     from datasets import IterableDataset as HFIterableDataset, Dataset as HFDataset
     data = HFDataset.from_list(data).to_iterable_dataset()
     # Downloading and loading a dataset from GCS bucket.
