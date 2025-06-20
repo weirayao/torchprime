@@ -631,7 +631,8 @@ def main(config: DictConfig):
     #     seed=config.seed,
     #     block_size=config.data.block_size,
     #   )
-    # )  else:
+    # )
+  else:
     raise ValueError("No dataset provided")
   # data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
   trainer = Trainer(
