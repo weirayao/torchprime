@@ -229,10 +229,12 @@ class Trainer:
       sampler=sampler,
       drop_last=True,
     )
+    dataloader = self._instrument_dataloader(dataloader, "base_loader")
     print(f"Global batch size: {self.global_batch_size}, per-process batch size: {batch_size}, device: {self.device}, process: {xr.process_index()}")
     loader = pl.MpDeviceLoader(
       dataloader, self.device, input_sharding=self.input_sharding_spec
     )
+    loader = self._instrument_dataloader(loader, "mp_device_loader")
     return loader
 
   def _add_checkpoint_offload_scan_model(self, model: nn.Module):
@@ -309,6 +311,39 @@ class Trainer:
       return mod
 
     return wrap_module(model, maybe_add_barrier)
+
+  def _instrument_dataloader(self, dataloader, name): 
+    """Instrument the shapes from the dataloader with a name for logging.""" 
+    class WrapperDataLoader: 
+      def __init__(self, dataloader, name): 
+        self.dataloader = dataloader 
+        self.name = name 
+    
+      def __iter__(self): 
+        for batch in self.dataloader: 
+          # Log the shapes of the inputs and targets. 
+          self._log_shapes(batch) 
+          yield batch 
+    
+      def _log_shapes(self, batch): 
+        import torch.utils._pytree as pytree 
+    
+        shapes = pytree.tree_map( 
+          lambda x: x.shape if isinstance(x, torch.Tensor) else None, batch 
+        ) 
+        logger.info(f"[{self.name}] data shapes: {shapes}") 
+    
+        # Visualize one example tensor. 
+        t = next(iter(pytree.tree_iter(batch))) 
+        if t.device.type == "xla": 
+          import click 
+          from torch_xla.distributed.spmd.debugging import visualize_tensor_sharding 
+    
+          generated_table = visualize_tensor_sharding(t, use_color=False) 
+          click.echo(generated_table) 
+      def __len__(self): 
+       return len(self.dataloader) 
+    return WrapperDataLoader(dataloader, name) 
 
   def _get_classes_by_names(self, model, activation_checkpoint_layers: list[str]):
     classes_to_checkpoint = set()
@@ -619,7 +654,7 @@ def main(config: DictConfig):
   elif config.data.gcs_dataset_names:
     data = []
     for _ in range(config.global_batch_size):
-      data.append({"input_ids": torch.ones((1, config.data.block_size), dtype=torch.int32)})
+      data.append({"input_ids": torch.ones((config.data.block_size), dtype=torch.int32)})
     from datasets import IterableDataset as HFIterableDataset, Dataset as HFDataset
     data = HFDataset.from_list(data).to_iterable_dataset()
     # Downloading and loading a dataset from GCS bucket.
