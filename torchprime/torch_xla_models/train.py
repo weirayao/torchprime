@@ -640,7 +640,6 @@ def main(config: DictConfig):
     )
   else:
     raise ValueError("No dataset provided")
-  # data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # Needed as we don't use sampler for streaming dataset
   trainer = Trainer(
     model=model,
     config=config,

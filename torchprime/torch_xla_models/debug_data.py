@@ -628,7 +628,7 @@ def main(config: DictConfig):
     )
   else:
     raise ValueError("No dataset provided")
-  data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+  # data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
   trainer = Trainer(
     model=model,
     config=config,
