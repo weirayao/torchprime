@@ -330,6 +330,7 @@ class Trainer:
       try:
         batch = next(train_iterator)
       except StopIteration:
+        print(f"DataLoader exhausted at step {_}, reset iterator")
         train_iterator = iter(train_loader)
         batch = next(train_iterator)
       # visualize_tensor_sharding(batch['input_ids'], use_color=False)
@@ -616,17 +617,21 @@ def main(config: DictConfig):
       )
     )
   elif config.data.gcs_dataset_names:
+    data = []
+    for _ in range(config.data.global_batch_size):
+      data.append({"input_ids": torch.ones((1, config.data.block_size), dtype=torch.int32)})
+    from datasets import IterableDataset as HFIterableDataset
+    data = HFIterableDataset(data)
     # Downloading and loading a dataset from GCS bucket.
-    data = retry(
-      lambda: make_gcs_dataset(
-        names=config.data.gcs_dataset_names,
-        weights=config.data.weights,
-        tokenizer=tokenizer,
-        seed=config.seed,
-        block_size=config.data.block_size,
-      )
-    )
-  else:
+    # data = retry(
+    #   lambda: make_gcs_dataset(
+    #     names=config.data.gcs_dataset_names,
+    #     weights=config.data.weights,
+    #     tokenizer=tokenizer,
+    #     seed=config.seed,
+    #     block_size=config.data.block_size,
+    #   )
+    # )  else:
     raise ValueError("No dataset provided")
   # data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
   trainer = Trainer(
