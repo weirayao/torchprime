@@ -618,7 +618,7 @@ def main(config: DictConfig):
     )
   elif config.data.gcs_dataset_names:
     data = []
-    for _ in range(config.data.global_batch_size):
+    for _ in range(config.global_batch_size):
       data.append({"input_ids": torch.ones((1, config.data.block_size), dtype=torch.int32)})
     from datasets import IterableDataset as HFIterableDataset
     data = HFIterableDataset(data)
