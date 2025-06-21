@@ -372,7 +372,7 @@ class Trainer:
       logger.info(f"    Resuming from step: {self.start_step}")
     if is_main_process():
       wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
-      wandb.init(project="text-diffusion-model-research-qwen3-1b-pretrain-all-data-run", name=self.config.model.model_class)
+      wandb.init(project="text-diffusion-model-research-qwen3-1b-pretrain-all-dataloader-fix", name=self.config.model.model_class)
       # Log the configuration to wandb
       wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
       # Set wandb step to start_step if resuming from checkpoint
@@ -640,7 +640,7 @@ def main(config: DictConfig):
     )
   else:
     raise ValueError("No dataset provided")
-  data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # Needed as we don't use sampler for streaming dataset
+  # data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # Needed as we don't use sampler for streaming dataset
   trainer = Trainer(
     model=model,
     config=config,
