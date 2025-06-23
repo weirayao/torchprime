@@ -211,6 +211,7 @@ def prepare_inputs(
     messages: str | list[dict],
     args: GenerationConfig,
     enable_thinking: bool = True,
+    noise_ratio: float = 0.0,
 ) -> tuple[dict[str, torch.Tensor], BatchEncoding]:
     """
     Prepare model inputs by applying chat template, tokenizing, and extending with mask tokens.
@@ -241,6 +242,12 @@ def prepare_inputs(
     # Tokenize input
     ar_inputs = tokenizer(text_inputs, return_tensors="pt")
     input_ids = ar_inputs.input_ids
+
+    if noise_ratio > 0:
+        # Randomly replace noise_ratio proportion of tokens with mask token
+        mask_indices = torch.rand_like(input_ids.float()) < noise_ratio
+        input_ids = torch.where(mask_indices, tokenizer.mask_token_id, input_ids)
+
     # Use max_tokens if provided and > 0, otherwise use max_new_tokens
     num_new_tokens = (
         args.max_tokens - ar_inputs.input_ids.shape[1]
@@ -306,13 +313,38 @@ def main(config: DictConfig):
 
     logger.info("Preparing inputs...")
     # prompt = "Donald John Trump (born June 14, 1946) is an American <|mask|>, media personality, and businessman who is the 47th <|mask|> of the <|mask|> <|mask|>."
-    prompt = "<|im_start|>" + "<|mask|>"*255
+    # prompt = "<|im_start|>" + "<|mask|>"*255
+    prompt = """#coding utf-8
+'''
+斐波那契数列-循环法
+'''
+def Fib_circle():
+    while True:   # 去掉while循环，只用for循环
+        num_1 = 0
+        num_2 = 1
+        fib_array = [0] # 用于存储计算出的FB数列值
+        m = input('你想要查找的起始项：')
+        n = input('你想要查找的结束项：')
+        if m.isdigit() and n.isdigit():   # 在这个实现函数中，不要进行检验。每个函数只做一个事情
+            m = int(m) # 将输入化为整数型
+            n = int(n)
+            for i in range(n):
+                num_1, num_2 = num_2, num_1 + num_2
+                fib_array.append(num_1)
+            print(f'你要查找的数列为{list(enumerate(fib_array[m:], m))}')
+            break
+        else:
+            print('请输入有效的正整数')
+
+if __name__ == '__main__':
+    Fib_circle()
+"""
     # messages = [{"role": "user", "content": prompt}]
     messages = prompt
     generation_config = GenerationConfig(**OmegaConf.to_container(config.generation))
 
     ddlm_inputs, ar_inputs = prepare_inputs(
-        tokenizer, messages, generation_config, enable_thinking=False
+        tokenizer, messages, generation_config, enable_thinking=False, noise_ratio=0.1
     )
     dataset = Dataset.from_list([copy.deepcopy(ddlm_inputs) for _ in range(config.global_batch_size)])  # Create a single-element dataset with ddlm_inputs
 
