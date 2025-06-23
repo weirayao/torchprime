@@ -1,7 +1,7 @@
-TPU_VM_NAME="sfr-haolin-chen-v4-16"
+TPU_VM_NAME="<your_tpu_vm_name>"
 TPU_ZONE="us-central2-b"
-BRANCH="haolin/inference"
-RECIPE="recipes/test_inference.sh"
+BRANCH="<your_branch>"
+RECIPE="recipes/train_qwen3_1.7b.sh"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
