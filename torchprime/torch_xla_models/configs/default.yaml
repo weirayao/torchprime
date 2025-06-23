@@ -24,8 +24,8 @@ profile_duration: 100000
 output_dir: outputs
 
 # Checkpoint directory
-checkpoint_dir: checkpoints/
-resume_from_checkpoint: null
+checkpoint_dir: gs://sfr-text-diffusion-model-research/checkpoints/flex-qwen3-1b-gcs-pretrain-all-data-dataloader-no-split-512
+resume_from_checkpoint: 35000
 save_steps: 5000
 
 optimizer:
