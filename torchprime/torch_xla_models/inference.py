@@ -94,7 +94,7 @@ def sample(
     temperature: float,
     top_p: float | None = None,
     top_k: int | None = None,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> torch.Tensor:
     """
     Sample tokens from the model output with top-p filtering and handle shifting.
 
@@ -106,9 +106,10 @@ def sample(
         maskable_mask: Mask indicating which positions can be modified
         temperature: Temperature for sampling
         top_p: Top-p threshold for filtering
+        top_k: Top-k threshold for filtering
 
     Returns:
-        Updated x0 tensor with sampled tokens and their scores
+        Updated x0 tensor with sampled tokens
     """
     print(xt.shape, attention_mask.shape, maskable_mask.shape)
     # Get model predictions
@@ -194,7 +195,7 @@ def generate(
         if verbose:
             logger.info(f"t={t}(out): {tokenizer.batch_decode(x0.detach().cpu())}")
 
-    return x0[:, 1:]  # shift left by 1
+    return x0
 
 
 def prepare_inputs(
