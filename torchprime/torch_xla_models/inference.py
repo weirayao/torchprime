@@ -180,13 +180,21 @@ def generate(
     for t in range(args.diffusion_steps - 1, 0, -1):
         # select rate% tokens to be still [MASK]
         p_to_x0 = 1 / (t + 1)
+        if verbose:
+            logger.info(f"p_to_x0: {p_to_x0}")
 
         masked_to_x0 = maskable_mask & (
             torch.rand_like(x0, dtype=torch.float) < p_to_x0
         ) # a token is previously [MASK] has probability p_to_x0 to be replaced by x0
+        if verbose:
+            logger.info(f"masked_to_x0: {masked_to_x0}")
+            logger.info(f"xt before: {xt}")
         xt.masked_scatter_(masked_to_x0, x0[masked_to_x0])
+        if verbose:
+            logger.info(f"xt after: {xt}")
         maskable_mask = maskable_mask.masked_fill(masked_to_x0, False)
         if verbose:
+            logger.info(f"maskable_mask: {maskable_mask}")
             logger.info(f"t={t}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
 
         x0 = sample(
