@@ -305,7 +305,7 @@ def main(config: DictConfig):
 
     logger.info("Preparing inputs...")
     # prompt = "Donald John Trump (born June 14, 1946) is an American <|mask|>, media personality, and businessman who is the 47th <|mask|> of the <|mask|> <|mask|>."
-    prompt = "<|mask|>"*256
+    prompt = "<|im_start|>" + "<|mask|>"*255
     # messages = [{"role": "user", "content": prompt}]
     messages = prompt
     generation_config = GenerationConfig(**OmegaConf.to_container(config.generation))
