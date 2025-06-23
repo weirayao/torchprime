@@ -239,7 +239,7 @@ def prepare_inputs(
     print(f"Input text: {text_inputs}")
 
     # Tokenize input
-    ar_inputs = tokenizer([text_inputs], return_tensors="pt")
+    ar_inputs = tokenizer(text_inputs, return_tensors="pt")
 
     # Use max_tokens if provided and > 0, otherwise use max_new_tokens
     num_new_tokens = (
@@ -265,7 +265,7 @@ def prepare_inputs(
                 mask_token_ids,
             ],
             dim=1,
-        ).squeeze(0)
+        )
     else:
         input_ids = ar_inputs.input_ids
     # Left pad input_ids to nearest multiple of 256
@@ -273,7 +273,7 @@ def prepare_inputs(
     pad_len = (256 - seq_len % 256) % 256  # Calculate padding needed
     if pad_len > 0:
         pad_ids = torch.full((input_ids.shape[0], pad_len), tokenizer.pad_token_id, dtype=input_ids.dtype)
-        input_ids = torch.cat([pad_ids, input_ids], dim=1).squeeze(0)
+        input_ids = torch.cat([pad_ids, input_ids], dim=1)
 
     src_mask = torch.where(input_ids == tokenizer.mask_token_id, 0, 1)
     ddlm_inputs = {
