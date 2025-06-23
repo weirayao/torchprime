@@ -344,7 +344,7 @@ if __name__ == '__main__':
     generation_config = GenerationConfig(**OmegaConf.to_container(config.generation))
 
     ddlm_inputs, ar_inputs = prepare_inputs(
-        tokenizer, messages, generation_config, enable_thinking=False, noise_ratio=0.1
+        tokenizer, messages, generation_config, enable_thinking=False, noise_ratio=0.5
     )
     dataset = Dataset.from_list([copy.deepcopy(ddlm_inputs) for _ in range(config.global_batch_size)])  # Create a single-element dataset with ddlm_inputs
 
