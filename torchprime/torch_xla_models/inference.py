@@ -295,7 +295,8 @@ def main(config: DictConfig):
     logger.info(f"hf model weights: {model.state_dict()['model.embed_tokens.weight']}")
 
     logger.info("Preparing inputs...")
-    prompt = "Donald John Trump (born June 14, 1946) is an American <|mask|>, media personality, and businessman who is the 47th <|mask|> of the <|mask|> <|mask|>."
+    # prompt = "Donald John Trump (born June 14, 1946) is an American <|mask|>, media personality, and businessman who is the 47th <|mask|> of the <|mask|> <|mask|>."
+    prompt = "<|mask|>"*256
     # messages = [{"role": "user", "content": prompt}]
     messages = prompt
     generation_config = GenerationConfig(**OmegaConf.to_container(config.generation))
