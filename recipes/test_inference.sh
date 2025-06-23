@@ -4,7 +4,7 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/inference.py \
     generation.diffusion_steps=32 \
     generation.max_tokens=0 \
     generation.temperature=0 \
-    checkpoint_dir=sfr-text-diffusion-model-research/checkpoints/flex-qwen3-1b-gcs-pretrain-all-data-dataloader-no-split-512/ \
+    checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex-qwen3-1b-gcs-pretrain-all-data-dataloader-no-split-512 \
     resume_from_checkpoint=35000 \
     ici_mesh.fsdp=8 \
     ici_mesh.tensor=1 \
