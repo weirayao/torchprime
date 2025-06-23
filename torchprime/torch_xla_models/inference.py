@@ -240,7 +240,7 @@ def prepare_inputs(
 
     # Tokenize input
     ar_inputs = tokenizer(text_inputs, return_tensors="pt")
-
+    input_ids = ar_inputs.input_ids
     # Use max_tokens if provided and > 0, otherwise use max_new_tokens
     num_new_tokens = (
         args.max_tokens - ar_inputs.input_ids.shape[1]
@@ -252,29 +252,27 @@ def prepare_inputs(
     if num_new_tokens > 0:
         mask_token_ids = torch.full(
             size=(
-                ar_inputs.input_ids.shape[0],
+                input_ids.shape[0],
                 num_new_tokens,
             ),
             fill_value=tokenizer.mask_token_id,
             dtype=ar_inputs.input_ids.dtype,
         )
-
         input_ids = torch.cat(
             [
-                ar_inputs.input_ids,
+                input_ids,
                 mask_token_ids,
             ],
             dim=1,
-        ).squeeze(0)
-    else:
-        input_ids = ar_inputs.input_ids
+        )
     # Left pad input_ids to nearest multiple of 256
     seq_len = input_ids.shape[1]
     pad_len = (256 - seq_len % 256) % 256  # Calculate padding needed
     if pad_len > 0:
         pad_ids = torch.full((input_ids.shape[0], pad_len), tokenizer.pad_token_id, dtype=input_ids.dtype)
-        input_ids = torch.cat([pad_ids, input_ids], dim=1).squeeze(0)
+        input_ids = torch.cat([pad_ids, input_ids], dim=1)
 
+    input_ids = input_ids.squeeze(0)
     src_mask = torch.where(input_ids == tokenizer.mask_token_id, 0, 1)
 
     print(f"input_ids: {input_ids.shape}")
