@@ -1,6 +1,6 @@
 XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/inference.py \
     global_batch_size=8 \
-    model.tokenizer_name=/home/haolin.chen/sfr-text-diffusion-model-research/checkpoints/flex-qwen3-1b-gcs-pretrain-all-data-dataloader-no-split-512/35000 \
+    model.tokenizer_name=/home/haolin.chen/sfr-text-diffusion-model-research/consolidated_checkpoints/flex-qwen3-1b-gcs-pretrain-all-data/15000 \
     generation.diffusion_steps=32 \
     generation.max_tokens=0 \
     generation.temperature=0 \
