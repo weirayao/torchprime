@@ -267,7 +267,8 @@ def prepare_inputs(
             dim=1,
         ).squeeze(0)
     else:
-        input_ids = ar_inputs.input_ids.squeeze(0)
+        print(ar_inputs.input_ids.shape)
+        input_ids = ar_inputs.input_ids.squeeze(1)
     # Left pad input_ids to nearest multiple of 256
     seq_len = input_ids.shape[1]
     pad_len = (256 - seq_len % 256) % 256  # Calculate padding needed
