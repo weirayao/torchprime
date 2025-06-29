@@ -9,7 +9,7 @@ import torch_xla.runtime as xr
 import torch.distributed as dist
 import hydra
 from omegaconf import DictConfig, OmegaConf
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 from transformers.tokenization_utils_base import BatchEncoding
 from tqdm import tqdm
@@ -34,13 +34,11 @@ def is_main_process():
 logger = logging.getLogger(__name__)
 
 
-def prepare_inputs(
+def prepare_dataset(
     tokenizer: PreTrainedTokenizerBase,
-    messages: str | list[dict],
+    dataset: Dataset,
     args: GenerationConfig,
-    enable_thinking: bool = True,
-    noise_ratio: float = 0.0,
-) -> tuple[dict[str, torch.Tensor], BatchEncoding]:
+) -> Dataset:
     """
     Prepare model inputs by applying chat template, tokenizing, and extending with mask tokens.
 
@@ -146,8 +144,15 @@ def main(config: DictConfig):
     logger.info(f"Evaluation with generation_config: {generation_config}")
 
     logger.info("Loading evaluation dataset...")
-    dataset = load_dataset(config.eval_dataset_name_or_path, split="test")
-    eval_func = None # TODO: implement evaluation function
+    match config.eval_dataset_name_or_path:
+        case "loubnabnl/humaneval_infilling":
+            dataset = load_dataset(config.eval_dataset_name_or_path, config="HumanEval-RandomSpanInfillingLight", split="test")
+        case "openai/openai_humaneval":
+            dataset = load_dataset(config.eval_dataset_name_or_path, split="test")
+        case _:
+            raise ValueError(f"Unsupported dataset: {config.eval_dataset_name_or_path}")
+    # TODO: Need to assemble and pretokenize the query.
+    dataset = prepare_dataset(tokenizer, dataset)
 
     logger.info("Loading model checkpoint...")
     trainer = Trainer(
