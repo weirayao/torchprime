@@ -171,7 +171,7 @@ def main(config: DictConfig):
         case _:
             raise ValueError(f"Unsupported dataset: {config.eval_dataset_name_or_path}")
     # TODO: Need to assemble and pretokenize the query.
-    tokenized_dataset = prepare_dataset(tokenizer, dataset)
+    tokenized_dataset = prepare_dataset(tokenizer, dataset, generation_config)
 
     logger.info("Loading model checkpoint...")
     trainer = Trainer(
