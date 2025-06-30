@@ -165,9 +165,9 @@ def main(config: DictConfig):
     logger.info("Loading evaluation dataset...")
     match config.eval_dataset_name_or_path:
         case "loubnabnl/humaneval_infilling":
-            dataset = load_dataset(config.eval_dataset_name_or_path, config="HumanEval-RandomSpanInfillingLight", split="test")
+            dataset = load_dataset(config.eval_dataset_name_or_path, name="HumanEval-RandomSpanInfillingLight", split="test", trust_remote_code=True)
         case "openai/openai_humaneval":
-            dataset = load_dataset(config.eval_dataset_name_or_path, split="test")
+            dataset = load_dataset(config.eval_dataset_name_or_path, split="test", trust_remote_code=True)
         case _:
             raise ValueError(f"Unsupported dataset: {config.eval_dataset_name_or_path}")
     # TODO: Need to assemble and pretokenize the query.
