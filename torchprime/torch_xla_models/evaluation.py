@@ -3,6 +3,7 @@ import sys
 import torch
 import torch_xla
 import json
+from datetime import datetime
 from pathlib import Path
 import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
@@ -214,18 +215,25 @@ def main(config: DictConfig):
         generation = generation.cpu().tolist()
         generation_text = tokenizer.batch_decode(generation, skip_special_tokens=True)
         if config.eval_dataset_name_or_path == "loubnabnl/humaneval_infilling":
-            generation_text = [x.split("```python")[1].split("```")[0] for x in generation_text]
+            generation_text = [
+                x.split("```python")[1].split("```")[0] for x in generation_text
+            ]
         generation_results.append(generation_text)
-        break  # NOTE: debug
 
     if is_main_process() and generation_results:
+        # Get number of devices
+        num_devices = xr.process_count()
+        # Extract interleaved results in worker 0
+        generation_results = generation_results[0::config.global_batch_size // num_devices]
         generation_results = generation_results[
             :eval_dataset_len
         ]  # TODO: double check if this is correct
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         save_path = (
             Path(config.eval_results_save_path)
             / config.eval_dataset_name_or_path
-            / f"{config.checkpoint_dir.split('/')[-1]}_{config.resume_from_checkpoint}.json"
+            / f"{config.checkpoint_dir.split('/')[-1]}_{config.resume_from_checkpoint}_{timestamp}.json"
         )
         # Create directory if it doesn't exist
         save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -233,7 +241,7 @@ def main(config: DictConfig):
         with open(save_path, "w") as f:
             json.dump(generation_results, f)
         dataset.add_column("generation", generation_results)
-        dataset.to_json(save_path.with_suffix(".jsonl"))
+        dataset.to_json(save_path.with_suffix(".jsonl")) # TODO: double check if this is correct
 
 
 if __name__ == "__main__":
