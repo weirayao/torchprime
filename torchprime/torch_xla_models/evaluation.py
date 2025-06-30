@@ -223,11 +223,17 @@ def main(config: DictConfig):
         num_devices = xr.process_count()
         print(f"Eval dataset length: {eval_dataset_len}; Number of generation results: {len(generation_results)}; num_devices: {num_devices}; global_batch_size: {config.global_batch_size}")
 
-        # Extract interleaved results in worker 0
-        generation_results = generation_results[0::config.global_batch_size // num_devices]
-        generation_results = generation_results[
-            :eval_dataset_len
-        ]  # TODO: double check if this is correct
+        # Extract results from worker 0 only (first 4 elements of each batch of 8)
+        worker_0_results = []
+        batch_size_per_device = config.global_batch_size // num_devices
+        for i in range(0, len(generation_results), config.global_batch_size):
+            # Take the first batch_size_per_device elements from each batch
+            worker_0_results.extend(
+                generation_results[i:i + batch_size_per_device]
+            )
+        generation_results = worker_0_results
+        # Truncate to original dataset length to remove dummy batches
+        generation_results = generation_results[:eval_dataset_len]
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         save_path = (
