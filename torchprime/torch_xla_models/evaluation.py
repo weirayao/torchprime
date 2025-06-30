@@ -104,8 +104,8 @@ def prepare_dataset(
         tokenized_dataset.map(lambda x: {"length": len(x["input_ids"])})["length"]
     )
 
-    # Round up to nearest multiple of 256 for XLA efficiency
-    target_length = ((max_length + 255) // 256) * 256
+    # Round up to nearest multiple of 512 for XLA efficiency
+    target_length = ((max_length + 512) // 512) * 512
     logger.info(
         f"Padding all sequences to fixed length: {target_length} (max found: {max_length})"
     )
@@ -170,10 +170,7 @@ def main(config: DictConfig):
             )
         case _:
             raise ValueError(f"Unsupported dataset: {config.eval_dataset_name_or_path}")
-    # TODO: Need to assemble and pretokenize the query.
     tokenized_dataset = prepare_dataset(tokenizer, dataset, generation_config)
-    print(f"processed tokenized_dataset: {tokenized_dataset}")
-    print(all(len(x["input_ids"]) == 768 for x in tokenized_dataset))
 
     logger.info("Loading model checkpoint...")
     trainer = Trainer(
