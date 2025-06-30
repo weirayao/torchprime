@@ -125,13 +125,11 @@ def prepare_dataset(
                 # TODO: left-pad or right-pad?
                 ids += [tokenizer.pad_token_id] * pad_len
             padded_ids.append(ids)
-        
+
         return {"input_ids": padded_ids}
 
     # Remove the lengths column and apply padding
-    tokenized_dataset = tokenized_dataset.map(
-        pad_to_fixed_length, batched=True, remove_columns=["lengths"]
-    )
+    tokenized_dataset = tokenized_dataset.map(pad_to_fixed_length, batched=True)
 
     return tokenized_dataset
 
