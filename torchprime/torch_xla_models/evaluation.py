@@ -97,7 +97,7 @@ def prepare_dataset(
     # Tokenize input
     column_names = list(dataset.features)
     tokenized_dataset = dataset.map(
-        lambda x: tokenizer(x["query"]), batched=True, remove_columns=column_names
+        lambda x: tokenizer(x["query"])["input_ids"], batched=True, remove_columns=column_names
     )
     # Find the maximum length in the dataset efficiently
     max_length = max(
