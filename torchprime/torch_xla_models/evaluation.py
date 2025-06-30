@@ -99,42 +99,37 @@ def prepare_dataset(
     tokenized_dataset = dataset.map(
         lambda x: tokenizer(x["query"]), batched=True, remove_columns=column_names
     )
+    # Find the maximum length in the dataset efficiently
+    max_length = max(
+        tokenized_dataset.map(lambda x: {"length": len(x["input_ids"])})["length"]
+    )
 
-        # Find the maximum length in the dataset efficiently
-    def find_max_length(batch):
-        lengths = [len(ids) for ids in batch["input_ids"]]
-        batch["lengths"] = lengths
-        return batch
-    
-    dataset_with_lengths = tokenized_dataset.map(find_max_length, batched=True)
-    max_length = max(length for batch in dataset_with_lengths for length in batch["lengths"])
-    
     # Round up to nearest multiple of 256 for XLA efficiency
     target_length = ((max_length + 255) // 256) * 256
-    logger.info(f"Padding all sequences to fixed length: {target_length} (max found: {max_length})")
-    
+    logger.info(
+        f"Padding all sequences to fixed length: {target_length} (max found: {max_length})"
+    )
+
     # Apply padding as a transform on tokenized dataset
     def pad_to_fixed_length(batch):
         """Pad input_ids to fixed length for consistent batch shapes."""
-        padded_batch = {"input_ids": []}
-        
-        for ids in batch["input_ids"]:
+        input_ids = batch["input_ids"]
+        # Handle both tensor and list cases
+        if isinstance(input_ids, torch.Tensor):
+            input_ids = input_ids.tolist()
+        padded_ids = []
+        for ids in input_ids:
             current_length = len(ids)
-            if current_length > target_length:
-                # Truncate if longer than target (shouldn't happen with current setup)
-                ids = ids[:target_length]
-                logger.warning(f"Truncating sequence from {current_length} to {target_length}")
-            elif current_length < target_length:
-                # Pad if shorter
-                pad_len = target_length - current_length
-                ids = [tokenizer.pad_token_id] * pad_len + ids
-            
-            padded_batch["input_ids"].append(ids)
+            pad_len = target_length - current_length
+            if pad_len > 0:
+                # TODO: left-pad or right-pad?
+                ids += [tokenizer.pad_token_id] * pad_len
+            padded_ids.append(ids)
         
-        return padded_batch
-    
+        return {"input_ids": padded_ids}
+
     # Remove the lengths column and apply padding
-    tokenized_dataset = dataset_with_lengths.map(
+    tokenized_dataset = tokenized_dataset.map(
         pad_to_fixed_length, batched=True, remove_columns=["lengths"]
     )
 
@@ -165,9 +160,16 @@ def main(config: DictConfig):
     logger.info("Loading evaluation dataset...")
     match config.eval_dataset_name_or_path:
         case "loubnabnl/humaneval_infilling":
-            dataset = load_dataset(config.eval_dataset_name_or_path, name="HumanEval-RandomSpanInfillingLight", split="test", trust_remote_code=True)
+            dataset = load_dataset(
+                config.eval_dataset_name_or_path,
+                name="HumanEval-RandomSpanInfillingLight",
+                split="test",
+                trust_remote_code=True,
+            )
         case "openai/openai_humaneval":
-            dataset = load_dataset(config.eval_dataset_name_or_path, split="test", trust_remote_code=True)
+            dataset = load_dataset(
+                config.eval_dataset_name_or_path, split="test", trust_remote_code=True
+            )
         case _:
             raise ValueError(f"Unsupported dataset: {config.eval_dataset_name_or_path}")
     # TODO: Need to assemble and pretokenize the query.
@@ -178,9 +180,10 @@ def main(config: DictConfig):
         model=model, tokenizer=tokenizer, config=config, train_dataset=tokenized_dataset
     )
     trainer._load_checkpoint()
-    loader = trainer._get_train_dataloader() # TODO: think about if we need to implement a new dataloader for evaluation
+    loader = (
+        trainer._get_train_dataloader()
+    )  # TODO: think about if we need to implement a new dataloader for evaluation
     iterator = iter(loader)
-
 
     logger.info("Evaluating...")
     generation_results = []
@@ -192,17 +195,22 @@ def main(config: DictConfig):
         generation_text = tokenizer.batch_decode(generation, skip_special_tokens=True)
         if is_main_process():
             generation_results.append(generation_text)
-        break # NOTE: debug
+        break  # NOTE: debug
 
     if is_main_process():
-        save_path = Path(config.eval_results_save_path) / config.eval_dataset_name_or_path / f"{config.checkpoint_path.split('/')[-1]}_{config.resume_from_checkpoint}.json"
+        save_path = (
+            Path(config.eval_results_save_path)
+            / config.eval_dataset_name_or_path
+            / f"{config.checkpoint_path.split('/')[-1]}_{config.resume_from_checkpoint}.json"
+        )
         # Create directory if it doesn't exist
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         with open(save_path, "w") as f:
             json.dump(generation_results, f)
         dataset.add_column("generation", generation_results)
         dataset.to_json(save_path.with_suffix(".jsonl"))
+
 
 if __name__ == "__main__":
     logging.basicConfig(
