@@ -172,41 +172,41 @@ def main(config: DictConfig):
     print(f"processed tokenized_dataset: {tokenized_dataset}")
     print(all(len(x["input_ids"]) == 768 for x in tokenized_dataset))
 
-    # logger.info("Loading model checkpoint...")
-    # trainer = Trainer(
-    #     model=model, tokenizer=tokenizer, config=config, train_dataset=tokenized_dataset
-    # )
-    # trainer._load_checkpoint()
-    # loader = (
-    #     trainer._get_train_dataloader()
-    # )  # TODO: think about if we need to implement a new dataloader for evaluation
-    # iterator = iter(loader)
+    logger.info("Loading model checkpoint...")
+    trainer = Trainer(
+        model=model, tokenizer=tokenizer, config=config, train_dataset=tokenized_dataset
+    )
+    trainer._load_checkpoint()
+    loader = (
+        trainer._get_eval_dataloader()
+    )  # TODO: think about if we need to implement a new dataloader for evaluation
+    iterator = iter(loader)
 
-    # logger.info("Evaluating...")
-    # generation_results = []
-    # for _, batch in tqdm(enumerate(iterator)):
-    #     generation = generate(
-    #         trainer.model, tokenizer, batch, generation_config, verbose=True
-    #     )
-    #     generation = generation.cpu().tolist()
-    #     generation_text = tokenizer.batch_decode(generation, skip_special_tokens=True)
-    #     if is_main_process():
-    #         generation_results.append(generation_text)
-    #     break  # NOTE: debug
+    logger.info("Evaluating...")
+    generation_results = []
+    for _, batch in tqdm(enumerate(iterator)):
+        generation = generate(
+            trainer.model, tokenizer, batch, generation_config, verbose=True
+        )
+        generation = generation.cpu().tolist()
+        generation_text = tokenizer.batch_decode(generation, skip_special_tokens=True)
+        if is_main_process():
+            generation_results.append(generation_text)
+        break  # NOTE: debug
 
-    # if is_main_process():
-    #     save_path = (
-    #         Path(config.eval_results_save_path)
-    #         / config.eval_dataset_name_or_path
-    #         / f"{config.checkpoint_dir.split('/')[-1]}_{config.resume_from_checkpoint}.json"
-    #     )
-    #     # Create directory if it doesn't exist
-    #     save_path.parent.mkdir(parents=True, exist_ok=True)
+    if is_main_process() and generation_results:
+        save_path = (
+            Path(config.eval_results_save_path)
+            / config.eval_dataset_name_or_path
+            / f"{config.checkpoint_dir.split('/')[-1]}_{config.resume_from_checkpoint}.json"
+        )
+        # Create directory if it doesn't exist
+        save_path.parent.mkdir(parents=True, exist_ok=True)
 
-    #     with open(save_path, "w") as f:
-    #         json.dump(generation_results, f)
-    #     dataset.add_column("generation", generation_results)
-    #     dataset.to_json(save_path.with_suffix(".jsonl"))
+        with open(save_path, "w") as f:
+            json.dump(generation_results, f)
+        dataset.add_column("generation", generation_results)
+        dataset.to_json(save_path.with_suffix(".jsonl"))
 
 
 if __name__ == "__main__":
