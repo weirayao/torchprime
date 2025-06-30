@@ -246,8 +246,8 @@ def main(config: DictConfig):
 
         with open(save_path, "w") as f:
             json.dump(generation_results, f)
-        dataset.add_column("generation", generation_results)
-        dataset.to_json(save_path.with_suffix(".jsonl")) # TODO: double check if this is correct
+        dataset = dataset.add_column("generation", generation_results)
+        dataset.to_json(save_path.with_suffix(".jsonl"))
 
 
 if __name__ == "__main__":
