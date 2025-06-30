@@ -174,7 +174,7 @@ def main(config: DictConfig):
 
     logger.info("Loading model checkpoint...")
     trainer = Trainer(
-        model=model, tokenizer=tokenizer, config=config, train_dataset=tokenized_dataset
+        model=model, tokenizer=tokenizer, config=config, eval_dataset=tokenized_dataset
     )
     trainer._load_checkpoint()
     loader = (

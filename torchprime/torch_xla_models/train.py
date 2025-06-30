@@ -95,8 +95,8 @@ class Trainer:
     model: nn.Module,
     tokenizer: PreTrainedTokenizerBase,
     config: DictConfig,
-    train_dataset: Dataset | IterableDataset | None,
-    eval_dataset: Dataset | IterableDataset | None,
+    train_dataset: Dataset | IterableDataset | None = None,
+    eval_dataset: Dataset | IterableDataset | None = None,
   ):
     self.config = config
     self.device = torch_xla.device()
