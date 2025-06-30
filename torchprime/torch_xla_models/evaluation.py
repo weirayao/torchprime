@@ -216,18 +216,18 @@ def main(config: DictConfig):
             generation_text = [
                 x.split("```python")[1].split("```")[0] for x in generation_text
             ]
-        generation_results.append(generation_text)
+        generation_results.extend(generation_text)
 
     if is_main_process() and generation_results:
         # Get number of devices
         num_devices = xr.process_count()
         print(f"Eval dataset length: {eval_dataset_len}; Number of generation results: {len(generation_results)}; num_devices: {num_devices}; global_batch_size: {config.global_batch_size}")
 
-        # # Extract interleaved results in worker 0
-        # generation_results = generation_results[0::config.global_batch_size // num_devices]
-        # generation_results = generation_results[
-        #     :eval_dataset_len
-        # ]  # TODO: double check if this is correct
+        # Extract interleaved results in worker 0
+        generation_results = generation_results[0::config.global_batch_size // num_devices]
+        generation_results = generation_results[
+            :eval_dataset_len
+        ]  # TODO: double check if this is correct
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         save_path = (
@@ -240,8 +240,8 @@ def main(config: DictConfig):
 
         with open(save_path, "w") as f:
             json.dump(generation_results, f)
-        # dataset.add_column("generation", generation_results)
-        # dataset.to_json(save_path.with_suffix(".jsonl")) # TODO: double check if this is correct
+        dataset.add_column("generation", generation_results)
+        dataset.to_json(save_path.with_suffix(".jsonl")) # TODO: double check if this is correct
 
 
 if __name__ == "__main__":
