@@ -97,7 +97,7 @@ def prepare_dataset(
     # Tokenize input
     column_names = list(dataset.features)
     tokenized_dataset = dataset.map(
-        lambda x: tokenizer(x["query"])["input_ids"], batched=True, remove_columns=column_names
+        lambda x: tokenizer(x["query"]), batched=True, remove_columns=column_names
     )
     # Find the maximum length in the dataset efficiently
     max_length = max(
@@ -114,16 +114,19 @@ def prepare_dataset(
     def pad_to_fixed_length(batch):
         """Pad input_ids to fixed length for consistent batch shapes."""
         input_ids = batch["input_ids"]
+        attention_masks = batch["attention_mask"]
         padded_ids = []
-        for ids in input_ids:
+        padded_masks = []
+        for ids, mask in zip(input_ids, attention_masks):
             current_length = len(ids)
             pad_len = target_length - current_length
             if pad_len > 0:
                 # TODO: left-pad or right-pad?
                 ids += [tokenizer.pad_token_id] * pad_len
+                mask += [1] * pad_len
             padded_ids.append(ids)
-
-        return {"input_ids": padded_ids}
+            padded_masks.append(mask)
+        return {"input_ids": padded_ids, "attention_mask": padded_masks}
 
     # Remove the lengths column and apply padding
     tokenized_dataset = tokenized_dataset.map(pad_to_fixed_length, batched=True)
