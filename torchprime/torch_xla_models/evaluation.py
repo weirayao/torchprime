@@ -223,6 +223,7 @@ def main(config: DictConfig):
     if is_main_process() and generation_results:
         # Get number of devices
         num_devices = xr.process_count()
+        print(f"Eval dataset length: {eval_dataset_len}; Number of generation results: {len(generation_results)}; num_devices: {num_devices}; global_batch_size: {config.global_batch_size}")
         # Extract interleaved results in worker 0
         generation_results = generation_results[0::config.global_batch_size // num_devices]
         generation_results = generation_results[
