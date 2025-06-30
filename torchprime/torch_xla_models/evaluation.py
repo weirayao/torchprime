@@ -170,7 +170,7 @@ def main(config: DictConfig):
     # TODO: Need to assemble and pretokenize the query.
     tokenized_dataset = prepare_dataset(tokenizer, dataset, generation_config)
     print(f"processed tokenized_dataset: {tokenized_dataset}")
-    print(tokenized_dataset[0], len(tokenized_dataset[0]["input_ids"]))
+    print(all(len(x["input_ids"]) == 768 for x in tokenized_dataset))
 
     # logger.info("Loading model checkpoint...")
     # trainer = Trainer(
