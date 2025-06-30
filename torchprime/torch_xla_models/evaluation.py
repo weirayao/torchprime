@@ -114,9 +114,6 @@ def prepare_dataset(
     def pad_to_fixed_length(batch):
         """Pad input_ids to fixed length for consistent batch shapes."""
         input_ids = batch["input_ids"]
-        # Handle both tensor and list cases
-        if isinstance(input_ids, torch.Tensor):
-            input_ids = input_ids.tolist()
         padded_ids = []
         for ids in input_ids:
             current_length = len(ids)
@@ -173,7 +170,7 @@ def main(config: DictConfig):
     # TODO: Need to assemble and pretokenize the query.
     tokenized_dataset = prepare_dataset(tokenizer, dataset, generation_config)
     print(f"processed tokenized_dataset: {tokenized_dataset}")
-    print(tokenized_dataset[0], tokenized_dataset[0]["input_ids"].shape)
+    print(tokenized_dataset[0], len(tokenized_dataset[0]["input_ids"]))
 
     # logger.info("Loading model checkpoint...")
     # trainer = Trainer(
