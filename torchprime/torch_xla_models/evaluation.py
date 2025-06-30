@@ -9,7 +9,7 @@ import torch_xla.runtime as xr
 import torch.distributed as dist
 import hydra
 from omegaconf import DictConfig, OmegaConf
-from datasets import load_dataset, Dataset
+from datasets import load_dataset, Dataset, concatenate_datasets
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 from transformers.tokenization_utils_base import BatchEncoding
 from tqdm import tqdm
@@ -75,7 +75,13 @@ def prepare_dataset(
                         if args.max_new_tokens is not None
                         else length
                     )
-                    query = prompt + tokenizer.mask_token * num_infill_tokens + suffix
+                    query = (
+                        "You are a helpful assistant. Please fill in the missing code to complete the following python function:\n```python\n"
+                        + prompt
+                        + tokenizer.mask_token * num_infill_tokens
+                        + suffix
+                        + "\n```"
+                    )
                     queries.append(query)
                 return {"query": queries}
 
@@ -171,6 +177,23 @@ def main(config: DictConfig):
         case _:
             raise ValueError(f"Unsupported dataset: {config.eval_dataset_name_or_path}")
     tokenized_dataset = prepare_dataset(tokenizer, dataset, generation_config)
+    eval_dataset_len = len(tokenized_dataset)
+    logger.info(f"Evaluation dataset length: {eval_dataset_len}")
+    if num_dummy_batches := (eval_dataset_len % config.global_batch_size) != 0:
+        logger.warning(
+            f"Evaluation dataset length {eval_dataset_len} is not divisible by global batch size {config.global_batch_size}, will append {num_dummy_batches} dummy batches"
+        )
+        seq_len = len(tokenized_dataset["input_ids"][0])
+        dummy_batches = Dataset.from_list(
+            [
+                {
+                    "input_ids": [tokenizer.pad_token_id] * seq_len,
+                    "attention_mask": [1] * seq_len,
+                }
+                for _ in range(num_dummy_batches)
+            ]
+        )
+        tokenized_dataset = concatenate_datasets([tokenized_dataset, dummy_batches])
 
     logger.info("Loading model checkpoint...")
     trainer = Trainer(
@@ -190,11 +213,15 @@ def main(config: DictConfig):
         )
         generation = generation.cpu().tolist()
         generation_text = tokenizer.batch_decode(generation, skip_special_tokens=True)
-        if is_main_process():
-            generation_results.append(generation_text)
+        if config.eval_dataset_name_or_path == "loubnabnl/humaneval_infilling":
+            generation_text = [x.split("```python")[1].split("```")[0] for x in generation_text]
+        generation_results.append(generation_text)
         break  # NOTE: debug
 
     if is_main_process() and generation_results:
+        generation_results = generation_results[
+            :eval_dataset_len
+        ]  # TODO: double check if this is correct
         save_path = (
             Path(config.eval_results_save_path)
             / config.eval_dataset_name_or_path
