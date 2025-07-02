@@ -63,6 +63,7 @@ def make_gcs_pretokenized_dataset(
   data = load_dataset(
     "parquet",
     data_files=data_files,
+    streaming=True,
     split="train",
   )
   data = data.shuffle(seed=seed, buffer_size=32768)
