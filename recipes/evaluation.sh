@@ -1,6 +1,6 @@
 XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/evaluation.py \
     global_batch_size=16 \
-    model.tokenizer_name=/home/haolin.chen/sfr-text-diffusion-model-research/consolidated_checkpoints/flex-qwen3-1b-gcs-pretrain-all-data/15000 \
+    model.tokenizer_name=Qwen/Qwen3-1.7B \
     generation.diffusion_steps=512 \
     generation.max_tokens=null \
     generation.max_new_tokens=512 \
