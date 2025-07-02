@@ -1,11 +1,12 @@
 XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/inference.py \
     global_batch_size=8 \
     model.tokenizer_name=/home/haolin.chen/sfr-text-diffusion-model-research/consolidated_checkpoints/flex-qwen3-1b-gcs-pretrain-all-data/15000 \
-    generation.diffusion_steps=32 \
+    generation.diffusion_steps=70 \
     generation.max_tokens=0 \
-    generation.temperature=0 \
-    checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex-qwen3-1b-gcs-pretrain-all-data-dataloader-no-split-512 \
-    resume_from_checkpoint=25000 \
+    generation.temperature=0.1 \
+    generation.top_p=0.95 \
+    checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b \
+    resume_from_checkpoint=17000 \
     ici_mesh.fsdp=8 \
     ici_mesh.tensor=1 \
     ici_mesh.data=1 \
