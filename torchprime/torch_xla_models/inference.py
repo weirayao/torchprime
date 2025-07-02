@@ -102,14 +102,14 @@ def prepare_inputs(
             ],
             dim=1,
         )
-    # Left pad input_ids to nearest multiple of 256
+    # Right pad input_ids to nearest multiple of 256
     seq_len = input_ids.shape[1]
     pad_len = (256 - seq_len % 256) % 256  # Calculate padding needed
     if pad_len > 0:
         pad_ids = torch.full(
             (input_ids.shape[0], pad_len), tokenizer.pad_token_id, dtype=input_ids.dtype
         )
-        input_ids = torch.cat([pad_ids, input_ids], dim=1)
+        input_ids = torch.cat([input_ids, pad_ids], dim=1)
 
     input_ids = input_ids.squeeze(0)
     src_mask = torch.where(input_ids == tokenizer.mask_token_id, 0, 1)

@@ -89,7 +89,18 @@ def prepare_dataset(
             dataset = dataset.map(assemble_query, batched=True)
 
         case "openai_humaneval":
-            pass
+            def assemble_query(x):
+                prompts = x["prompt"]
+                queries = [
+                    "Please complete the following python function:\n```python\n"
+                    + prompt
+                    + tokenizer.mask_token * args.max_new_tokens
+                    for prompt in prompts
+                ]
+                return {"query": queries}
+
+            dataset = dataset.map(assemble_query, batched=True)
+
         case _:
             raise ValueError(f"Unsupported dataset: {dataset.config_name}")
     # TODO: apply chat template when evaluating instructed models
@@ -147,7 +158,7 @@ def main(config: DictConfig):
         logger.info(f"Config: {OmegaConf.to_yaml(config)}")
 
     model_config = config.model
-    tokenizer = AutoTokenizer.from_pretrained(model_config.tokenizer_name)
+    tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(model_config.tokenizer_name)
     if tokenizer.mask_token is None:
         tokenizer.add_tokens("<|mask|>", special_tokens=True)
         tokenizer.add_special_tokens(
@@ -206,17 +217,26 @@ def main(config: DictConfig):
 
     logger.info("Evaluating...")
     generation_results = []
+    raw_generation_results = []
     for _, batch in tqdm(enumerate(iterator)):
         generation = generate(
             trainer.model, tokenizer, batch, generation_config, verbose=True
         )
         generation = generation.cpu().tolist()
-        generation_text = tokenizer.batch_decode(generation, skip_special_tokens=True)
-        if config.eval_dataset_name_or_path == "loubnabnl/humaneval_infilling":
-            generation_text = [
-                x.split("```python")[1].split("```")[0] for x in generation_text
-            ]
-        generation_results.extend(generation_text)
+        raw_generation_text = tokenizer.batch_decode(generation, skip_special_tokens=False)
+        match config.eval_dataset_name_or_path:
+            case "loubnabnl/humaneval_infilling":
+                parsed_generation_text = [
+                    x.split("```python")[1].split("```")[0] for x in raw_generation_text
+                ]
+            case "openai/openai_humaneval":
+                parsed_generation_text = [
+                    x.split("```python")[1].split("```")[0] for x in raw_generation_text
+                ]
+            case _:
+                raise ValueError(f"Unsupported dataset: {config.eval_dataset_name_or_path}")
+        generation_results.extend(parsed_generation_text)
+        raw_generation_results.extend(raw_generation_text)
 
     if is_main_process() and generation_results:
         # Get number of devices
@@ -225,15 +245,21 @@ def main(config: DictConfig):
 
         # Extract results from worker 0 only (first 4 elements of each batch of 8)
         worker_0_results = []
+        worker_0_raw_results = []
         batch_size_per_device = config.global_batch_size // num_devices
         for i in range(0, len(generation_results), config.global_batch_size):
             # Take the first batch_size_per_device elements from each batch
             worker_0_results.extend(
                 generation_results[i:i + batch_size_per_device]
             )
+            worker_0_raw_results.extend(
+                raw_generation_results[i:i + batch_size_per_device]
+            )
         generation_results = worker_0_results
+        raw_generation_results = worker_0_raw_results
         # Truncate to original dataset length to remove dummy batches
         generation_results = generation_results[:eval_dataset_len]
+        raw_generation_results = raw_generation_results[:eval_dataset_len]
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         save_path = (
@@ -244,9 +270,8 @@ def main(config: DictConfig):
         # Create directory if it doesn't exist
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(save_path, "w") as f:
-            json.dump(generation_results, f)
-        dataset = dataset.add_column("generation", generation_results)
+        dataset = dataset.add_column("completion", generation_results)
+        dataset = dataset.add_column("raw_completion", raw_generation_results)
         dataset.to_json(save_path.with_suffix(".jsonl"))
 
 

@@ -53,6 +53,7 @@ def sample(
     temperature: float,
     top_p: float | None = None,
     top_k: int | None = None,
+    neg_entropy: bool = False,
 ) -> torch.Tensor:
     """
     Sample tokens from the model output with top-p filtering and handle shifting.
@@ -75,19 +76,29 @@ def sample(
     logits, _ = model(xt, attention_mask=attention_mask)
     if temperature > 0:
         logits = logits / (temperature + 1e-5)
-        if top_p is not None and top_p < 1:
-            logits = top_p_logits(logits, top_p)
-        if top_k is not None:
-            logits = top_k_logits(logits, top_k)
+    if top_p is not None and top_p < 1:
+        logits = top_p_logits(logits, top_p)
+    if top_k is not None:
+        logits = top_k_logits(logits, top_k)
 
     # Convert to probability distribution and sample
     probs = torch.softmax(logits, dim=-1)
-    if temperature == 0:
-        _, x0 = probs.max(-1)
+    if temperature > 0:
+        try:
+            x0 = dists.Categorical(probs=probs).sample()
+            confidence = torch.gather(probs, -1, x0.unsqueeze(-1)).squeeze(-1)
+        except:
+            confidence, x0 = probs.max(dim=-1)
     else:
-        x0 = dists.Categorical(probs=probs).sample()
-        # x0_scores = torch.gather(scores, -1, x0.unsqueeze(-1)).squeeze(-1)
+        confidence, x0 = probs.max(dim=-1)
+    
+    if neg_entropy:
+        epsilon = 1e-10
+        log_probs = torch.log(probs + epsilon)
+        confidence = torch.sum(probs * log_probs, dim=-1)
+
     logger.info(f"x0: {x0}")
+
     # NOTE: we already cut one token in forward pass, so we don't need to cut x0 here
     # Shift tokens and scores right by 1 position
     x0 = torch.cat([x[:, 0:1], x0], dim=1)
@@ -97,7 +108,7 @@ def sample(
     # x0: predicted tokens
     # x0[maskable_mask]: predicted tokens in masked positions
     x0 = xt.masked_scatter(maskable_mask, x0[maskable_mask])
-    return x0
+    return confidence, x0
 
 
 @torch.no_grad()
@@ -130,7 +141,7 @@ def generate(
     xt = x.clone() # NOTE: we already did the masking in prepare_inputs
     if verbose:
         logger.info(f"t={args.diffusion_steps}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
-    x0 = sample(
+    confidence, x0 = sample(
         model, xt, x, attention_mask, maskable_mask, temperature, top_p, top_k
     )
     if verbose:
@@ -156,7 +167,7 @@ def generate(
             logger.info(f"maskable_mask: {maskable_mask}")
             logger.info(f"t={t}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
 
-        x0 = sample(
+        confidence, x0 = sample(
             model, xt, x, attention_mask, maskable_mask, temperature, top_p, top_k
         )
         if verbose:
