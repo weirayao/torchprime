@@ -43,7 +43,7 @@ from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
 from transformers import PreTrainedTokenizerBase
 
-from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset
+from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
 from torchprime.metrics.mfu import compute_mfu
@@ -95,12 +95,14 @@ class Trainer:
     model: nn.Module,
     tokenizer: PreTrainedTokenizerBase,
     config: DictConfig,
-    train_dataset: Dataset | IterableDataset | None,
+    train_dataset: Dataset | IterableDataset | None = None,
+    eval_dataset: Dataset | IterableDataset | None = None,
   ):
     self.config = config
-    self.device = xm.xla_device()
+    self.device = torch_xla.device()
     self.global_batch_size = self.config.global_batch_size
     self.train_dataset = train_dataset
+    self.eval_dataset = eval_dataset
     self.tokenizer = tokenizer
 
     # Set up SPMD mesh and shard the model
@@ -201,6 +203,33 @@ class Trainer:
     self.lr_scheduler.load_state_dict(state_dict["scheduler"])
     self.start_step = state_dict["step"]
 
+  def _get_eval_dataloader(self):
+    if self.eval_dataset is None:
+      raise ValueError("Trainer: evaluation requires a eval_dataset.")
+
+    num_replicas = xr.process_count()
+    logger.info(f"Num replicas: {num_replicas}")
+    assert self.global_batch_size is not None
+    if self.minibatch:
+      # Each process loads the per-host batch size.
+      batch_size = self.global_batch_size // num_replicas
+    else:
+      # Each process will load the global batch, then discard the unneeded parts.
+      batch_size = self.global_batch_size
+    dataloader = DataLoader(
+      self.eval_dataset,
+      # Data collator will default to DataCollatorWithPadding, so we change it.
+      collate_fn=default_data_collator,
+      batch_size=batch_size,
+      sampler=None,
+      drop_last=True,
+    )
+    loader = pl.MpDeviceLoader(
+      dataloader, self.device, input_sharding=self.input_sharding_spec
+    )
+    return loader
+
+
   def _get_train_dataloader(self):
     if self.train_dataset is None:
       raise ValueError("Trainer: training requires a train_dataset.")
@@ -209,7 +238,6 @@ class Trainer:
     logger.info(f"Num replicas: {num_replicas}")
     if isinstance(self.train_dataset, IterableDataset):
       # For IterableDataset, don't use DistributedSampler as it doesn't have len()
-      # Distributed sampling should be handled by split_dataset_by_node before creating the trainer
       sampler = None
       logger.info("Using IterableDataset without DistributedSampler")
     else:
@@ -384,7 +412,7 @@ class Trainer:
       logger.info(f"    Resuming from step: {self.start_step}")
     if is_main_process():
       wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
-      wandb.init(project="text-diffusion-model-research", name=self.config.model.model_class)
+      wandb.init(project="text-diffusion-model-research-qwen3-1b-pretrain-all-data-run", name=self.config.model.model_class)
       # Log the configuration to wandb
       wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
       # Set wandb step to start_step if resuming from checkpoint
@@ -630,16 +658,24 @@ def main(config: DictConfig):
 
   if config.data.dataset_name:
     # Downloading and loading a dataset from the hub.
-    data = retry(
-      lambda: make_huggingface_dataset(
-        name=config.data.dataset_name,
-        config_name=config.data.dataset_config_name,
-        split="train",
-        cache_dir=config.data.cache_dir,
-        tokenizer=tokenizer,
-        block_size=config.data.block_size,
+    dataset_name = config.data.dataset_name
+    gcs_prefix = "gs://sfr-text-diffusion-model-research/"
+    if dataset_name.startswith(gcs_prefix):
+      dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
+      data = retry(
+        lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
       )
-    )
+    else:
+      data = retry(
+        lambda: make_huggingface_dataset(
+          name=config.data.dataset_name,
+          config_name=config.data.dataset_config_name,
+          split="train",
+          cache_dir=config.data.cache_dir,
+          tokenizer=tokenizer,
+          block_size=config.data.block_size,
+        )
+      )
   elif config.data.gcs_dataset_names:
     # Downloading and loading a dataset from GCS bucket.
     data = retry(
@@ -651,9 +687,10 @@ def main(config: DictConfig):
         block_size=config.data.block_size,
       )
     )
+  
   else:
     raise ValueError("No dataset provided")
-  data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # Needed as we don't use sampler for streaming dataset
+  # data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # not working as expected, will only load a subset of the dataset
   trainer = Trainer(
     model=model,
     tokenizer=tokenizer,
