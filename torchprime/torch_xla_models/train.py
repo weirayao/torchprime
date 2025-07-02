@@ -43,7 +43,7 @@ from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
 from transformers import PreTrainedTokenizerBase
 
-from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset
+from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
 from torchprime.metrics.mfu import compute_mfu
@@ -658,16 +658,24 @@ def main(config: DictConfig):
 
   if config.data.dataset_name:
     # Downloading and loading a dataset from the hub.
-    data = retry(
-      lambda: make_huggingface_dataset(
-        name=config.data.dataset_name,
-        config_name=config.data.dataset_config_name,
-        split="train",
-        cache_dir=config.data.cache_dir,
-        tokenizer=tokenizer,
-        block_size=config.data.block_size,
+    dataset_name = config.data.dataset_name
+    gcs_prefix = "gs://sfr-text-diffusion-model-research/"
+    if dataset_name.startswith(gcs_prefix):
+      dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
+      data = retry(
+        lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
       )
-    )
+    else:
+      data = retry(
+        lambda: make_huggingface_dataset(
+          name=config.data.dataset_name,
+          config_name=config.data.dataset_config_name,
+          split="train",
+          cache_dir=config.data.cache_dir,
+          tokenizer=tokenizer,
+          block_size=config.data.block_size,
+        )
+      )
   elif config.data.gcs_dataset_names:
     # Downloading and loading a dataset from GCS bucket.
     data = retry(
@@ -679,9 +687,10 @@ def main(config: DictConfig):
         block_size=config.data.block_size,
       )
     )
+  
   else:
     raise ValueError("No dataset provided")
-  data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # Needed as we don't use sampler for streaming dataset
+  # data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # not working as expected, will only load a subset of the dataset
   trainer = Trainer(
     model=model,
     tokenizer=tokenizer,
