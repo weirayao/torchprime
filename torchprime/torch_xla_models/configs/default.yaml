@@ -10,7 +10,7 @@ defaults:
 
 global_batch_size: 4
 logging_steps: 10
-max_steps: 240000
+max_steps: 480000
 
 
 seed: 42
@@ -29,10 +29,10 @@ resume_from_checkpoint: null
 save_steps: 500
 
 optimizer:
-  learning_rate: 3.e-4
+  learning_rate: 2.e-4
 lr_scheduler:
   type: linear
-  warmup_steps: 150
+  warmup_steps: 300
 
 # The virtual device mesh shape to use within a TPU slice. This is also called
 # the "ICI mesh", since devices within a slice enjoy a faster network called
