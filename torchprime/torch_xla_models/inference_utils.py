@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 import torch
 import torch_xla
 import torch.distributions as dists
@@ -8,6 +9,22 @@ from dataclasses import dataclass, asdict
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GenerationConfig_:
+    diffusion_steps: int = 10
+    mask_token_id: int = 151669
+    max_tokens: int = 256
+    max_new_tokens: int | None = None
+    temperature: float = 1.0
+    top_p: float | None = None
+    top_k: int | None = None
+    eps: float = 1e-3
+    alg: str = "original"
+    alg_temp: float = 0.2
+    output_history: bool = False
+    return_dict_in_generate: bool = False
 
 
 @dataclass
@@ -36,12 +53,143 @@ def top_p_logits(logits, p: float = 0.9):
     logits = logits.masked_fill(mask, torch.finfo(logits.dtype).min)
     return logits
 
+
 def top_k_logits(logits, top_k: int):
     top_k = min(top_k, logits.size(-1))  # Safety check
     # Remove all tokens with a probability less than the last token of the top-k
     indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
     logits = logits.masked_fill(indices_to_remove, torch.finfo(logits.dtype).min)
     return logits
+
+
+@torch.no_grad()
+def sample_(
+    logits: torch.Tensor,
+    temperature=0.0,
+    top_p=None,
+    top_k=None,
+    neg_entropy=False,
+):
+    if temperature > 0:
+        logits = logits / (temperature + 1e-5)
+    if top_p is not None and top_p < 1:
+        logits = top_p_logits(logits, top_p)
+    if top_k is not None:
+        logits = top_k_logits(logits, top_k)
+    probs = torch.softmax(logits, dim=-1)
+
+    if temperature > 0:
+        try:
+            x0 = dists.Categorical(probs=probs).sample()
+            confidence = torch.gather(probs, -1, x0.unsqueeze(-1)).squeeze(-1)
+        except:
+            confidence, x0 = probs.max(dim=-1)
+    else:
+        confidence, x0 = probs.max(dim=-1)
+
+    if neg_entropy:
+        epsilon = 1e-10
+        log_probs = torch.log(probs + epsilon)
+        confidence = torch.sum(probs * log_probs, dim=-1)
+
+    return confidence, x0
+
+
+@torch.no_grad()
+def generate_(
+    model: PreTrainedModel,
+    input_ids: torch.LongTensor,
+    generation_config: GenerationConfig_,
+) -> dict[str, torch.Tensor | list[torch.Tensor]] | torch.Tensor:
+    model.eval()
+
+    output_history = generation_config.output_history
+    return_dict_in_generate = generation_config.return_dict_in_generate
+
+    mask_token_id = generation_config.mask_token_id
+    steps = generation_config.diffusion_steps
+    eps = generation_config.eps
+    alg = generation_config.alg
+    alg_temp = generation_config.alg_temp
+    temperature = generation_config.temperature
+    top_p = generation_config.top_p
+    top_k = generation_config.top_k
+
+    histories = [] if (return_dict_in_generate and output_history) else None
+
+    x = input_ids
+    timesteps = torch.linspace(1, eps, steps + 1, device=x.device)
+    for i in range(steps):
+        mask_index = x == mask_token_id
+        logits, _ = model(
+            x, attention_mask=None
+        )  # NOTE: flex model doesn't use attention mask
+        logits = torch.cat([logits[:, :1], logits[:, :-1]], dim=1)
+
+        mask_logits = logits[mask_index]
+        t = timesteps[i]
+        s = timesteps[i + 1]
+
+        if alg == "original":
+            p_transfer = 1 - s / t if i < steps - 1 else 1
+            x0 = torch.full_like(x[mask_index], mask_token_id, device=x.device)
+            transfer_index_t_s = torch.rand(*x0.shape, device=x.device) < p_transfer
+            _, x0[transfer_index_t_s] = sample_(
+                mask_logits[transfer_index_t_s],
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+            )
+            x[mask_index] = x0.clone()
+        elif alg == "neg_entropy":
+            confidence, x0 = sample_(
+                mask_logits, temperature, top_p=top_p, top_k=top_k, neg_entropy=True
+            )
+            num_mask_token = mask_index.sum() / mask_index.shape[0]
+            number_transfer_tokens = (
+                int(num_mask_token * (1 - s / t))
+                if i < steps - 1
+                else int(num_mask_token)
+            )
+            full_confidence = torch.full_like(
+                x, -torch.inf, device=x.device, dtype=logits.dtype
+            )
+            full_confidence[mask_index] = confidence
+            if number_transfer_tokens > 0:
+                if alg_temp is None or alg_temp == 0:
+                    _, transfer_index = torch.topk(
+                        full_confidence, number_transfer_tokens
+                    )
+                else:
+                    full_confidence = full_confidence / alg_temp
+                    full_confidence = F.softmax(full_confidence, dim=-1)
+                    transfer_index = torch.multinomial(
+                        full_confidence, num_samples=number_transfer_tokens
+                    )
+                x_ = (
+                    torch.zeros_like(x, device=x.device, dtype=torch.long)
+                    + mask_token_id
+                )
+                x_[mask_index] = x0.clone()
+                row_indices = (
+                    torch.arange(x.size(0), device=x.device)
+                    .unsqueeze(1)
+                    .expand_as(transfer_index)
+                )
+                x[row_indices, transfer_index] = x_[row_indices, transfer_index]
+        else:
+            raise ValueError(f"Invalid algorithm: {alg}")
+
+        if histories is not None:
+            histories.append(x.clone())
+        
+    if return_dict_in_generate:
+        return {
+            "completion": x,
+            "history": histories,
+        }
+    else:
+        return x
 
 @torch.no_grad()
 def sample(
@@ -91,7 +239,7 @@ def sample(
             confidence, x0 = probs.max(dim=-1)
     else:
         confidence, x0 = probs.max(dim=-1)
-    
+
     if neg_entropy:
         epsilon = 1e-10
         log_probs = torch.log(probs + epsilon)
@@ -101,7 +249,7 @@ def sample(
 
     # NOTE: we already cut one token in forward pass, so we don't need to cut x0 here
     # Shift tokens and scores right by 1 position
-    x0 = torch.cat([x[:, 0:1], x0], dim=1)
+    x0 = torch.cat([x[:, :1], x0], dim=1)
     # x0_scores = torch.cat([x0_scores[:, 0:1], x0_scores[:, :-1]], dim=1)
 
     # replace output of non-[MASK] positions with xt
@@ -125,6 +273,7 @@ def generate(
     temperature = args.temperature
     top_p = args.top_p
     top_k = args.top_k
+    steps = args.diffusion_steps
     device = torch_xla.device()
 
     x = inputs["input_ids"].to(device)
@@ -133,42 +282,44 @@ def generate(
     else:
         src_mask = inputs["src_mask"].bool().to(device)
 
-    attention_mask = torch.ones_like(x).to(device) # NOTE: this is actually not used in the model
-    maskable_mask = ~src_mask
+    attention_mask = torch.ones_like(x).to(
+        device
+    )  # NOTE: this is actually not used in the model
+    mask_positions = ~src_mask
 
     # first forward, all position except src is [M]
     # xt: torch.Tensor = x.masked_fill(maskable_mask, tokenizer.mask_token_id)
-    xt = x.clone() # NOTE: we already did the masking in prepare_inputs
+    xt = x.clone()  # NOTE: we already did the masking in prepare_inputs
     if verbose:
-        logger.info(f"t={args.diffusion_steps}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
+        logger.info(f"t={steps}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
     confidence, x0 = sample(
-        model, xt, x, attention_mask, maskable_mask, temperature, top_p, top_k
+        model, xt, x, attention_mask, mask_positions, temperature, top_p, top_k
     )
     if verbose:
-        logger.info(f"t={args.diffusion_steps}(out): {tokenizer.batch_decode(x0.detach().cpu())}")
+        logger.info(f"t={steps}(out): {tokenizer.batch_decode(x0.detach().cpu())}")
 
-    for t in range(args.diffusion_steps - 1, 0, -1):
+    for t in range(steps - 1, 0, -1):
         # select rate% tokens to be still [MASK]
         p_to_x0 = 1 / (t + 1)
         if verbose:
             logger.info(f"p_to_x0: {p_to_x0}")
 
-        masked_to_x0 = maskable_mask & (
+        masked_to_x0 = mask_positions & (
             torch.rand_like(x0, dtype=torch.float) < p_to_x0
-        ) # a token is previously [MASK] has probability p_to_x0 to be replaced by x0
+        )  # a token is previously [MASK] has probability p_to_x0 to be replaced by x0
         if verbose:
             logger.info(f"masked_to_x0: {masked_to_x0}")
             logger.info(f"xt before: {xt}")
         xt.masked_scatter_(masked_to_x0, x0[masked_to_x0])
         if verbose:
             logger.info(f"xt after: {xt}")
-        maskable_mask = maskable_mask.masked_fill(masked_to_x0, False)
+        mask_positions = mask_positions.masked_fill(masked_to_x0, False)
         if verbose:
-            logger.info(f"maskable_mask: {maskable_mask}")
+            logger.info(f"maskable_mask: {mask_positions}")
             logger.info(f"t={t}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
 
         confidence, x0 = sample(
-            model, xt, x, attention_mask, maskable_mask, temperature, top_p, top_k
+            model, xt, x, attention_mask, mask_positions, temperature, top_p, top_k
         )
         if verbose:
             logger.info(f"t={t}(out): {tokenizer.batch_decode(x0.detach().cpu())}")

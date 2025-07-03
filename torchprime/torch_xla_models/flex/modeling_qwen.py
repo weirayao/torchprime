@@ -419,8 +419,8 @@ class Qwen3ForCausalLM(nn.Module):
     if not self.training:
       # haolin: during inference the masking is done when preprocessing the input, we don't need src_mask and noising
       hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
-      logits = self.lm_head(hidden_states)
-      logits = logits.float()[..., :-1, :].contiguous() # NOTE: we don't need the logits of the last token
+      logits = self.lm_head(hidden_states) # NOTE: we shift logits in generate()
+      # logits = logits.float()[..., :-1, :].contiguous() # NOTE: we don't need the logits of the last token
       return logits, None
 
     # weiran: diffullama

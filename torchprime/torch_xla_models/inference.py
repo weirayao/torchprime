@@ -18,7 +18,12 @@ from torchprime.torch_xla_models.train import (
     set_default_dtype,
     Trainer,
 )
-from torchprime.torch_xla_models.inference_utils import GenerationConfig, generate
+from torchprime.torch_xla_models.inference_utils import (
+    GenerationConfig,
+    generate,
+    GenerationConfig_,
+    generate_,
+)
 
 # Initialize XLA runtime for TPU
 xr.use_spmd()
@@ -37,7 +42,8 @@ logger = logging.getLogger(__name__)
 def prepare_inputs(
     tokenizer: PreTrainedTokenizerBase,
     messages: str | list[dict],
-    args: GenerationConfig,
+    # args: GenerationConfig,
+    args: GenerationConfig_,
     enable_thinking: bool = True,
     noise_ratio: float = 0.0,
 ) -> tuple[dict[str, torch.Tensor], BatchEncoding]:
@@ -174,11 +180,15 @@ if __name__ == '__main__':
 """
     # messages = [{"role": "user", "content": prompt}]
     messages = prompt
-    generation_config = GenerationConfig(**OmegaConf.to_container(config.generation))
+    # generation_config = GenerationConfig(**OmegaConf.to_container(config.generation))
+    generation_config = GenerationConfig_(**OmegaConf.to_container(config.generation))
 
     ddlm_inputs, _ = prepare_inputs(
-        tokenizer, messages, generation_config, enable_thinking=False, noise_ratio=0.3
+        tokenizer, messages, generation_config, enable_thinking=False, noise_ratio=0.1
     )
+    generation_config.diffusion_steps = (ddlm_inputs["input_ids"] == tokenizer.mask_token_id).sum()
+    print(f"setting diffusion_steps to number of mask tokens: {generation_config.diffusion_steps}")
+
     dataset = Dataset.from_list(
         [copy.deepcopy(ddlm_inputs) for _ in range(config.global_batch_size)]
     )  # Create a single-element dataset with ddlm_inputs
@@ -192,7 +202,7 @@ if __name__ == '__main__':
     )
 
     logger.info("Generating...")
-    loader = trainer._get_train_dataloader()
+    loader = trainer._get_eval_dataloader()
     iterator = iter(loader)
     try:
         batch = next(iterator)
@@ -202,16 +212,31 @@ if __name__ == '__main__':
         iterator = iter(loader)
         batch = next(iterator)
 
-    generation = generate(
-        trainer.model, tokenizer, batch, generation_config, verbose=True
+    # generation = generate(
+    #     trainer.model, tokenizer, batch, generation_config, verbose=True
+    # )
+    generation = generate_(
+        trainer.model, batch["input_ids"], generation_config
     )
-
-    generation = generation.cpu().tolist()
+    if generation_config.return_dict_in_generate:
+        completion = generation["completion"].cpu().tolist()
+        history = generation["history"]
+    else:
+        completion = generation.cpu().tolist()
+        history = None
     if is_main_process():
+        if history is not None:
+            for i in range(len(history)):
+                print("=" * 50 + f"HISTORY at step {i}" + "=" * 50)
+                for j in range(len(history[i])):
+                    print(
+                        f"Completion {j} at step {i}: {tokenizer.decode(history[i][j], skip_special_tokens=True)}"
+                    )
+                print("=" * 50)
         print("=" * 50 + "GENERATION" + "=" * 50)
-        for i in range(len(generation)):
+        for i in range(len(completion)):
             print(
-                f"Generation {i}: {tokenizer.decode(generation[i], skip_special_tokens=True)}"
+                f"Completion {i}: {tokenizer.decode(completion[i], skip_special_tokens=True)}"
             )
             print("=" * 50)
 
