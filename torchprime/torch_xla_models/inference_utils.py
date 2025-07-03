@@ -101,8 +101,9 @@ def generate_(
     input_ids: torch.LongTensor,
     generation_config: GenerationConfig_,
 ) -> dict[str, torch.Tensor | list[torch.Tensor]] | torch.Tensor:
-    print(f"Generating with config: {asdict(generation_config)}")
+    logger.info(f"Generating with config: {asdict(generation_config)}")
     model.eval()
+    device = torch_xla.device()
 
     output_history = generation_config.output_history
     return_dict_in_generate = generation_config.return_dict_in_generate
@@ -118,10 +119,10 @@ def generate_(
 
     histories = [] if (return_dict_in_generate and output_history) else None
 
-    x = input_ids
-    timesteps = torch.linspace(1, eps, steps + 1, device=x.device)
+    x = input_ids.to(device)
+    timesteps = torch.linspace(1, eps, steps + 1, device=device)
     for i in range(steps):
-        print(f"Diffusion step {i} of {steps}...")
+        logger.info(f"Diffusion step {i} of {steps}...")
         mask_index = x == mask_token_id
         logits, _ = model(
             x, attention_mask=None
@@ -134,8 +135,8 @@ def generate_(
 
         if alg == "original":
             p_transfer = 1 - s / t if i < steps - 1 else 1
-            x0 = torch.full_like(x[mask_index], mask_token_id, device=x.device)
-            transfer_index_t_s = torch.rand(*x0.shape, device=x.device) < p_transfer
+            x0 = torch.full_like(x[mask_index], mask_token_id, device=device)
+            transfer_index_t_s = torch.rand(*x0.shape, device=device) < p_transfer
             _, x0[transfer_index_t_s] = sample_(
                 mask_logits[transfer_index_t_s],
                 temperature=temperature,
@@ -154,7 +155,7 @@ def generate_(
                 else int(num_mask_token)
             )
             full_confidence = torch.full_like(
-                x, -torch.inf, device=x.device, dtype=logits.dtype
+                x, -torch.inf, device=device, dtype=logits.dtype
             )
             full_confidence[mask_index] = confidence
             if number_transfer_tokens > 0:
@@ -169,12 +170,12 @@ def generate_(
                         full_confidence, num_samples=number_transfer_tokens
                     )
                 x_ = (
-                    torch.zeros_like(x, device=x.device, dtype=torch.long)
+                    torch.zeros_like(x, device=device, dtype=torch.long)
                     + mask_token_id
                 )
                 x_[mask_index] = x0.clone()
                 row_indices = (
-                    torch.arange(x.size(0), device=x.device)
+                    torch.arange(x.size(0), device=device)
                     .unsqueeze(1)
                     .expand_as(transfer_index)
                 )
