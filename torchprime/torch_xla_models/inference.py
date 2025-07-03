@@ -194,7 +194,7 @@ if __name__ == '__main__':
     )  # Create a single-element dataset with ddlm_inputs
 
     trainer = Trainer(
-        model=model, tokenizer=tokenizer, config=config, train_dataset=dataset
+        model=model, tokenizer=tokenizer, config=config, eval_dataset=dataset
     )
     trainer._load_checkpoint()
     logger.info(
