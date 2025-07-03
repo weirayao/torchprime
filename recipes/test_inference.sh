@@ -5,13 +5,13 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/inference.py \
     generation.max_tokens=0 \
     generation.temperature=0.2 \
     generation.top_p=0.95 \
-    generation.alg=neg_entropy \
+    generation.alg=original \
     generation.alg_temp=0.2 \
     generation.output_history=true \
     generation.return_dict_in_generate=true \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b \
     resume_from_checkpoint=17000 \
-    ici_mesh.fsdp=4 \
+    ici_mesh.fsdp=8 \
     ici_mesh.tensor=1 \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \

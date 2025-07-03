@@ -70,6 +70,7 @@ def sample_(
     top_k=None,
     neg_entropy=False,
 ):
+    logger.info(f"sampling tokens with logits shape: {logits.shape}; temperature: {temperature}; top_p: {top_p}; top_k: {top_k}; neg_entropy: {neg_entropy}")
     if temperature > 0:
         logits = logits / (temperature + 1e-5)
     if top_p is not None and top_p < 1:
@@ -127,6 +128,7 @@ def generate_(
         logits, _ = model(
             x, attention_mask=None
         )  # NOTE: flex model doesn't use attention mask
+        logger.info(f"logits shape: {logits.shape}")
         logits = torch.cat([logits[:, :1], logits[:, :-1]], dim=1)
 
         mask_logits = logits[mask_index]
@@ -134,6 +136,7 @@ def generate_(
         s = timesteps[i + 1]
 
         if alg == "original":
+            logger.info(f"original sampling algorithm...")
             p_transfer = 1 - s / t if i < steps - 1 else 1
             x0 = torch.full_like(x[mask_index], mask_token_id, device=device)
             transfer_index_t_s = torch.rand(*x0.shape, device=device) < p_transfer
@@ -145,6 +148,7 @@ def generate_(
             )
             x[mask_index] = x0.clone()
         elif alg == "neg_entropy":
+            logger.info(f"negative entropy sampling...")
             confidence, x0 = sample_(
                 mask_logits, temperature, top_p=top_p, top_k=top_k, neg_entropy=True
             )
