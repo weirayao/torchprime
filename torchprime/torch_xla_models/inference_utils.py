@@ -101,6 +101,7 @@ def generate_(
     input_ids: torch.LongTensor,
     generation_config: GenerationConfig_,
 ) -> dict[str, torch.Tensor | list[torch.Tensor]] | torch.Tensor:
+    print(f"Generating with config: {asdict(generation_config)}")
     model.eval()
 
     output_history = generation_config.output_history
@@ -120,6 +121,7 @@ def generate_(
     x = input_ids
     timesteps = torch.linspace(1, eps, steps + 1, device=x.device)
     for i in range(steps):
+        print(f"Diffusion step {i} of {steps}...")
         mask_index = x == mask_token_id
         logits, _ = model(
             x, attention_mask=None
@@ -182,7 +184,7 @@ def generate_(
 
         if histories is not None:
             histories.append(x.clone())
-        
+
     if return_dict_in_generate:
         return {
             "completion": x,
@@ -190,6 +192,7 @@ def generate_(
         }
     else:
         return x
+
 
 @torch.no_grad()
 def sample(
