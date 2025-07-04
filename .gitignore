@@ -81,3 +81,5 @@ checkpoints/
 
 .env
 *.ipynb
+
+evaluations/
