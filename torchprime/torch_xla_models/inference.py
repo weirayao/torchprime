@@ -218,6 +218,7 @@ if __name__ == '__main__':
     generation = generate_(
         trainer.model, batch["input_ids"], generation_config
     )
+    xm.wait_device_ops()
     if generation_config.return_dict_in_generate:
         completion = generation["completion"].cpu().tolist()
         history = generation["history"]

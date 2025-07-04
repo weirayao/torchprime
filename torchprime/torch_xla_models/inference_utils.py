@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Optional
 import torch
 import torch_xla
@@ -106,6 +107,16 @@ def generate_(
     model.eval()
     device = torch_xla.device()
 
+    # Timing setup
+    timing_results = {
+        'total_time': 0,
+        'model_forward_time': 0,
+        'sampling_time': 0,
+        'tensor_ops_time': 0,
+        'step_times': []
+    }
+    total_start_time = time.time()
+
     output_history = generation_config.output_history
     return_dict_in_generate = generation_config.return_dict_in_generate
 
@@ -122,36 +133,67 @@ def generate_(
 
     x = input_ids.to(device)
     timesteps = torch.linspace(1, eps, steps + 1, device=device)
+    
     for i in range(steps):
+        step_start_time = time.time()
         logger.info(f"Diffusion step {i} of {steps}...")
+        
+        tensor_ops_start = time.time()
         mask_index = x == mask_token_id
+        timing_results['tensor_ops_time'] += time.time() - tensor_ops_start
+        
+        # Model forward pass timing
+        forward_start_time = time.time()
         logits, _ = model(
             x, attention_mask=None
         )  # NOTE: flex model doesn't use attention mask
+        torch_xla.sync()  # Ensure XLA operations are complete
+        forward_time = time.time() - forward_start_time
+        timing_results['model_forward_time'] += forward_time
+        
         logger.info(f"logits shape: {logits.shape}")
+        
+        tensor_ops_start = time.time()
         logits = torch.cat([logits[:, :1], logits[:, :-1]], dim=1)
-
         mask_logits = logits[mask_index]
         t = timesteps[i]
         s = timesteps[i + 1]
+        timing_results['tensor_ops_time'] += time.time() - tensor_ops_start
 
+        sampling_time = 0.0  # Initialize sampling time for this step
+        
         if alg == "original":
             logger.info(f"original sampling algorithm...")
+            tensor_ops_start = time.time()
             p_transfer = 1 - s / t if i < steps - 1 else 1
             x0 = torch.full_like(x[mask_index], mask_token_id, device=device)
             transfer_index_t_s = torch.rand(*x0.shape, device=device) < p_transfer
+            timing_results['tensor_ops_time'] += time.time() - tensor_ops_start
+            
+            sampling_start_time = time.time()
             _, x0[transfer_index_t_s] = sample_(
                 mask_logits[transfer_index_t_s],
                 temperature=temperature,
                 top_p=top_p,
                 top_k=top_k,
             )
+            sampling_time = time.time() - sampling_start_time
+            timing_results['sampling_time'] += sampling_time
+            
+            tensor_ops_start = time.time()
             x[mask_index] = x0.clone()
+            timing_results['tensor_ops_time'] += time.time() - tensor_ops_start
+            
         elif alg == "neg_entropy":
             logger.info(f"negative entropy sampling...")
+            sampling_start_time = time.time()
             confidence, x0 = sample_(
                 mask_logits, temperature, top_p=top_p, top_k=top_k, neg_entropy=True
             )
+            sampling_time = time.time() - sampling_start_time
+            timing_results['sampling_time'] += sampling_time
+            
+            tensor_ops_start = time.time()
             num_mask_token = mask_index.sum() / mask_index.shape[0]
             number_transfer_tokens = (
                 int(num_mask_token * (1 - s / t))
@@ -184,16 +226,34 @@ def generate_(
                     .expand_as(transfer_index)
                 )
                 x[row_indices, transfer_index] = x_[row_indices, transfer_index]
+            timing_results['tensor_ops_time'] += time.time() - tensor_ops_start
         else:
             raise ValueError(f"Invalid algorithm: {alg}")
 
         if histories is not None:
             histories.append(x.clone())
 
+        step_time = time.time() - step_start_time
+        timing_results['step_times'].append(step_time)
+        logger.info(f"Step {i} time: {step_time:.4f}s (forward: {forward_time:.4f}s, sampling: {sampling_time:.4f}s)")
+
+    timing_results['total_time'] = time.time() - total_start_time
+    
+    # Print profiling results
+    logger.info("=== PROFILING RESULTS ===")
+    logger.info(f"Total time: {timing_results['total_time']:.4f}s")
+    logger.info(f"Model forward time: {timing_results['model_forward_time']:.4f}s ({timing_results['model_forward_time']/timing_results['total_time']*100:.1f}%)")
+    logger.info(f"Sampling time: {timing_results['sampling_time']:.4f}s ({timing_results['sampling_time']/timing_results['total_time']*100:.1f}%)")
+    logger.info(f"Tensor ops time: {timing_results['tensor_ops_time']:.4f}s ({timing_results['tensor_ops_time']/timing_results['total_time']*100:.1f}%)")
+    logger.info(f"Average step time: {sum(timing_results['step_times'])/len(timing_results['step_times']):.4f}s")
+    logger.info(f"Step times: {[f'{t:.4f}' for t in timing_results['step_times']]}")
+    logger.info("========================")
+
     if return_dict_in_generate:
         return {
             "completion": x,
             "history": histories,
+            "timing": timing_results,
         }
     else:
         return x
