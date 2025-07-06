@@ -40,8 +40,9 @@ from torch_xla.experimental.distributed_checkpoint import CheckpointManager, pri
 from transformers.optimization import Adafactor
 from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
+from transformers import PreTrainedTokenizerBase
 
-from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset
+from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
 from torchprime.metrics.mfu import compute_mfu
@@ -64,12 +65,24 @@ logger = logging.getLogger(__name__)
 xr.use_spmd()
 assert xr.is_spmd() is True
 
-dist.init_process_group(backend='gloo', init_method='xla://')
+if not dist.is_initialized():
+  dist.init_process_group(backend='gloo', init_method='xla://')
 
 def is_main_process():
   """Check if this is the main process (rank 0)."""
   return xr.process_index() == 0
 
+# Map torchprime model classes to their corresponding HuggingFace model classes
+HF_MODEL_CLASS_MAPPING = {
+  "llama.LlamaForCausalLM": "LlamaForCausalLM",
+  "flex.LlamaForCausalLM": "LlamaForCausalLM", 
+  "flex.Qwen3ForCausalLM": "Qwen3ForCausalLM",
+  "mixtral.MixtralForCausalLM": "MixtralForCausalLM",
+  "llama4.Llama4TextForCausalLM": "Llama4ForCausalLM",
+  "qwen.Qwen3ForCausalLM": "Qwen3ForCausalLM",
+}
+
+MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
 
 class Trainer:
   """The trainer."""
@@ -79,13 +92,17 @@ class Trainer:
   def __init__(
     self,
     model: nn.Module,
+    tokenizer: PreTrainedTokenizerBase,
     config: DictConfig,
-    train_dataset: Dataset | IterableDataset | None,
+    train_dataset: Dataset | IterableDataset | None = None,
+    eval_dataset: Dataset | IterableDataset | None = None,
   ):
     self.config = config
-    self.device = xm.xla_device()
+    self.device = torch_xla.device()
     self.global_batch_size = self.config.global_batch_size
     self.train_dataset = train_dataset
+    self.eval_dataset = eval_dataset
+    self.tokenizer = tokenizer
 
     # Set up SPMD mesh and shard the model
     mesh = get_mesh(self.config)
@@ -120,6 +137,7 @@ class Trainer:
     model = self._add_checkpoint_offload_scan_model(model)
     model = self._add_optimization_barrier_model(model)
     self.model = model
+    self.hf_model = load_hf_model(self.config.model)
 
     # Set up optimizers
     self.optimizer = Adafactor(
@@ -192,7 +210,6 @@ class Trainer:
     logger.info(f"Num replicas: {num_replicas}")
     if isinstance(self.train_dataset, IterableDataset):
       # For IterableDataset, don't use DistributedSampler as it doesn't have len()
-      # Distributed sampling should be handled by split_dataset_by_node before creating the trainer
       sampler = None
       logger.info("Using IterableDataset without DistributedSampler")
     else:
@@ -324,15 +341,22 @@ class Trainer:
     # For now we assume that we wil never train for mor than one epoch
     train_loader = self._get_train_dataloader()
     train_iterator = iter(train_loader)
-    for _ in range(3):
+    max_step = self.config.max_steps
+    epoch = 0
+    token_count = 0
+    for step in range(max_step):
       try:
         batch = next(train_iterator)
+        token_count += self.config.data.block_size * (step + 1) * self.global_batch_size
       except StopIteration:
-        train_iterator = iter(train_loader)
-        batch = next(train_iterator)
+        logger.warning(f"DataLoader exhausted at step {step}, reset iterator")
+        logger.info(f"Token count in an epoch: {token_count} ({token_count/1e9:.3f}B)")
+        epoch += 1
+        break
       # visualize_tensor_sharding(batch['input_ids'], use_color=False)
-      print(f"Step {_}, Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}")
-      assert batch["input_ids"].shape == (self.global_batch_size, self.config.data.block_size), f"Batch shape mismatch: {batch['input_ids'].shape} != {(self.global_batch_size * 2, self.config.data.block_size)}"
+      if step % 100 == 0:
+        logger.info(f"Step {step}, Token count: {token_count}, Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}")
+      assert batch["input_ids"].shape == (self.global_batch_size, self.config.data.block_size), f"Batch shape mismatch: {batch['input_ids'].shape} != {(self.global_batch_size, self.config.data.block_size)}"
 
   def train_loop(self):
     if self.config.resume_from_checkpoint is not None:
@@ -352,6 +376,7 @@ class Trainer:
     if hasattr(self, 'start_step') and self.start_step > 0:
       logger.info(f"    Resuming from step: {self.start_step}")
     if is_main_process():
+      wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
       wandb.init(project="text-diffusion-model-research", name=self.config.model.model_class)
       # Log the configuration to wandb
       wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
@@ -401,10 +426,12 @@ class Trainer:
             wandb.log(
               {
                 "train/loss": loss,
+                "train/ppl": math.exp(loss),
                 "train/step_time": (trace_end_time - trace_start_time) * 1000,
                 "train/epoch": epoch,
                 "train/step": step,
                 "train/lr": self.lr_scheduler.get_last_lr()[0],
+                "train/total_tokens": self.config.data.block_size * (step + 1) * self.global_batch_size,
               },
               step=step  # Explicitly set the wandb global step
             )
@@ -484,11 +511,31 @@ class Trainer:
     self.model.zero_grad()
     return loss
 
+def load_hf_model(model_config):
+  logger.info(f"Loading HuggingFace model from {model_config.tokenizer_name}")
+  hf_model_class_name = HF_MODEL_CLASS_MAPPING.get(model_config.model_class)
+  if hf_model_class_name is None:
+    print(f"Error: No HuggingFace model mapping found for '{model_config.model_class}'")
+    print(f"Available mappings: {list(HF_MODEL_CLASS_MAPPING.keys())}")
+    sys.exit(1)
+
+  # Dynamically import the HuggingFace model class
+  try:
+    transformers_module = importlib.import_module("transformers")
+    hf_model_class = getattr(transformers_module, hf_model_class_name)
+  except (ModuleNotFoundError, AttributeError) as e:
+    print(f"Error importing HuggingFace model class '{hf_model_class_name}': {e}")
+    sys.exit(1)
+
+  hf_model = hf_model_class.from_pretrained(
+    model_config.tokenizer_name,
+    torch_dtype=torch.bfloat16,
+  )
+  return hf_model
 
 def initialize_model_class(model_config, load_from_hf=True):
   """Import and initialize model_class specified by the config."""
-  full_model_class_string = model_config.model_class
-  module_name, model_class_name = full_model_class_string.rsplit(".", 1)
+  module_name, model_class_name = model_config.model_class.rsplit(".", 1)
   try:
     module = importlib.import_module(module_name)
   except ModuleNotFoundError as e:
@@ -500,37 +547,9 @@ def initialize_model_class(model_config, load_from_hf=True):
     print(f"Error: Function '{model_class_name}' not found in module '{module_name}'")
     sys.exit(1)
   model = model_class(model_config)
-  
-  # Map torchprime model classes to their corresponding HuggingFace model classes
-  hf_model_class_mapping = {
-    "llama.LlamaForCausalLM": "LlamaForCausalLM",
-    "flex.LlamaForCausalLM": "LlamaForCausalLM", 
-    "flex.Qwen3ForCausalLM": "Qwen3ForCausalLM",
-    "mixtral.MixtralForCausalLM": "MixtralForCausalLM",
-    "llama4.Llama4TextForCausalLM": "Llama4ForCausalLM",
-    "qwen.Qwen3ForCausalLM": "Qwen3ForCausalLM",
-  }
-  
-  hf_model_class_name = hf_model_class_mapping.get(full_model_class_string)
-  if hf_model_class_name is None:
-    print(f"Error: No HuggingFace model mapping found for '{full_model_class_string}'")
-    print(f"Available mappings: {list(hf_model_class_mapping.keys())}")
-    sys.exit(1)
-  
-  # Dynamically import the HuggingFace model class
-  try:
-    transformers_module = importlib.import_module("transformers")
-    hf_model_class = getattr(transformers_module, hf_model_class_name)
-  except (ModuleNotFoundError, AttributeError) as e:
-    print(f"Error importing HuggingFace model class '{hf_model_class_name}': {e}")
-    sys.exit(1)
-  
   # Load pretrained weights from HuggingFace model
   if load_from_hf:
-    hf_model = hf_model_class.from_pretrained(
-      model_config.tokenizer_name,
-      torch_dtype=torch.bfloat16,
-    )
+    hf_model = load_hf_model(model_config)
     logger.info("Loaded model from HuggingFace. Now loading state dict.")
     model.load_state_dict(hf_model.state_dict())
     del hf_model
@@ -602,16 +621,24 @@ def main(config: DictConfig):
 
   if config.data.dataset_name:
     # Downloading and loading a dataset from the hub.
-    data = retry(
-      lambda: make_huggingface_dataset(
-        name=config.data.dataset_name,
-        config_name=config.data.dataset_config_name,
-        split="train",
-        cache_dir=config.data.cache_dir,
-        tokenizer=tokenizer,
-        block_size=config.data.block_size,
+    dataset_name = config.data.dataset_name
+    gcs_prefix = "gs://sfr-text-diffusion-model-research/"
+    if dataset_name.startswith(gcs_prefix):
+      dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
+      data = retry(
+        lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
       )
-    )
+    else:
+      data = retry(
+        lambda: make_huggingface_dataset(
+          name=config.data.dataset_name,
+          config_name=config.data.dataset_config_name,
+          split="train",
+          cache_dir=config.data.cache_dir,
+          tokenizer=tokenizer,
+          block_size=config.data.block_size,
+        )
+      )
   elif config.data.gcs_dataset_names:
     # Downloading and loading a dataset from GCS bucket.
     data = retry(
@@ -623,11 +650,33 @@ def main(config: DictConfig):
         block_size=config.data.block_size,
       )
     )
+  
   else:
     raise ValueError("No dataset provided")
-  data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+  
+  # Add debugging for SPMD data loading
+  if is_main_process():
+    logger.info(f"Dataset type: {type(data)}")
+    logger.info(f"SPMD mode enabled: {xr.is_spmd()}")
+    logger.info(f"Number of devices: {xr.process_count()}")
+    logger.info(f"Current device rank: {xr.process_index()}")
+    
+    if isinstance(data, IterableDataset):
+      logger.info("Using IterableDataset - need to ensure proper data distribution")
+      logger.info("In SPMD mode, each device should get a different portion of the data")
+
+  # # For IterableDataset in SPMD mode, apply dataset splitting
+  # if isinstance(data, IterableDataset):
+  #   try:
+  #     logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
+  #     data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+  #     logger.info(f"Dataset split successful for device {xr.process_index()}")
+  #   except Exception as e:
+  #     logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
+
   trainer = Trainer(
     model=model,
+    tokenizer=tokenizer,
     config=config,
     train_dataset=data,
   )

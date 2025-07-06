@@ -59,7 +59,7 @@ def make_gcs_pretokenized_dataset(
   """
   random.seed(seed)
   data_files = glob(f"{path}/**/*.parquet", recursive=True)
-  data_files = random.shuffle(data_files)
+  random.shuffle(data_files)  # Fix: shuffle in-place, don't assign result
   data = load_dataset(
     "parquet",
     data_files=data_files,
