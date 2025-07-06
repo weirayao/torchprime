@@ -144,18 +144,19 @@ def generate_(
         
         # Model forward pass timing
         forward_start_time = time.time()
-        logits, _ = model(
-            x, attention_mask=None
-        )  # NOTE: flex model doesn't use attention mask
-        torch_xla.sync()  # Ensure XLA operations are complete
+        logits, _ = model(x, attention_mask=None)  # NOTE: flex model doesn't use attention mask
         forward_time = time.time() - forward_start_time
         timing_results['model_forward_time'] += forward_time
         
         logger.info(f"logits shape: {logits.shape}")
         
         tensor_ops_start = time.time()
-        logits = torch.cat([logits[:, :1], logits[:, :-1]], dim=1)
-        mask_logits = logits[mask_index]
+        # Optimize logits shifting - avoid cat operation when possible
+        shifted_logits = torch.empty_like(logits)
+        shifted_logits[:, 0:1] = logits[:, 0:1]  # Copy first token
+        shifted_logits[:, 1:] = logits[:, :-1]   # Shift remaining tokens
+        
+        mask_logits = shifted_logits[mask_index]
         t = timesteps[i]
         s = timesteps[i + 1]
         timing_results['tensor_ops_time'] += time.time() - tensor_ops_start
@@ -171,15 +172,16 @@ def generate_(
             timing_results['tensor_ops_time'] += time.time() - tensor_ops_start
             
             sampling_start_time = time.time()
-            _, x0[transfer_index_t_s] = sample_(
-                mask_logits[transfer_index_t_s],
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
-            )
+            if transfer_index_t_s.any():
+                _, x0[transfer_index_t_s] = sample_(
+                    mask_logits[transfer_index_t_s],
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                )
             sampling_time = time.time() - sampling_start_time
             timing_results['sampling_time'] += sampling_time
-            
+
             tensor_ops_start = time.time()
             x[mask_index] = x0.clone()
             timing_results['tensor_ops_time'] += time.time() - tensor_ops_start
@@ -231,11 +233,14 @@ def generate_(
             raise ValueError(f"Invalid algorithm: {alg}")
 
         if histories is not None:
-            histories.append(x.clone())
+            histories.append(x.detach().cpu().clone())
 
         step_time = time.time() - step_start_time
         timing_results['step_times'].append(step_time)
         logger.info(f"Step {i} time: {step_time:.4f}s (forward: {forward_time:.4f}s, sampling: {sampling_time:.4f}s)")
+
+    # Single sync at the end instead of every step
+    torch_xla.sync()
 
     timing_results['total_time'] = time.time() - total_start_time
     
