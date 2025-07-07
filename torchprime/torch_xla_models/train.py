@@ -691,6 +691,14 @@ def main(config: DictConfig):
   else:
     raise ValueError("No dataset provided")
   # data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # not working as expected, will only load a subset of the dataset
+  if isinstance(data, IterableDataset):
+    try:
+      logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
+      data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+      logger.info(f"Dataset split successful for device {xr.process_index()}")
+    except Exception as e:
+      logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
+      
   trainer = Trainer(
     model=model,
     tokenizer=tokenizer,
