@@ -218,8 +218,10 @@ def main(config: DictConfig):
     iterator = iter(loader)
 
     logger.info("Evaluating...")
-    generation_results = []
-    raw_generation_results = []
+    if generation_config.return_dict_in_generate:
+        generations = []
+    completions = []
+    raw_text = []
     for _, batch in tqdm(enumerate(iterator)):
         # generation = generate(
         #     trainer.model, tokenizer, batch, generation_config, verbose=True
@@ -241,8 +243,11 @@ def main(config: DictConfig):
                 ]
             case _:
                 raise ValueError(f"Unsupported dataset: {config.eval_dataset_name_or_path}")
-        generation_results.extend(parsed_generation_text)
-        raw_generation_results.extend(raw_generation_text)
+        if generation_config.return_dict_in_generate:
+            generations.extend(generation)
+        completions.extend(parsed_generation_text)
+        raw_text.extend(raw_generation_text)
+
 
     # if is_main_process() and generation_results:
     #     # Get number of devices
@@ -264,8 +269,10 @@ def main(config: DictConfig):
     #     generation_results = worker_0_results
     #     raw_generation_results = worker_0_raw_results
     # Truncate to original dataset length to remove dummy batches
-    generation_results = generation_results[:eval_dataset_len]
-    raw_generation_results = raw_generation_results[:eval_dataset_len]
+    completions = completions[:eval_dataset_len]
+    raw_text = raw_text[:eval_dataset_len]
+    if generation_config.return_dict_in_generate:
+        generations = generations[:eval_dataset_len]
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     save_path = (
@@ -276,9 +283,12 @@ def main(config: DictConfig):
     # Create directory if it doesn't exist
     save_path.parent.mkdir(parents=True, exist_ok=True)
 
-    dataset = dataset.add_column("completion", generation_results)
-    dataset = dataset.add_column("raw_completion", raw_generation_results)
+    dataset = dataset.add_column("completion", completions)
+    dataset = dataset.add_column("raw_completion", raw_text)
     dataset.to_json(save_path.with_suffix(".jsonl"))
+    if generation_config.return_dict_in_generate:
+        with open(save_path, "w") as f:
+            json.dump(generations, f, indent=4)
 
 
 if __name__ == "__main__":

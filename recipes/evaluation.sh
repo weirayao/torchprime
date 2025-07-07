@@ -1,12 +1,16 @@
 XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/evaluation.py \
-    global_batch_size=16 \
+    global_batch_size=8 \
     model.tokenizer_name=Qwen/Qwen3-1.7B \
     generation.diffusion_steps=512 \
     generation.max_tokens=null \
     generation.max_new_tokens=512 \
-    generation.temperature=0 \
+    generation.temperature=0.2 \
     generation.top_p=0.95 \
     generation.top_k=null \
+    generation.alg=neg_entropy \
+    generation.alg_temp=0.2 \
+    generation.output_history=true \
+    generation.return_dict_in_generate=true \
     eval_dataset_name_or_path=openai/openai_humaneval \
     eval_results_save_path=evaluations \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b \
