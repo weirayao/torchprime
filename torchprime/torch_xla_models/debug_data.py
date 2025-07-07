@@ -288,7 +288,7 @@ class Trainer:
     loader = pl.MpDeviceLoader(
       dataloader, self.device, input_sharding=self.input_sharding_spec
     )
-    loader = self._instrument_dataloader(loader, f"mp_device_loader}") 
+    loader = self._instrument_dataloader(loader, f"mp_device_loader") 
     return loader
 
   def _add_checkpoint_offload_scan_model(self, model: nn.Module):
