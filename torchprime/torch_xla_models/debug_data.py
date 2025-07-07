@@ -707,14 +707,14 @@ def main(config: DictConfig):
       logger.info("Using IterableDataset - need to ensure proper data distribution")
       logger.info("In SPMD mode, each device should get a different portion of the data")
 
-  # For IterableDataset in SPMD mode, apply dataset splitting
-  if isinstance(data, IterableDataset):
-    try:
-      logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
-      data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
-      logger.info(f"Dataset split successful for device {xr.process_index()}")
-    except Exception as e:
-      logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
+  # # For IterableDataset in SPMD mode, apply dataset splitting
+  # if isinstance(data, IterableDataset):
+  #   try:
+  #     logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
+  #     data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+  #     logger.info(f"Dataset split successful for device {xr.process_index()}")
+  #   except Exception as e:
+  #     logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
 
   trainer = Trainer(
     model=model,
