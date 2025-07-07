@@ -202,7 +202,6 @@ class Qwen3Attention(nn.Module):
     cos, sin = position_embeddings
     query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-    print(f"query_states shape: {query_states.shape}")
     attn_output = self.attention_block(
       query_states, key_states, value_states, attention_mask
     )
