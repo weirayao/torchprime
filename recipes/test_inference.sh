@@ -9,8 +9,8 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/inference.py \
     generation.alg_temp=0.2 \
     generation.output_history=true \
     generation.return_dict_in_generate=true \
-    checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b \
-    resume_from_checkpoint=17000 \
+    checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex-qwen3-1b-gcs-pretrain-all-data-dataloader-fix-1024 \
+    resume_from_checkpoint=10000 \
     ici_mesh.fsdp=8 \
     ici_mesh.tensor=1 \
     ici_mesh.data=1 \
