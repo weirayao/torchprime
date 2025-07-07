@@ -13,8 +13,8 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/evaluation.py 
     generation.return_dict_in_generate=true \
     eval_dataset_name_or_path=openai/openai_humaneval \
     eval_results_save_path=evaluations \
-    checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b \
-    resume_from_checkpoint=17000 \
+    checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b_512_split \
+    resume_from_checkpoint=9500 \
     ici_mesh.fsdp=8 \
     ici_mesh.tensor=1 \
     ici_mesh.data=1 \
