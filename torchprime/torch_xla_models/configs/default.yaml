@@ -24,7 +24,7 @@ profile_duration: 100000
 output_dir: outputs
 
 # Checkpoint directory
-checkpoint_dir: checkpoints/
+checkpoint_dir: gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b_512_split
 resume_from_checkpoint: 9500
 save_steps: 500
 
