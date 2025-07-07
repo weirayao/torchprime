@@ -1,5 +1,5 @@
 XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/evaluation.py \
-    global_batch_size=128 \
+    global_batch_size=64 \
     model.tokenizer_name=Qwen/Qwen3-1.7B \
     generation.diffusion_steps=512 \
     generation.max_tokens=null \
