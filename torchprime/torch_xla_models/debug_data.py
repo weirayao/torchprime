@@ -625,6 +625,7 @@ def main(config: DictConfig):
     gcs_prefix = "gs://sfr-text-diffusion-model-research/"
     if dataset_name.startswith(gcs_prefix):
       dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
+      logger.info(f"Loading dataset from {dataset_name}")
       data = retry(
         lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
       )
