@@ -5,7 +5,7 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/inference.py \
     generation.max_tokens=0 \
     generation.temperature=0.2 \
     generation.top_p=0.95 \
-    generation.alg=original \
+    generation.alg=neg_entropy \
     generation.alg_temp=0.2 \
     generation.output_history=true \
     generation.return_dict_in_generate=true \
