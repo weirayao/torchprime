@@ -194,16 +194,13 @@ def sample_(
     
     # Sample from the distribution efficiently
     sampling_start_time = time.time()
-    try:
-        # Use multinomial only when we have valid probabilities
-        if probs.sum(dim=-1).min() > 0:
-            x0 = torch.multinomial(probs, num_samples=1).squeeze(-1)
+    if temperature > 0:
+        try:
+            x0 = dists.Categorical(probs=probs).sample()
             confidence = torch.gather(probs, -1, x0.unsqueeze(-1)).squeeze(-1)
-        else:
-            # Fallback to argmax if probabilities are invalid
+        except:
             confidence, x0 = torch.max(probs, dim=-1)
-    except:
-        # Fallback to argmax if multinomial fails
+    else:
         confidence, x0 = torch.max(probs, dim=-1)
     
     sampling_time = time.time() - sampling_start_time
