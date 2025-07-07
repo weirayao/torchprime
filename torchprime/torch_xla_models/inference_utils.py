@@ -37,7 +37,6 @@ class GenerationConfig:
     top_p: float | None = None
     top_k: int | None = None
 
-
 def top_p_logits(logits, p: float = 0.9):
     sorted_logits, sorted_indices = torch.sort(logits, descending=True)
     # import pdb; pdb.set_trace();
@@ -54,6 +53,28 @@ def top_p_logits(logits, p: float = 0.9):
     logits = logits.masked_fill(mask, torch.finfo(logits.dtype).min)
     return logits
 
+def top_p_logits_optimized(logits, p: float = 0.9):
+    """Optimized top-p filtering that avoids redundant softmax computation."""
+    # Sort logits and get indices
+    sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+    # Compute softmax on sorted logits
+    sorted_probs = F.softmax(sorted_logits, dim=-1)
+    # Compute cumulative probabilities
+    cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+    
+    # Find cutoff index for top-p
+    cutoff_mask = cumulative_probs > p
+    # Shift right to keep first token above threshold
+    cutoff_mask = F.pad(cutoff_mask, (1, 0), value=False)[..., :-1]
+    
+    # Zero out probabilities beyond cutoff
+    sorted_probs_filtered = sorted_probs.masked_fill(cutoff_mask, 0.0)
+    
+    # Scatter back to original indices
+    probs = torch.zeros_like(logits)
+    probs.scatter_(-1, sorted_indices, sorted_probs_filtered)
+    
+    return probs
 
 def top_k_logits(logits, top_k: int):
     top_k = min(top_k, logits.size(-1))  # Safety check
@@ -61,6 +82,21 @@ def top_k_logits(logits, top_k: int):
     indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
     logits = logits.masked_fill(indices_to_remove, torch.finfo(logits.dtype).min)
     return logits
+
+def top_k_logits_optimized(logits, top_k: int):
+    """Optimized top-k filtering."""
+    if top_k >= logits.size(-1):
+        return F.softmax(logits, dim=-1)
+    
+    # Get top-k values and indices
+    top_k_values, top_k_indices = torch.topk(logits, top_k, dim=-1)
+    
+    # Create filtered probabilities tensor
+    probs = torch.zeros_like(logits)
+    top_k_probs = F.softmax(top_k_values, dim=-1)
+    probs.scatter_(-1, top_k_indices, top_k_probs)
+    
+    return probs
 
 
 @torch.no_grad()
@@ -72,28 +108,71 @@ def sample_(
     neg_entropy=False,
 ):
     logger.info(f"sampling tokens with logits shape: {logits.shape}; temperature: {temperature}; top_p: {top_p}; top_k: {top_k}; neg_entropy: {neg_entropy}")
-    if temperature > 0:
-        logits = logits / (temperature + 1e-5)
-    if top_p is not None and top_p < 1:
-        logits = top_p_logits(logits, top_p)
-    if top_k is not None:
-        logits = top_k_logits(logits, top_k)
-    probs = torch.softmax(logits, dim=-1)
-
-    if temperature > 0:
-        try:
-            x0 = dists.Categorical(probs=probs).sample()
-            confidence = torch.gather(probs, -1, x0.unsqueeze(-1)).squeeze(-1)
-        except:
-            confidence, x0 = probs.max(dim=-1)
+    
+    # Early exit for temperature=0: just return argmax
+    if temperature == 0:
+        confidence, x0 = torch.max(F.softmax(logits, dim=-1), dim=-1)
+        if neg_entropy:
+            probs = F.softmax(logits, dim=-1)
+            epsilon = 1e-10
+            log_probs = torch.log(probs + epsilon)
+            confidence = torch.sum(probs * log_probs, dim=-1)
+        return confidence, x0
+    
+    # Scale by temperature
+    scaled_logits = logits / (temperature + 1e-5)
+    
+    # Apply filtering and get probabilities in one go
+    if top_k is not None and top_p is not None:
+        # Combined top-k and top-p filtering
+        if top_k >= logits.size(-1):
+            probs = top_p_logits_optimized(scaled_logits, top_p)
+        else:
+            # First apply top-k, then top-p
+            top_k_values, top_k_indices = torch.topk(scaled_logits, top_k, dim=-1)
+            if top_p < 1.0:
+                # Apply top-p to the top-k values
+                sorted_values, sorted_indices = torch.sort(top_k_values, descending=True, dim=-1)
+                sorted_probs = F.softmax(sorted_values, dim=-1)
+                cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+                cutoff_mask = cumulative_probs > top_p
+                cutoff_mask = F.pad(cutoff_mask, (1, 0), value=False)[..., :-1]
+                sorted_probs_filtered = sorted_probs.masked_fill(cutoff_mask, 0.0)
+                
+                # Scatter back to top-k indices
+                top_k_probs = torch.zeros_like(top_k_values)
+                top_k_probs.scatter_(-1, sorted_indices, sorted_probs_filtered)
+            else:
+                top_k_probs = F.softmax(top_k_values, dim=-1)
+            
+            # Scatter to full vocabulary
+            probs = torch.zeros_like(logits)
+            probs.scatter_(-1, top_k_indices, top_k_probs)
+    elif top_k is not None:
+        probs = top_k_logits_optimized(scaled_logits, top_k)
+    elif top_p is not None:
+        probs = top_p_logits_optimized(scaled_logits, top_p)
     else:
-        confidence, x0 = probs.max(dim=-1)
-
+        probs = F.softmax(scaled_logits, dim=-1)
+    
+    # Sample from the distribution efficiently
+    try:
+        # Use multinomial only when we have valid probabilities
+        if probs.sum(dim=-1).min() > 0:
+            x0 = torch.multinomial(probs, num_samples=1).squeeze(-1)
+            confidence = torch.gather(probs, -1, x0.unsqueeze(-1)).squeeze(-1)
+        else:
+            # Fallback to argmax if probabilities are invalid
+            confidence, x0 = torch.max(probs, dim=-1)
+    except:
+        # Fallback to argmax if multinomial fails
+        confidence, x0 = torch.max(probs, dim=-1)
+    
     if neg_entropy:
         epsilon = 1e-10
         log_probs = torch.log(probs + epsilon)
         confidence = torch.sum(probs * log_probs, dim=-1)
-
+    
     return confidence, x0
 
 
