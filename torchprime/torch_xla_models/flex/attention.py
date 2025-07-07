@@ -111,7 +111,7 @@ class AttentionModule(nn.Module):
           partition_spec=self.partition_spec,
         )
       case _:
-        raise NotImplementedError(f"Attention kernel {self.config.attention_kernel} is not supported yet")
+        # raise NotImplementedError(f"Attention kernel {self.config.attention_kernel} is not supported yet")
         attn_weights = torch.matmul(
           query_states, key_states.transpose(2, 3)
         ) / math.sqrt(head_dim)
