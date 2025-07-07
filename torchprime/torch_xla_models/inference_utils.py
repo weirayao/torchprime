@@ -107,31 +107,55 @@ def sample_(
     top_k=None,
     neg_entropy=False,
 ):
+    # Timing instrumentation
+    total_start_time = time.time()
     logger.info(f"sampling tokens with logits shape: {logits.shape}; temperature: {temperature}; top_p: {top_p}; top_k: {top_k}; neg_entropy: {neg_entropy}")
     
     # Early exit for temperature=0: just return argmax
     if temperature == 0:
+        prob_start_time = time.time()
         confidence, x0 = torch.max(F.softmax(logits, dim=-1), dim=-1)
+        prob_time = time.time() - prob_start_time
+        
         if neg_entropy:
+            entropy_start_time = time.time()
             probs = F.softmax(logits, dim=-1)
             epsilon = 1e-10
             log_probs = torch.log(probs + epsilon)
             confidence = torch.sum(probs * log_probs, dim=-1)
+            entropy_time = time.time() - entropy_start_time
+            logger.info(f"sample_ early exit timing - prob: {prob_time:.4f}s, entropy: {entropy_time:.4f}s")
+        else:
+            logger.info(f"sample_ early exit timing - prob: {prob_time:.4f}s")
         return confidence, x0
     
     # Scale by temperature
+    logits_processing_start_time = time.time()
+    temperature_start_time = time.time()
     scaled_logits = logits / (temperature + 1e-5)
+    temperature_time = time.time() - temperature_start_time
     
     # Apply filtering and get probabilities in one go
+    topk_time = 0.0
+    topp_time = 0.0
+    softmax_time = 0.0
+    scatter_time = 0.0
+    
     if top_k is not None and top_p is not None:
         # Combined top-k and top-p filtering
         if top_k >= logits.size(-1):
+            topp_start_time = time.time()
             probs = top_p_logits_optimized(scaled_logits, top_p)
+            topp_time = time.time() - topp_start_time
         else:
             # First apply top-k, then top-p
+            topk_start_time = time.time()
             top_k_values, top_k_indices = torch.topk(scaled_logits, top_k, dim=-1)
+            topk_time = time.time() - topk_start_time
+            
             if top_p < 1.0:
                 # Apply top-p to the top-k values
+                topp_start_time = time.time()
                 sorted_values, sorted_indices = torch.sort(top_k_values, descending=True, dim=-1)
                 sorted_probs = F.softmax(sorted_values, dim=-1)
                 cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
@@ -142,20 +166,34 @@ def sample_(
                 # Scatter back to top-k indices
                 top_k_probs = torch.zeros_like(top_k_values)
                 top_k_probs.scatter_(-1, sorted_indices, sorted_probs_filtered)
+                topp_time = time.time() - topp_start_time
             else:
+                softmax_start_time = time.time()
                 top_k_probs = F.softmax(top_k_values, dim=-1)
+                softmax_time = time.time() - softmax_start_time
             
             # Scatter to full vocabulary
+            scatter_start_time = time.time()
             probs = torch.zeros_like(logits)
             probs.scatter_(-1, top_k_indices, top_k_probs)
+            scatter_time = time.time() - scatter_start_time
     elif top_k is not None:
+        topk_start_time = time.time()
         probs = top_k_logits_optimized(scaled_logits, top_k)
+        topk_time = time.time() - topk_start_time
     elif top_p is not None:
+        topp_start_time = time.time()
         probs = top_p_logits_optimized(scaled_logits, top_p)
+        topp_time = time.time() - topp_start_time
     else:
+        softmax_start_time = time.time()
         probs = F.softmax(scaled_logits, dim=-1)
+        softmax_time = time.time() - softmax_start_time
+    
+    logits_processing_time = time.time() - logits_processing_start_time
     
     # Sample from the distribution efficiently
+    sampling_start_time = time.time()
     try:
         # Use multinomial only when we have valid probabilities
         if probs.sum(dim=-1).min() > 0:
@@ -168,10 +206,21 @@ def sample_(
         # Fallback to argmax if multinomial fails
         confidence, x0 = torch.max(probs, dim=-1)
     
+    sampling_time = time.time() - sampling_start_time
+    
+    entropy_time = 0.0
     if neg_entropy:
+        entropy_start_time = time.time()
         epsilon = 1e-10
         log_probs = torch.log(probs + epsilon)
         confidence = torch.sum(probs * log_probs, dim=-1)
+        entropy_time = time.time() - entropy_start_time
+    
+    total_time = time.time() - total_start_time
+    
+    # Log timing results with detailed breakdown
+    logger.info(f"sample_ timing - total: {total_time:.4f}s, logits_processing: {logits_processing_time:.4f}s, sampling: {sampling_time:.4f}s, entropy: {entropy_time:.4f}s")
+    logger.info(f"sample_ detailed timing - temperature: {temperature_time:.4f}s, topk: {topk_time:.4f}s, topp: {topp_time:.4f}s, softmax: {softmax_time:.4f}s, scatter: {scatter_time:.4f}s")
     
     return confidence, x0
 
@@ -215,11 +264,14 @@ def generate_(
     
     for i in range(steps):
         step_start_time = time.time()
+        tensor_ops_time = 0.0  # Initialize tensor ops time for this step
+        sampling_time = 0.0  # Initialize sampling time for this step
+
         logger.info(f"Diffusion step {i} of {steps}...")
         
         tensor_ops_start = time.time()
         mask_index = x == mask_token_id
-        timing_results['tensor_ops_time'] += time.time() - tensor_ops_start
+        tensor_ops_time += time.time() - tensor_ops_start
         
         # Model forward pass timing
         forward_start_time = time.time()
@@ -238,9 +290,9 @@ def generate_(
         mask_logits = shifted_logits[mask_index]
         t = timesteps[i]
         s = timesteps[i + 1]
-        timing_results['tensor_ops_time'] += time.time() - tensor_ops_start
+        tensor_ops_time += time.time() - tensor_ops_start
 
-        sampling_time = 0.0  # Initialize sampling time for this step
+        
         
         if alg == "original":
             logger.info(f"original sampling algorithm...")
@@ -248,7 +300,7 @@ def generate_(
             p_transfer = 1 - s / t if i < steps - 1 else 1
             x0 = torch.full_like(x[mask_index], mask_token_id, device=device)
             transfer_index_t_s = torch.rand(*x0.shape, device=device) < p_transfer
-            timing_results['tensor_ops_time'] += time.time() - tensor_ops_start
+            tensor_ops_time += time.time() - tensor_ops_start
             
             sampling_start_time = time.time()
             if transfer_index_t_s.any():
@@ -263,7 +315,7 @@ def generate_(
 
             tensor_ops_start = time.time()
             x[mask_index] = x0.clone()
-            timing_results['tensor_ops_time'] += time.time() - tensor_ops_start
+            tensor_ops_time += time.time() - tensor_ops_start
             
         elif alg == "neg_entropy":
             logger.info(f"negative entropy sampling...")
@@ -307,7 +359,7 @@ def generate_(
                     .expand_as(transfer_index)
                 )
                 x[row_indices, transfer_index] = x_[row_indices, transfer_index]
-            timing_results['tensor_ops_time'] += time.time() - tensor_ops_start
+            tensor_ops_time += time.time() - tensor_ops_start
         else:
             raise ValueError(f"Invalid algorithm: {alg}")
 
@@ -316,7 +368,8 @@ def generate_(
 
         step_time = time.time() - step_start_time
         timing_results['step_times'].append(step_time)
-        logger.info(f"Step {i} time: {step_time:.4f}s (forward: {forward_time:.4f}s, sampling: {sampling_time:.4f}s)")
+        timing_results['tensor_ops_time'] += tensor_ops_time
+        logger.info(f"Step {i} time: {step_time:.4f}s (forward: {forward_time:.4f}s, sampling: {sampling_time:.4f}s, tensor_ops: {tensor_ops_time:.4f}s)")
 
     # Single sync at the end instead of every step
     torch_xla.sync()
