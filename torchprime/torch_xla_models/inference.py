@@ -11,7 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 from datasets import Dataset
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 from transformers.tokenization_utils_base import BatchEncoding
-
+from datasets.distributed import split_dataset_by_node
 # Import the initialize_model_class function from train.py
 from torchprime.torch_xla_models.train import (
     initialize_model_class,
@@ -79,10 +79,10 @@ def prepare_inputs(
     ar_inputs = tokenizer(text_inputs, return_tensors="pt")
     input_ids = ar_inputs.input_ids
 
-    if noise_ratio > 0:
-        # Randomly replace noise_ratio proportion of tokens with mask token
-        mask_indices = torch.rand_like(input_ids.float()) < noise_ratio
-        input_ids = torch.where(mask_indices, tokenizer.mask_token_id, input_ids)
+    # if noise_ratio > 0:
+    #     # Randomly replace noise_ratio proportion of tokens with mask token
+    #     mask_indices = torch.rand_like(input_ids.float()) < noise_ratio
+    #     input_ids = torch.where(mask_indices, tokenizer.mask_token_id, input_ids)
 
     # Use max_tokens if provided and > 0, otherwise use max_new_tokens
     num_new_tokens = (
@@ -151,47 +151,66 @@ def main(config: DictConfig):
     logger.info(f"hf model weights: {model.state_dict()['model.embed_tokens.weight']}")
 
     logger.info("Preparing inputs...")
-    # prompt = "Donald John Trump (born June 14, 1946) is an American politician, media personality, and businessman who is the 47th president of the United States. A member of the Republican Party, he served as the 45th president from 2017 to 2021."
-    # prompt = "<|im_start|>" + "<|mask|>"*255
+#     prompt = """#coding utf-8
+# '''
+# 斐波那契数列-循环法
+# '''
+# def Fib_circle():
+#     while True:   # 去掉while循环，只用for循环
+#         num_1 = 0
+#         num_2 = 1
+#         fib_array = [0] # 用于存储计算出的FB数列值
+#         m = input('你想要查找的起始项：')
+#         n = input('你想要查找的结束项：')
+#         if m.isdigit() and n.isdigit():   # 在这个实现函数中，不要进行检验。每个函数只做一个事情
+#             m = int(m) # 将输入化为整数型
+#             n = int(n)
+#             for i in range(n):
+#                 num_1, num_2 = num_2, num_1 + num_2
+#                 fib_array.append(num_1)
+#             print(f'你要查找的数列为{list(enumerate(fib_array[m:], m))}')
+#             break
+#         else:
+#             print('请输入有效的正整数')
+
+# if __name__ == '__main__':
+#     Fib_circle()
+# """
     prompt = """#coding utf-8
 '''
-斐波那契数列-循环法
+斐波那契数<|mask|>-循环法
 '''
-def Fib_circle():
-    while True:   # 去掉while循环，只用for循环
-        num_1 = 0
+def Fib_circle<|mask|>    while True:   # 去掉while循环，只用for<|mask|>
+<|mask|> num_1 = 0
         num_2 = 1
-        fib_array = [0] # 用于存储计算出的FB数列值
-        m = input('你想要查找的起始项：')
-        n = input('你想要查找的结束项：')
-        if m.isdigit() and n.isdigit():   # 在这个实现函数中，不要进行检验。每个函数只做一个事情
-            m = int(m) # 将输入化为整数型
+        fib<|mask|> = [0]<|mask|> 用于存储计算出的FB数<|mask|>值
+        m = input('你想要查找的起<|mask|><|mask|>：')
+       <|mask|> = input('你想要查找的结束项<|mask|>')
+        if m.isdigit() and n.isdigit():   #<|mask|>这个实现<|mask|>中，不要进行检验。每个函数只做一个事情
+           <|mask|> = int(m)<|mask|> 将输入<|mask|>为整数型
             n = int(n)
             for i in range(n):
-                num_1, num_2 = num_2, num_1 + num_2
-                fib_array.append(num_1)
-            print(f'你要查找的数列为{list(enumerate(fib_array[m:], m))}')
+                num_1,<|mask|>_2 = num_2, num_1 + num_<|mask|>
+                fib_array.append(num_<|mask|>)
+            print(f'你要查找的数列为{list(enumerate(fib_array[m<|mask|><|mask|>))}')
             break
         else:
             print('请输入有效的正整数')
 
-if __name__ == '__main__':
+if __name__ ==<|mask|><|mask|>__':
     Fib_circle()
 """
-    # messages = [{"role": "user", "content": prompt}]
-    messages = prompt
     # generation_config = GenerationConfig(**OmegaConf.to_container(config.generation))
     generation_config = GenerationConfig_(**OmegaConf.to_container(config.generation))
 
-    ddlm_inputs, _ = prepare_inputs(
-        tokenizer, messages, generation_config, enable_thinking=False, noise_ratio=0.1
-    )
+    ddlm_inputs, _ = prepare_inputs(tokenizer, prompt, generation_config)
     generation_config.diffusion_steps = (ddlm_inputs["input_ids"] == tokenizer.mask_token_id).sum()
     print(f"setting diffusion_steps to number of mask tokens: {generation_config.diffusion_steps}")
 
     dataset = Dataset.from_list(
-        [copy.deepcopy(ddlm_inputs) for _ in range(config.global_batch_size)]
+        [ddlm_inputs for _ in range(config.global_batch_size)]
     )  # Create a single-element dataset with ddlm_inputs
+    dataset = split_dataset_by_node(dataset, xr.process_index(), xr.process_count())
 
     trainer = Trainer(
         model=model, tokenizer=tokenizer, config=config, eval_dataset=dataset
