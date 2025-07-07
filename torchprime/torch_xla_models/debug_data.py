@@ -347,7 +347,7 @@ class Trainer:
     for step in range(max_step):
       try:
         batch = next(train_iterator)
-        token_count += self.config.data.block_size * (step + 1) * self.global_batch_size
+        token_count += batch["input_ids"].shape[0] * self.config.data.block_size
       except StopIteration:
         logger.warning(f"DataLoader exhausted at step {step}, reset iterator")
         logger.info(f"Token count in an epoch: {token_count} ({token_count/1e9:.3f}B)")
