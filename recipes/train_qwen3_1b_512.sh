@@ -2,7 +2,7 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     data=mixed_train_dataset \
     model=flex-qwen-1b \
     global_batch_size=512 \
-    max_steps=240000 \
+    max_steps=45000 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b_512_split \
     save_steps=500 \
     logging_steps=1 \
