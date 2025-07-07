@@ -12,11 +12,17 @@ eval_results_save_path: "evaluations"
 
 generation:
   diffusion_steps: 10
-  max_tokens: null
+  mask_token_id: 151669
+  max_tokens: 256
   max_new_tokens: null
-  temperature: 0
+  temperature: 1.0
   top_p: 0.95
-  top_k: null
+  top_k: 32
+  eps: 1e-3
+  alg: "original"
+  alg_temp: 0.2
+  output_history: false
+  return_dict_in_generate: false
 
 checkpoint_dir: checkpoints/
 resume_from_checkpoint: null
