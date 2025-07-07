@@ -11,6 +11,7 @@ import torch.distributed as dist
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from datasets import load_dataset, Dataset, concatenate_datasets
+from datasets.distributed import split_dataset_by_node
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 from transformers.tokenization_utils_base import BatchEncoding
 from tqdm import tqdm
@@ -19,7 +20,7 @@ from torchprime.torch_xla_models.train import (
     set_default_dtype,
     Trainer,
 )
-from torchprime.torch_xla_models.inference_utils import GenerationConfig, generate
+from torchprime.torch_xla_models.inference_utils import GenerationConfig, GenerationConfig_, generate, generate_
 
 # Initialize XLA runtime for TPU
 xr.use_spmd()
@@ -38,7 +39,7 @@ logger = logging.getLogger(__name__)
 def prepare_dataset(
     tokenizer: PreTrainedTokenizerBase,
     dataset: Dataset,
-    args: GenerationConfig,
+    args: GenerationConfig_,
 ) -> Dataset:
     """
     Prepare model inputs by applying chat template, tokenizing, and extending with mask tokens.
@@ -46,7 +47,7 @@ def prepare_dataset(
     Args:
         tokenizer: The tokenizer to use
         dataset: The dataset to use
-        args: GenerationConfig
+        args: GenerationConfig_
 
     Returns:
         Dataset with input_ids extended for generation
@@ -170,7 +171,7 @@ def main(config: DictConfig):
         model = initialize_model_class(model_config)
     xm.wait_device_ops()
 
-    generation_config = GenerationConfig(**OmegaConf.to_container(config.generation))
+    generation_config = GenerationConfig_(**OmegaConf.to_container(config.generation))
     logger.info(f"Evaluation with generation_config: {generation_config}")
 
     logger.info("Loading evaluation dataset...")
@@ -206,6 +207,7 @@ def main(config: DictConfig):
             ]
         )
         tokenized_dataset = concatenate_datasets([tokenized_dataset, dummy_batches])
+    tokenized_dataset = split_dataset_by_node(tokenized_dataset, xr.process_index(), xr.process_count())
 
     logger.info("Loading model checkpoint...")
     trainer = Trainer(
@@ -219,11 +221,15 @@ def main(config: DictConfig):
     generation_results = []
     raw_generation_results = []
     for _, batch in tqdm(enumerate(iterator)):
-        generation = generate(
-            trainer.model, tokenizer, batch, generation_config, verbose=True
-        )
-        generation = generation.cpu().tolist()
-        raw_generation_text = tokenizer.batch_decode(generation, skip_special_tokens=False)
+        # generation = generate(
+        #     trainer.model, tokenizer, batch, generation_config, verbose=True
+        # )
+        generation = generate_(trainer.model, batch["input_ids"], generation_config)
+        if generation_config.return_dict_in_generate:
+            completion = generation["completion"].detach().cpu().tolist()
+        else:
+            completion = generation.detach().cpu().tolist()
+        raw_generation_text = tokenizer.batch_decode(completion, skip_special_tokens=False)
         match config.eval_dataset_name_or_path:
             case "loubnabnl/humaneval_infilling":
                 parsed_generation_text = [
@@ -238,41 +244,41 @@ def main(config: DictConfig):
         generation_results.extend(parsed_generation_text)
         raw_generation_results.extend(raw_generation_text)
 
-    if is_main_process() and generation_results:
-        # Get number of devices
-        num_devices = xr.process_count()
-        print(f"Eval dataset length: {eval_dataset_len}; Number of generation results: {len(generation_results)}; num_devices: {num_devices}; global_batch_size: {config.global_batch_size}")
+    # if is_main_process() and generation_results:
+    #     # Get number of devices
+    #     num_devices = xr.process_count()
+    #     print(f"Eval dataset length: {eval_dataset_len}; Number of generation results: {len(generation_results)}; num_devices: {num_devices}; global_batch_size: {config.global_batch_size}")
 
-        # Extract results from worker 0 only (first 4 elements of each batch of 8)
-        worker_0_results = []
-        worker_0_raw_results = []
-        batch_size_per_device = config.global_batch_size // num_devices
-        for i in range(0, len(generation_results), config.global_batch_size):
-            # Take the first batch_size_per_device elements from each batch
-            worker_0_results.extend(
-                generation_results[i:i + batch_size_per_device]
-            )
-            worker_0_raw_results.extend(
-                raw_generation_results[i:i + batch_size_per_device]
-            )
-        generation_results = worker_0_results
-        raw_generation_results = worker_0_raw_results
-        # Truncate to original dataset length to remove dummy batches
-        generation_results = generation_results[:eval_dataset_len]
-        raw_generation_results = raw_generation_results[:eval_dataset_len]
+    #     # Extract results from worker 0 only (first 4 elements of each batch of 8)
+    #     worker_0_results = []
+    #     worker_0_raw_results = []
+    #     batch_size_per_device = config.global_batch_size // num_devices
+    #     for i in range(0, len(generation_results), config.global_batch_size):
+    #         # Take the first batch_size_per_device elements from each batch
+    #         worker_0_results.extend(
+    #             generation_results[i:i + batch_size_per_device]
+    #         )
+    #         worker_0_raw_results.extend(
+    #             raw_generation_results[i:i + batch_size_per_device]
+    #         )
+    #     generation_results = worker_0_results
+    #     raw_generation_results = worker_0_raw_results
+    # Truncate to original dataset length to remove dummy batches
+    generation_results = generation_results[:eval_dataset_len]
+    raw_generation_results = raw_generation_results[:eval_dataset_len]
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = (
-            Path(config.eval_results_save_path)
-            / config.eval_dataset_name_or_path
-            / f"{config.checkpoint_dir.split('/')[-1]}_{config.resume_from_checkpoint}_{timestamp}.json"
-        )
-        # Create directory if it doesn't exist
-        save_path.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_path = (
+        Path(config.eval_results_save_path)
+        / config.eval_dataset_name_or_path
+        / f"{config.checkpoint_dir.split('/')[-1]}_{config.resume_from_checkpoint}_{timestamp}.json"
+    )
+    # Create directory if it doesn't exist
+    save_path.parent.mkdir(parents=True, exist_ok=True)
 
-        dataset = dataset.add_column("completion", generation_results)
-        dataset = dataset.add_column("raw_completion", raw_generation_results)
-        dataset.to_json(save_path.with_suffix(".jsonl"))
+    dataset = dataset.add_column("completion", generation_results)
+    dataset = dataset.add_column("raw_completion", raw_generation_results)
+    dataset.to_json(save_path.with_suffix(".jsonl"))
 
 
 if __name__ == "__main__":
