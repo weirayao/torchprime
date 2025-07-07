@@ -202,6 +202,45 @@ class Trainer:
     self.lr_scheduler.load_state_dict(state_dict["scheduler"])
     self.start_step = state_dict["step"]
 
+  def _instrument_dataloader(self, dataloader, name): 
+    """Instrument the shapes from the dataloader with a name for logging.""" 
+  
+    class WrapperDataLoader: 
+      def __init__(self, dataloader, name): 
+        self.dataloader = dataloader 
+        self.name = name 
+        self.step = 0
+    
+      def __iter__(self): 
+        for batch in self.dataloader: 
+          self.step += 1
+          # Log the shapes of the inputs and targets. 
+          if self.step % 100 == 0:
+            self._log_shapes(batch) 
+          yield batch 
+    
+      def _log_shapes(self, batch): 
+        import torch.utils._pytree as pytree 
+    
+        shapes = pytree.tree_map( 
+          lambda x: x.shape if isinstance(x, torch.Tensor) else None, batch 
+        ) 
+        logger.info(f"[{self.name}] step: {self.step}, data shapes: {shapes}, data: {batch}") 
+    
+      #   # Visualize one example tensor. 
+      #   t = next(iter(pytree.tree_iter(batch))) 
+      #   if t.device.type == "xla": 
+      #     import click 
+      #     from torch_xla.distributed.spmd.debugging import visualize_tensor_sharding 
+    
+      #     generated_table = visualize_tensor_sharding(t, use_color=False) 
+      #     click.echo(generated_table) 
+    
+      # def __len__(self): 
+      #   return len(self.dataloader) 
+  
+    return WrapperDataLoader(dataloader, name) 
+
   def _get_train_dataloader(self):
     if self.train_dataset is None:
       raise ValueError("Trainer: training requires a train_dataset.")
@@ -245,9 +284,11 @@ class Trainer:
       drop_last=True,
     )
     print(f"Global batch size: {self.global_batch_size}, per-process batch size: {batch_size}, device: {self.device}, process: {xr.process_index()}")
+    dataloader = self._instrument_dataloader(dataloader, f"base_{xr.process_index()}") 
     loader = pl.MpDeviceLoader(
       dataloader, self.device, input_sharding=self.input_sharding_spec
     )
+    loader = self._instrument_dataloader(loader, f"mp_device_loader}") 
     return loader
 
   def _add_checkpoint_offload_scan_model(self, model: nn.Module):
@@ -355,7 +396,7 @@ class Trainer:
         break
       # visualize_tensor_sharding(batch['input_ids'], use_color=False)
       if step % 100 == 0:
-        logger.info(f"Step {step}, Token count: {token_count}, Device: {xr.process_index()}, batch: {batch}, shape: {batch['input_ids'].shape}")
+        logger.info(f"Step {step}, Token count: {token_count}, Device: {xr.process_index()}")
       assert batch["input_ids"].shape == (self.global_batch_size, self.config.data.block_size), f"Batch shape mismatch: {batch['input_ids'].shape} != {(self.global_batch_size, self.config.data.block_size)}"
 
   def train_loop(self):
