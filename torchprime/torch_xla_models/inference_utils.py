@@ -39,7 +39,6 @@ class GenerationConfig:
 
 def top_p_logits(logits, p: float = 0.9):
     sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-    # import pdb; pdb.set_trace();
     cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
 
     # Remove tokens with cumulative probability above the threshold
@@ -53,29 +52,6 @@ def top_p_logits(logits, p: float = 0.9):
     logits = logits.masked_fill(mask, torch.finfo(logits.dtype).min)
     return logits
 
-def top_p_logits_optimized(logits, p: float = 0.9):
-    """Optimized top-p filtering that avoids redundant softmax computation."""
-    # Sort logits and get indices
-    sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
-    # Compute softmax on sorted logits
-    sorted_probs = F.softmax(sorted_logits, dim=-1)
-    # Compute cumulative probabilities
-    cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
-    
-    # Find cutoff index for top-p
-    cutoff_mask = cumulative_probs > p
-    # Shift right to keep first token above threshold
-    cutoff_mask = F.pad(cutoff_mask, (1, 0), value=False)[..., :-1]
-    
-    # Zero out probabilities beyond cutoff
-    sorted_probs_filtered = sorted_probs.masked_fill(cutoff_mask, 0.0)
-    
-    # Scatter back to original indices
-    probs = torch.zeros_like(logits)
-    probs.scatter_(-1, sorted_indices, sorted_probs_filtered)
-    
-    return probs
-
 def top_k_logits(logits, top_k: int):
     top_k = min(top_k, logits.size(-1))  # Safety check
     # Remove all tokens with a probability less than the last token of the top-k
@@ -83,20 +59,6 @@ def top_k_logits(logits, top_k: int):
     logits = logits.masked_fill(indices_to_remove, torch.finfo(logits.dtype).min)
     return logits
 
-def top_k_logits_optimized(logits, top_k: int):
-    """Optimized top-k filtering."""
-    if top_k >= logits.size(-1):
-        return F.softmax(logits, dim=-1)
-    
-    # Get top-k values and indices
-    top_k_values, top_k_indices = torch.topk(logits, top_k, dim=-1)
-    
-    # Create filtered probabilities tensor
-    probs = torch.zeros_like(logits)
-    top_k_probs = F.softmax(top_k_values, dim=-1)
-    probs.scatter_(-1, top_k_indices, top_k_probs)
-    
-    return probs
 
 
 @torch.no_grad()
@@ -111,85 +73,23 @@ def sample_(
     total_start_time = time.time()
     logger.info(f"sampling tokens with logits shape: {logits.shape}; temperature: {temperature}; top_p: {top_p}; top_k: {top_k}; neg_entropy: {neg_entropy}")
     
-    # Early exit for temperature=0: just return argmax
-    if temperature == 0:
-        prob_start_time = time.time()
-        confidence, x0 = torch.max(F.softmax(logits, dim=-1), dim=-1)
-        prob_time = time.time() - prob_start_time
-        
-        if neg_entropy:
-            entropy_start_time = time.time()
-            probs = F.softmax(logits, dim=-1)
-            epsilon = 1e-10
-            log_probs = torch.log(probs + epsilon)
-            confidence = torch.sum(probs * log_probs, dim=-1)
-            entropy_time = time.time() - entropy_start_time
-            logger.info(f"sample_ early exit timing - prob: {prob_time:.4f}s, entropy: {entropy_time:.4f}s")
-        else:
-            logger.info(f"sample_ early exit timing - prob: {prob_time:.4f}s")
-        return confidence, x0
-    
     # Scale by temperature
     logits_processing_start_time = time.time()
-    temperature_start_time = time.time()
-    scaled_logits = logits / (temperature + 1e-5)
-    temperature_time = time.time() - temperature_start_time
     
     # Apply filtering and get probabilities in one go
     topk_time = 0.0
     topp_time = 0.0
     softmax_time = 0.0
     scatter_time = 0.0
-    
-    if top_k is not None and top_p is not None:
-        # Combined top-k and top-p filtering
-        if top_k >= logits.size(-1):
-            topp_start_time = time.time()
-            probs = top_p_logits_optimized(scaled_logits, top_p)
-            topp_time = time.time() - topp_start_time
-        else:
-            # First apply top-k, then top-p
-            topk_start_time = time.time()
-            top_k_values, top_k_indices = torch.topk(scaled_logits, top_k, dim=-1)
-            topk_time = time.time() - topk_start_time
-            
-            if top_p < 1.0:
-                # Apply top-p to the top-k values
-                topp_start_time = time.time()
-                sorted_values, sorted_indices = torch.sort(top_k_values, descending=True, dim=-1)
-                sorted_probs = F.softmax(sorted_values, dim=-1)
-                cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
-                cutoff_mask = cumulative_probs > top_p
-                cutoff_mask = F.pad(cutoff_mask, (1, 0), value=False)[..., :-1]
-                sorted_probs_filtered = sorted_probs.masked_fill(cutoff_mask, 0.0)
-                
-                # Scatter back to top-k indices
-                top_k_probs = torch.zeros_like(top_k_values)
-                top_k_probs.scatter_(-1, sorted_indices, sorted_probs_filtered)
-                topp_time = time.time() - topp_start_time
-            else:
-                softmax_start_time = time.time()
-                top_k_probs = F.softmax(top_k_values, dim=-1)
-                softmax_time = time.time() - softmax_start_time
-            
-            # Scatter to full vocabulary
-            scatter_start_time = time.time()
-            probs = torch.zeros_like(logits)
-            probs.scatter_(-1, top_k_indices, top_k_probs)
-            scatter_time = time.time() - scatter_start_time
-    elif top_k is not None:
-        topk_start_time = time.time()
-        probs = top_k_logits_optimized(scaled_logits, top_k)
-        topk_time = time.time() - topk_start_time
-    elif top_p is not None:
-        topp_start_time = time.time()
-        probs = top_p_logits_optimized(scaled_logits, top_p)
-        topp_time = time.time() - topp_start_time
-    else:
-        softmax_start_time = time.time()
-        probs = F.softmax(scaled_logits, dim=-1)
-        softmax_time = time.time() - softmax_start_time
-    
+
+    if temperature > 0:
+        logits = logits / temperature
+    if top_p is not None and top_p < 1:
+        logits = top_p_logits(logits, top_p)
+    if top_k is not None:
+        logits = top_k_logits(logits, top_k)
+    probs = torch.softmax(logits, dim=-1)
+
     logits_processing_time = time.time() - logits_processing_start_time
     
     # Sample from the distribution efficiently
@@ -217,7 +117,7 @@ def sample_(
     
     # Log timing results with detailed breakdown
     logger.info(f"sample_ timing - total: {total_time:.4f}s, logits_processing: {logits_processing_time:.4f}s, sampling: {sampling_time:.4f}s, entropy: {entropy_time:.4f}s")
-    logger.info(f"sample_ detailed timing - temperature: {temperature_time:.4f}s, topk: {topk_time:.4f}s, topp: {topp_time:.4f}s, softmax: {softmax_time:.4f}s, scatter: {scatter_time:.4f}s")
+    logger.info(f"sample_ detailed timing - topk: {topk_time:.4f}s, topp: {topp_time:.4f}s, softmax: {softmax_time:.4f}s, scatter: {scatter_time:.4f}s")
     
     return confidence, x0
 
