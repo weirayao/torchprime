@@ -192,7 +192,7 @@ def main(config: DictConfig):
     tokenized_dataset = prepare_dataset(tokenizer, dataset, generation_config)
     eval_dataset_len = len(tokenized_dataset)
     logger.info(f"Evaluation dataset length: {eval_dataset_len}")
-    if num_dummy_batches := (eval_dataset_len % config.global_batch_size) != 0:
+    if (num_dummy_batches := eval_dataset_len % config.global_batch_size) != 0:
         logger.warning(
             f"Evaluation dataset length {eval_dataset_len} is not divisible by global batch size {config.global_batch_size}, will append {num_dummy_batches} dummy batches"
         )
