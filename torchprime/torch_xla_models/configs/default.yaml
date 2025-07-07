@@ -10,7 +10,7 @@ defaults:
 
 global_batch_size: 4
 logging_steps: 10
-max_steps: 240000
+max_steps: 45000
 
 
 seed: 42
