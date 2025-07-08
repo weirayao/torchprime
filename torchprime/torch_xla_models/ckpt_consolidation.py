@@ -91,9 +91,9 @@ def main(config: DictConfig):
   }
   gcs_prefix = "gs://sfr-text-diffusion-model-research/"
   if config.checkpoint_dir.startswith(gcs_prefix):
-    save_dir = Path(MOUNTED_GCS_DIR) / config.checkpoint_dir.split(gcs_prefix)[1]
+    save_dir = Path(MOUNTED_GCS_DIR) / config.checkpoint_dir.split(gcs_prefix)[1] / f"{config.resume_from_checkpoint}"
   else:
-    save_dir = config.checkpoint_dir
+    save_dir = Path(config.checkpoint_dir) / f"{config.resume_from_checkpoint}"
   dist_cp.load(
     state_dict=reload_sd,
     storage_reader=dist_cp.FileSystemReader(str(save_dir)),
