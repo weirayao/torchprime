@@ -337,6 +337,44 @@ def convert_to_safetensors_on_cpu(model: torch.nn.Module, save_dir: Path) -> Non
   logger.info("Safetensors shards + index written to %s", save_dir)
 
 
+def convert_to_safetensors_on_cpu_(model: torch.nn.Module, save_dir: Path) -> None:
+  """Duplicate the model state_dict and export sharded safetensors files.
+
+  This method should only be run on Rank 0.
+  Exaple usage:
+  ```python
+  if xr.process_index() == 0:
+    model_utils.convert_to_safetensors_on_cpu(...)
+  ```
+
+  Args:
+    model: The model used to construct the CPU placeholder state_dict.
+    save_dir: Directory where the checkpoint is to be saved.
+              Safetensors files and index will also be written here.
+  """
+  logger.info("Duplicating checkpoint for safetensors export …")
+
+  model_sd = model.state_dict()
+  reload_sd = {
+    "model": {
+      name: tensor.detach().cpu()
+      for name, tensor in model_sd.items()
+    }
+  }
+
+  cpu_state = {k.replace("._orig_mod", ""): v for k, v in reload_sd["model"].items()}
+
+  try:
+    tmp_dir = tempfile.mkdtemp(dir="/mnt/localssd")
+    logger.info("Using local SSD for safetensors shards: %s", tmp_dir)
+  except (FileNotFoundError, PermissionError):
+    tmp_dir = tempfile.mkdtemp()
+    logger.info("Using default temp directory for safetensors shards: %s", tmp_dir)
+
+  save_sharded_safetensors_by_layer(cpu_state, str(save_dir), tmp_dir=tmp_dir)
+  logger.info("Safetensors shards + index written to %s", save_dir)
+
+
 def maybe_move_to_mounted_gcs(tmp_dir: Path | None, save_dir: str):
   """
   If tmp_dir is provided, move *.safetensors files and index file

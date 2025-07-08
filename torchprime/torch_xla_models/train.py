@@ -59,7 +59,7 @@ from torchprime.torch_xla_models.topology import (
   get_num_slices,
   is_1d_sharding,
 )
-from torchprime.torch_xla_models.model_utils import convert_to_safetensors_on_cpu
+from torchprime.torch_xla_models.model_utils import convert_to_safetensors_on_cpu, convert_to_safetensors_on_cpu_
 from torchprime.utils.retry import retry
 
 check_min_version("4.39.3")
@@ -369,7 +369,7 @@ class Trainer:
     save_dir = Path(self.ckpt_dir) / f"{step}"
     logger.info(f"Consolidating checkpoint to {save_dir}")
     logger.info("Moving model to CPU...")
-    convert_to_safetensors_on_cpu(self.model, save_dir)
+    convert_to_safetensors_on_cpu_(self.model, save_dir)
     self.tokenizer.save_pretrained(save_dir)
     logger.info(f"Consolidated checkpoint saved to {save_dir}")
 
