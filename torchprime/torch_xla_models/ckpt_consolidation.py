@@ -86,9 +86,12 @@ def main(config: DictConfig):
     logger.info("All processes synchronized, starting checkpoint consolidation")
 
   # TODO(https://github.com/pytorch/xla/issues/8954): Remove `jax_env_context`.
-  with jax_env_context():
+  trainer._load_checkpoint()
+  logger.info("Checkpoint loaded, starting consolidation")
+  if is_main_process():
     trainer.consolidate_checkpoint()
-
+  xm.wait_device_ops()
+  logger.info("Checkpoint consolidation complete")
 
 if __name__ == "__main__":
   logging.basicConfig(

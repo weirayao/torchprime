@@ -59,6 +59,7 @@ from torchprime.torch_xla_models.topology import (
   get_num_slices,
   is_1d_sharding,
 )
+from torchprime.torch_xla_models.model_utils import convert_to_safetensors_on_cpu
 from torchprime.utils.retry import retry
 
 check_min_version("4.39.3")
@@ -373,24 +374,9 @@ class Trainer:
     consolidated_ckpt_dir = f"{MOUNTED_GCS_DIR}/consolidated_checkpoints/{ckpt_suffix}/{self.config.resume_from_checkpoint}"
     logger.info(f"Consolidating checkpoint to {consolidated_ckpt_dir}")
     logger.info("Moving model to CPU...")
-    cpu_model = self.model.cpu()
-    # Create a new state dict with _orig_mod removed from keys
-    # FIXME: still problematic, need to fix, the weights differ after reloading the huggingface model, compared to directly loading the checkpoint
-    if is_main_process():
-      logger.info("Creating new state dict...")
-      state_dict = cpu_model.state_dict()
-      model_state_dict = OrderedDict()
-      for key, value in state_dict.items():
-        if '._orig_mod' in key:
-          # Remove ._orig_mod from the key
-          cleaned_key = key.replace('._orig_mod', '')
-          model_state_dict[cleaned_key] = value
-        else:
-          model_state_dict[key] = value
-      self.hf_model.load_state_dict(model_state_dict)
-      self.hf_model.save_pretrained(consolidated_ckpt_dir)
-      self.tokenizer.save_pretrained(consolidated_ckpt_dir)
-      logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
+    convert_to_safetensors_on_cpu(self.model, Path(consolidated_ckpt_dir))
+    self.tokenizer.save_pretrained(consolidated_ckpt_dir)
+    logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
     xm.wait_device_ops()
 
 
@@ -492,8 +478,8 @@ class Trainer:
           logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
-        # if is_main_process(): TODO: this causes long hanging during training, disable for now.
-        #   self.consolidate_checkpoint()
+        if is_main_process():
+          self.consolidate_checkpoint()
         xm.wait_device_ops()  # Ensure save is complete before logging
 
       # Capture profile at the prefer step
