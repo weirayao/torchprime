@@ -96,6 +96,7 @@ def sample_(
     neg_entropy=False,
 ):
     # Timing instrumentation
+    logits_processing_time = topp_time = topk_time = 0.0
     total_start_time = time.time()
     logger.info(f"sampling tokens with logits shape: {logits.shape}; temperature: {temperature}; top_p: {top_p}; top_k: {top_k}; neg_entropy: {neg_entropy}")
     
