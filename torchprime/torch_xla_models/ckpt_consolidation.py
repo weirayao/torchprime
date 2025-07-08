@@ -88,6 +88,8 @@ def main(config: DictConfig):
   # TODO(https://github.com/pytorch/xla/issues/8954): Remove `jax_env_context`.
   trainer._load_checkpoint()
   logger.info("Checkpoint loaded, starting consolidation")
+  xm.mark_step()
+  xm.wait_device_ops()
   if is_main_process():
     trainer._consolidate_checkpoint(config.resume_from_checkpoint)
   xm.rendezvous("checkpoint_consolidation_barrier")
