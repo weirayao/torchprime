@@ -52,6 +52,25 @@ def top_p_logits(logits, p: float = 0.9):
     logits = logits.masked_fill(mask, torch.finfo(logits.dtype).min)
     return logits
 
+def top_p_logits_efficient(logits, p: float = 0.9):
+    sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+    cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+
+    # Remove tokens with cumulative probability above the threshold
+    sorted_indices_to_remove = cumulative_probs > p
+    # Shift the indices to the right to keep the first token above the threshold
+    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+    sorted_indices_to_remove[..., 0] = 0
+
+    # Find max tokens to keep across batch and truncate
+    sorted_indices_to_keep = ~sorted_indices_to_remove
+    max_tokens_to_keep = sorted_indices_to_keep.sum(dim=-1).max().item()
+    
+    # Truncate and apply mask in one step
+    logits = sorted_logits[:, :max_tokens_to_keep].masked_fill(
+        ~sorted_indices_to_keep[:, :max_tokens_to_keep], torch.finfo(logits.dtype).min)
+    return logits
+
 def top_k_logits(logits, top_k: int):
     top_k = min(top_k, logits.size(-1))  # Safety check
     # Remove all tokens with a probability less than the last token of the top-k
@@ -59,6 +78,11 @@ def top_k_logits(logits, top_k: int):
     logits = logits.masked_fill(indices_to_remove, torch.finfo(logits.dtype).min)
     return logits
 
+def top_k_logits_efficient(logits, top_k: int):
+    top_k = min(top_k, logits.size(-1))  # Safety check
+    # Get top-k logits directly, maintaining 2D shape
+    top_k_logits, _ = torch.topk(logits, top_k, dim=-1)
+    return top_k_logits
 
 
 @torch.no_grad()
@@ -82,13 +106,16 @@ def sample_(
     softmax_time = 0.0
     scatter_time = 0.0
 
+    logits_sampling = logits.clone()
     if temperature > 0:
-        logits = logits / temperature
+        logits_sampling = logits_sampling / temperature
     if top_p is not None and top_p < 1:
-        logits = top_p_logits(logits, top_p)
+        logits_sampling = top_p_logits_efficient(logits_sampling, top_p)
+        logger.info(f"logits_sampling shape after top_p: {logits_sampling.shape}")
     if top_k is not None:
-        logits = top_k_logits(logits, top_k)
-    probs = torch.softmax(logits, dim=-1)
+        logits_sampling = top_k_logits_efficient(logits_sampling, top_k)
+        logger.info(f"logits_sampling shape after top_k: {logits_sampling.shape}")
+    probs = torch.softmax(logits_sampling, dim=-1)
 
     logits_processing_time = time.time() - logits_processing_start_time
     
@@ -109,8 +136,9 @@ def sample_(
     if neg_entropy:
         entropy_start_time = time.time()
         epsilon = 1e-10
-        log_probs = torch.log(probs + epsilon)
-        confidence = torch.sum(probs * log_probs, dim=-1)
+        probs_neg_entropy = torch.softmax(logits, dim=-1)
+        log_probs = torch.log(probs_neg_entropy + epsilon)
+        confidence = torch.sum(probs_neg_entropy * log_probs, dim=-1)
         entropy_time = time.time() - entropy_start_time
     
     total_time = time.time() - total_start_time
