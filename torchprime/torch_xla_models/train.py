@@ -365,15 +365,13 @@ class Trainer:
         classes_to_checkpoint.add(cls)
     return tuple(classes_to_checkpoint)
 
-  def _consolidate_checkpoint(self):
-    ckpt_suffix = self.ckpt_dir.split("/")[-1]
-    consolidated_ckpt_dir = f"{MOUNTED_GCS_DIR}/consolidated_checkpoints/{ckpt_suffix}/{self.config.resume_from_checkpoint}"
-    logger.info(f"Consolidating checkpoint to {consolidated_ckpt_dir}")
+  def _consolidate_checkpoint(self, step: int):
+    save_dir = Path(self.ckpt_dir) / f"{step}"
+    logger.info(f"Consolidating checkpoint to {save_dir}")
     logger.info("Moving model to CPU...")
-    convert_to_safetensors_on_cpu(self.model, Path(consolidated_ckpt_dir))
-    self.tokenizer.save_pretrained(consolidated_ckpt_dir)
-    logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
-    xm.wait_device_ops()
+    convert_to_safetensors_on_cpu(self.model, save_dir)
+    self.tokenizer.save_pretrained(save_dir)
+    logger.info(f"Consolidated checkpoint saved to {save_dir}")
 
 
   def train_loop(self):
@@ -475,7 +473,7 @@ class Trainer:
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
         if is_main_process():
-          self._consolidate_checkpoint()
+          self._consolidate_checkpoint(step)
         xm.rendezvous("checkpoint_consolidation_barrier")  # Ensure save is complete before logging
 
       # Capture profile at the prefer step

@@ -89,7 +89,7 @@ def main(config: DictConfig):
   trainer._load_checkpoint()
   logger.info("Checkpoint loaded, starting consolidation")
   if is_main_process():
-    trainer._consolidate_checkpoint()
+    trainer._consolidate_checkpoint(config.resume_from_checkpoint)
   xm.rendezvous("checkpoint_consolidation_barrier")
   logger.info("Checkpoint consolidation complete")
 
