@@ -10,6 +10,8 @@ import torch.distributed as dist
 import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
+import torch.distributed.checkpoint as dist_cp
+import torch_xla.experimental.distributed_checkpoint as xc
 import transformers
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoTokenizer
@@ -77,9 +79,24 @@ def main(config: DictConfig):
   torch_xla.sync()
   xm.wait_device_ops()
   logger.info("All processes synchronized, starting checkpoint consolidation")
+  logger.info("Reloading checkpoint for safetensors export …")
+  model_sd = model.state_dict()
+  reload_sd = {
+    "model": {
+      name: torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu")
+      for name, tensor in model_sd.items()
+    }
+  }
+  save_dir = Path(config.checkpoint_dir) / f"{config.resume_from_checkpoint}"
+  dist_cp.load(
+    state_dict=reload_sd,
+    storage_reader=dist_cp.FileSystemReader(str(save_dir)),
+    planner=xc.SPMDLoadPlanner(),
+  )
+  cpu_state = {k.replace("._orig_mod", ""): v for k, v in reload_sd["model"].items()}
   if is_main_process():
-    convert_to_safetensors_on_cpu(model, Path(config.checkpoint_dir) / f"{config.resume_from_checkpoint}")
-    tokenizer.save_pretrained(Path(config.checkpoint_dir) / f"{config.resume_from_checkpoint}")
+    convert_to_safetensors_on_cpu(model, save_dir)
+    tokenizer.save_pretrained(save_dir)
   xm.rendezvous("checkpoint_consolidation_barrier")
   logger.info("Checkpoint consolidation complete")
 
