@@ -14,6 +14,7 @@ import torch_xla.runtime as xr
 import torch.distributed.checkpoint as dist_cp
 import torch_xla.experimental.distributed_checkpoint as xc
 import transformers
+from torch_xla.experimental.distributed_checkpoint import CheckpointManager
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoTokenizer
 from transformers.utils import check_min_version
@@ -83,26 +84,21 @@ def main(config: DictConfig):
   logger.info("All processes synchronized, starting checkpoint consolidation")
   logger.info("Reloading checkpoint for safetensors export …")
   model_sd = model.state_dict()
-  reload_sd = {
+  reload_sd =  {
     "model": {
-      name: torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu")
-      for name, tensor in model_sd.items()
+    name: torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu")
+    for name, tensor in model_sd.items()
     }
   }
-  gcs_prefix = "gs://sfr-text-diffusion-model-research/"
-  if config.checkpoint_dir.startswith(gcs_prefix):
-    save_dir = Path(MOUNTED_GCS_DIR) / config.checkpoint_dir.split(gcs_prefix)[1] / f"{config.resume_from_checkpoint}"
-  else:
-    save_dir = Path(config.checkpoint_dir) / f"{config.resume_from_checkpoint}"
-  dist_cp.load(
-    state_dict=reload_sd,
-    storage_reader=dist_cp.FileSystemReader(str(save_dir)),
-    planner=xc.SPMDLoadPlanner(),
-  )
+  ckpt_mgr = CheckpointManager(path=config.checkpoint_dir, save_interval=config.save_steps)
+  ckpt_mgr.restore(config.resume_from_checkpoint, reload_sd)
   cpu_state = {k.replace("._orig_mod", ""): v for k, v in reload_sd["model"].items()}
   if is_main_process():
+    gcs_prefix = "gs://sfr-text-diffusion-model-research/"
+    save_dir = Path(MOUNTED_GCS_DIR) / config.checkpoint_dir.split(gcs_prefix)[1] / f"{config.resume_from_checkpoint}"
     convert_to_safetensors_on_cpu(cpu_state, save_dir)
     tokenizer.save_pretrained(save_dir)
+    logger.info(f"Consolidated checkpoint saved to {save_dir}")
   xm.rendezvous("checkpoint_consolidation_barrier")
   logger.info("Checkpoint consolidation complete")
 
