@@ -29,7 +29,6 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     python -m pip install --upgrade pip; \
     python -m pip install --upgrade setuptools==69.5.1; \
     pip install -e ".[dev]"; \
-<<<<<<< HEAD:setup_tpu_cq.sh
     pip install gcsfs'
 
 # Install wandb
@@ -44,9 +43,6 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     pip install wandb; \
     export WANDB_API_KEY="local-13554988c6f407ff2f10f686b3dc102c7cb7e5e5"; \
     wandb login $WANDB_API_KEY --relogin --host=https://salesforceairesearch.wandb.io'
-=======
-    pip install gcsfs wandb python-dotenv'
->>>>>>> shiyu/pretrain_small_qwen_clean_split:setup_tpu.sh
 
 # Install gcsfuse and mount GCS bucket to TPU VM
 gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
