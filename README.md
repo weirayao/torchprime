@@ -25,11 +25,13 @@ High level steps:
 3. Setup environments. You can just run `bash setup_tpu.sh` **with your TPU VM name and zone**
    1. Install python with venv
    2. Install dependencies
-   3. Setup wandb; (**Important**) Add your wandb key in `setup_tpu.sh`
+   3. Setup wandb; (**Important**)
    4. Install gcsfuse, mount local folder to GCS bucket (default is `~/sfr-text-diffusion-model-research`)
-4. Create your own branch `git checkout -b your_branch`
-5. Add your recipes under `recipes/your_recipe.sh`
-6. (**Important**) Add your `MOUNTED_GCS_DIR` `HF_HOME`, and `HF_TOKEN` and change the branch name to `your_branch` in `remote_run.sh`
+4. Prepare `.env` according to `env.example`
+5. Run `bash copy_env.sh` to copy the .env file to TPU
+6. Create your own branch `git checkout -b your_branch`
+7. Add your recipes under `recipes/your_recipe.sh`
+8. (**Important**) Add your `MOUNTED_GCS_DIR` `HF_HOME`, and `HF_TOKEN` and change the branch name to `your_branch` in `remote_run.sh`
    1. `MOUNTED_GCS_DIR` by default uses the home directory as the parent folder, it differs on the TPU VM if you use different local machine. Run
   ```sh
   gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
@@ -41,8 +43,8 @@ High level steps:
   ```
   to get your absolute home directory before you set `MOUNTED_GCS_DIR`.
 
-7. Before you run anything, commit and push local changes to remote 
-8. Run `bash remote_run.sh --recipes recipes/your_recipe.sh`
+1. Before you run anything, commit and push local changes to remote 
+2. Change the tpu/branch/recipe names in `remote_run.sh` and run training! Or use recipe with: `bash remote_run.sh --recipes recipes/your_recipe.sh`
 
 
 ## Environment setup

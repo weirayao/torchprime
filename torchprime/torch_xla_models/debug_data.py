@@ -7,6 +7,8 @@ from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 from timeit import default_timer as timer
+from dotenv import load_dotenv
+load_dotenv()
 
 import datasets
 import hydra

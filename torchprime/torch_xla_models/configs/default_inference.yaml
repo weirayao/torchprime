@@ -5,16 +5,27 @@
 # override the earlier ones.
 defaults:
   - _self_ # refers to this config file
-  - model: llama-3-8b # refers to model/llama-3-8b.yaml
-  - data: wikitext
+  - model: flex-qwen-1b # refers to model/llama-3-8b.yaml
 
+generation:
+  diffusion_steps: 10
+  max_tokens: 256
+  max_new_tokens: null
+  temperature: 1.0
+  top_p: 0.95
+  top_k: 32
+
+checkpoint_dir: checkpoints/
+resume_from_checkpoint: null
+save_steps: 10
+
+
+# Only used for initializing the trainer
 global_batch_size: 4
 logging_steps: 10
-max_steps: 45000
-
-
+max_steps: 15
 seed: 42
-profile_step: -1
+profile_step: 2
 
 # This might be overwritten when using tp run to launch the run using XPK
 profile_dir: profile
@@ -23,20 +34,12 @@ profile_duration: 100000
 # This might be overwritten when using tp run to launch the run using XPK
 output_dir: outputs
 
-# Checkpoint directory
-checkpoint_dir: checkpoints/
-resume_from_checkpoint: null
-save_steps: 1000
-
 optimizer:
-  learning_rate: 3.e-4
+  learning_rate: 5.e-5
 lr_scheduler:
   type: linear
-  warmup_steps: 150
+  warmup_steps: 0
 
-# The virtual device mesh shape to use within a TPU slice. This is also called
-# the "ICI mesh", since devices within a slice enjoy a faster network called
-# "Inter-Chip Interconnect".
 ici_mesh:
   data: 1
   fsdp: 4

@@ -1,8 +1,12 @@
 import os
+import random
 from itertools import chain
 from typing import Sequence
 from glob import glob
-from datasets import load_dataset, interleave_datasets, Dataset, DatasetDict, IterableDataset
+from dotenv import load_dotenv
+load_dotenv()
+
+from datasets import load_dataset, interleave_datasets, Dataset, DatasetDict, IterableDataset, concatenate_datasets
 from transformers.tokenization_utils import PreTrainedTokenizerBase
 
 MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
@@ -28,23 +32,44 @@ def group_texts(examples, block_size):
 
 
 DATASET_TYPES = {
-  'DM_Mathematics': ('.json', 'json'),
-  'Falcon-refinedweb': ('.json', 'json'),
-  'Gutenberg': ('.json', 'json'),
-  'RedPajama': ('.json', 'json'),
-  'RedPajama_math': ('.json', 'json'),
-  'Redpajama-Arxiv': ('.json', 'json'),
-  'Wikipedia_en': ('.json', 'json'),
-  'c4_2023-14': ('.json', 'json'),
-  'cosmopedia_v2_parquet': ('.parquet', 'parquet'),
-  'dclm-baseline-1.0-shuffled': ('.json', 'json'),
-  'fineweb_edu_dedup': ('.parquet', 'parquet'),
-  'open-web-math': ('.json', 'json'),
-  'python_edu': ('.jsonl', 'json'),
-  'stackv2_Python_shuffled': ('.json', 'json'),
-  'the-stack-v2-train-smol': ('.json', 'json'),
+    "fineweb_edu_dedup": (".parquet", "parquet"),  # 512.29 GiB - educational web, largest
+    "dclm-baseline-1.0-shuffled": (".json", "json"), # 251.32 GiB - web crawl
+    "RedPajama_math": (".json", "json"),           # 168.48 GiB - math dataset
+    "stackv2_Python_shuffled": (".json", "json"),  # 186.7 GiB - Python code
+    "open-web-math": (".json", "json"),            # 45.39 GiB - math problems
+    "Redpajama-Arxiv": (".json", "json"),          # 26.37 GiB - academic papers
+    "Falcon-refinedweb": (".json", "json"),        # 130.89 GiB - web text
+    "the-stack-v2-train-smol": (".json", "json"),  # 135.9 GiB - code
+    "cosmopedia_v2_parquet": (".parquet", "parquet"), # 113.96 GiB - synthetic textbook
+    "c4_2023-14": (".json", "json"),               # 77.85 GiB - web crawl
+    "RedPajama": (".json", "json"),                # 65.53 GiB - mixed content
+    "Wikipedia_en": (".json", "json"),             # 19.53 GiB - encyclopedia
+    "python_edu": (".jsonl", "json"),              # 13.88 GiB - code
+    "Gutenberg": (".json", "json"),                # 10.68 GiB - literature  
+    "DM_Mathematics": (".json", "json"),           # 5.69 GiB - math, smallest
 }
 
+def make_gcs_pretokenized_dataset(
+  path: str,
+  seed: int = 42,
+) -> IterableDataset:
+  """
+  Search for all parquet files in the given path and load them into a dataset.
+  Shuffle the files first.
+  """
+  random.seed(seed)
+  data_files = glob(f"{path}/**/*.parquet", recursive=True)
+  print(f"dataset path: {data_files}")
+  random.shuffle(data_files)
+  
+  data = load_dataset(
+    "parquet",
+    data_files=data_files,
+    streaming=True,
+    split="train",
+  )
+  data = data.shuffle(seed=seed, buffer_size=32768)
+  return data
 
 def make_gcs_dataset(
   names: list[str],
@@ -55,6 +80,10 @@ def make_gcs_dataset(
 ) -> IterableDataset:
   if any(name not in DATASET_TYPES for name in names):
     raise ValueError(f"Dataset {names} not found in {DATASET_TYPES}")
+  
+  def tokenize_fn(examples):
+    texts = [example + tokenizer.eos_token for example in examples["text"]]
+    return tokenizer(texts)
 
   data_mixture = []
   for name in names:
@@ -75,7 +104,7 @@ def make_gcs_dataset(
 
     print(f"Pretokenizing dataset {name}")
     data = data.map(
-      lambda examples: tokenizer(examples["text"]),
+      tokenize_fn,
       batched=True,
       remove_columns=columns,
     )
@@ -90,7 +119,8 @@ def make_gcs_dataset(
   if len(data_mixture) == 1:
     return data_mixture[0]
   else:
-    return interleave_datasets(data_mixture, probabilities=weights, seed=seed)
+    return concatenate_datasets(data_mixture)
+    # return interleave_datasets(data_mixture, probabilities=weights, seed=seed)
 
 
 def make_huggingface_dataset(

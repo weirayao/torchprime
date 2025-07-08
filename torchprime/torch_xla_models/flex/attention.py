@@ -86,15 +86,15 @@ class AttentionModule(nn.Module):
       case "flash_attention":
         # Integrated with PyTorch/XLA Pallas Flash Attention:
         default_block_sizes = {
-          "block_q": 2048,
+          "block_q": 1024,
           "block_k_major": 512,
           "block_k": 512,
           "block_b": 2,
-          "block_q_major_dkv": 2048,
+          "block_q_major_dkv": 1024,
           "block_k_major_dkv": 512,
-          "block_q_dkv": 2048,
+          "block_q_dkv": 1024,
           "block_k_dkv": 512,
-          "block_q_dq": 2048,
+          "block_q_dq": 1024,
           "block_k_dq": 256,
           "block_k_major_dq": 512,
         }

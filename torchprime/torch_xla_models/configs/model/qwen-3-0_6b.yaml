@@ -1,21 +1,20 @@
 defaults:
   - _self_  # refers to this config file
-  - sharding: qwen-fsdp  # refers to sharding/qwen-fsdp.yaml
-  - remat: qwen  # refers to remat/qwen.yaml
+  - sharding: qwen-fsdp  # refers to sharding/llama-fsdp.yaml
+  - remat: qwen  # refers to remat/llama.yaml
 
-model_class: flex.Qwen3ForCausalLM  # Used to import the model from this class
+model_class: qwen.Qwen3ForCausalLM  # Used to import the model from this class
 attention_bias: false
-attention_dropout: 0.0
+attention_dropout: false
 bos_token_id: 151643
 eos_token_id: 151645
 pad_token_id: 151643
-mask_token_id: 151669
-tokenizer_name: Qwen/Qwen3-1.7B
+tokenizer_name: Qwen/Qwen3-0.6B
 head_dim: 128
 hidden_act: silu
-hidden_size: 2048
+hidden_size: 1024
 initializer_range: 0.02
-intermediate_size: 6144
+intermediate_size: 3072
 max_position_embeddings: 40960
 max_window_layers: 28
 num_attention_heads: 16

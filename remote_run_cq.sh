@@ -1,7 +1,10 @@
+<<<<<<< HEAD:remote_run_cq.sh
 TPU_VM_NAME="sfr-cqin-v4-16"
+=======
+TPU_VM_NAME="<your_tpu_vm_name>"
+>>>>>>> shiyu/pretrain_small_qwen_clean_split:remote_run.sh
 TPU_ZONE="us-central2-b"
-
-# Default recipe if none is provided
+BRANCH="<your_branch>"
 RECIPE="recipes/train_qwen3_1.7b.sh"
 
 # Parse command line arguments
@@ -31,12 +34,18 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --tunnel-through-iap \
     --worker=all \
     --command='
+<<<<<<< HEAD:remote_run_cq.sh
     export HF_HOME="~/huggingface"; \
     export HF_TOKEN=<HF_TOKEN>; \
     export MOUNTED_GCS_DIR="/home/cqin/sfr-text-diffusion-model-research"; \
     cd torchprime; \
     git fetch; \
     git checkout cqin/dev; \
+=======
+    cd torchprime; \
+    git fetch; \
+    git checkout '"$BRANCH"'; \
+>>>>>>> shiyu/pretrain_small_qwen_clean_split:remote_run.sh
     git pull; \
     source venv/bin/activate; \
     export WANDB_API_KEY="local-13554988c6f407ff2f10f686b3dc102c7cb7e5e5"; \
