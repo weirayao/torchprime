@@ -1,5 +1,6 @@
 import logging
 import sys
+import os
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from torchprime.torch_xla_models.model_utils import convert_to_safetensors_on_cp
 
 check_min_version("4.39.3")
 logger = logging.getLogger(__name__)
+MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
 
 xr.use_spmd()
 assert xr.is_spmd() is True
@@ -87,7 +89,11 @@ def main(config: DictConfig):
       for name, tensor in model_sd.items()
     }
   }
-  save_dir = Path(config.checkpoint_dir) / f"{config.resume_from_checkpoint}"
+  gcs_prefix = "gs://sfr-text-diffusion-model-research/"
+  if config.checkpoint_dir.startswith(gcs_prefix):
+    save_dir = Path(MOUNTED_GCS_DIR) / config.checkpoint_dir.split(gcs_prefix)[1]
+  else:
+    save_dir = config.checkpoint_dir
   dist_cp.load(
     state_dict=reload_sd,
     storage_reader=dist_cp.FileSystemReader(str(save_dir)),
@@ -95,7 +101,7 @@ def main(config: DictConfig):
   )
   cpu_state = {k.replace("._orig_mod", ""): v for k, v in reload_sd["model"].items()}
   if is_main_process():
-    convert_to_safetensors_on_cpu(model, save_dir)
+    convert_to_safetensors_on_cpu(cpu_state, save_dir)
     tokenizer.save_pretrained(save_dir)
   xm.rendezvous("checkpoint_consolidation_barrier")
   logger.info("Checkpoint consolidation complete")
