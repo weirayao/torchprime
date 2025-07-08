@@ -476,7 +476,7 @@ class Trainer:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
         if is_main_process():
           self._consolidate_checkpoint()
-        xm.wait_device_ops()  # Ensure save is complete before logging
+        xm.rendezvous("checkpoint_consolidation_barrier")  # Ensure save is complete before logging
 
       # Capture profile at the prefer step
       if step == self.config.profile_step:

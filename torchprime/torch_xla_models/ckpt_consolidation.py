@@ -90,7 +90,7 @@ def main(config: DictConfig):
   logger.info("Checkpoint loaded, starting consolidation")
   if is_main_process():
     trainer._consolidate_checkpoint()
-  xm.wait_device_ops()
+  xm.rendezvous("checkpoint_consolidation_barrier")
   logger.info("Checkpoint consolidation complete")
 
 if __name__ == "__main__":
