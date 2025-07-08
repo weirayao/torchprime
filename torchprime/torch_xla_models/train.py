@@ -1,4 +1,5 @@
 import importlib
+import json
 import logging
 import math
 import os
@@ -662,9 +663,24 @@ def main(config: DictConfig):
     gcs_prefix = "gs://sfr-text-diffusion-model-research/"
     if dataset_name.startswith(gcs_prefix):
       dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
-      data = retry(
-        lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
-      )
+      checkpoint_dir = config.checkpoint_dir.split(gcs_prefix)[1]
+      data_files_path = os.path.join(MOUNTED_GCS_DIR, checkpoint_dir, "data_files.json")
+      if load_from_checkpoint:
+        # Load data_files from checkpoint_dir on GCS bucket if resuming from checkpoint
+        with open(data_files_path, "r") as f:
+          data_files = json.load(f)
+        data, data_files = retry(
+          lambda: make_gcs_pretokenized_dataset(dataset_name, data_files=data_files, seed=config.seed)
+        )
+      else:
+        data, data_files = retry(
+          lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
+        )
+        if is_main_process():
+          # Save data_files to checkpoint_dir on GCS bucket if start from scratch
+          with open(data_files_path, "w") as f:
+            json.dump(data_files, f, indent=4)
+          logger.info(f"Saved data_files list to {data_files_path}")
     else:
       data = retry(
         lambda: make_huggingface_dataset(
