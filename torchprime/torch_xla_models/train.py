@@ -365,11 +365,7 @@ class Trainer:
         classes_to_checkpoint.add(cls)
     return tuple(classes_to_checkpoint)
 
-  def consolidate_checkpoint(self):
-    if self.config.resume_from_checkpoint is not None:
-      self._load_checkpoint()
-    else:
-      raise ValueError("Consolidate checkpoint requires resume_from_checkpoint to be set")
+  def _consolidate_checkpoint(self):
     ckpt_suffix = self.ckpt_dir.split("/")[-1]
     consolidated_ckpt_dir = f"{MOUNTED_GCS_DIR}/consolidated_checkpoints/{ckpt_suffix}/{self.config.resume_from_checkpoint}"
     logger.info(f"Consolidating checkpoint to {consolidated_ckpt_dir}")
@@ -479,7 +475,7 @@ class Trainer:
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
         if is_main_process():
-          self.consolidate_checkpoint()
+          self._consolidate_checkpoint()
         xm.wait_device_ops()  # Ensure save is complete before logging
 
       # Capture profile at the prefer step
