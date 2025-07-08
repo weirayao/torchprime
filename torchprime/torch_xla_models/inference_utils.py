@@ -66,9 +66,11 @@ def top_p_logits_efficient(logits, p: float = 0.9):
     sorted_indices_to_keep = ~sorted_indices_to_remove
     max_tokens_to_keep = sorted_indices_to_keep.sum(dim=-1).max().item()
     
-    # Truncate and apply mask in one step
-    logits = sorted_logits[:, :max_tokens_to_keep].masked_fill(
-        ~sorted_indices_to_keep[:, :max_tokens_to_keep], torch.finfo(logits.dtype).min)
+    # Truncate and apply mask
+    truncated_logits = sorted_logits[:, :max_tokens_to_keep]
+    truncated_mask = sorted_indices_to_keep[:, :max_tokens_to_keep]
+    logits = truncated_logits.masked_fill(~truncated_mask, torch.finfo(logits.dtype).min)
+
     return logits
 
 def top_k_logits(logits, top_k: int):
@@ -100,21 +102,19 @@ def sample_(
     # Scale by temperature
     logits_processing_start_time = time.time()
     
-    # Apply filtering and get probabilities in one go
-    topk_time = 0.0
-    topp_time = 0.0
-    softmax_time = 0.0
-    scatter_time = 0.0
-
     logits_sampling = logits.clone()
     if temperature > 0:
         logits_sampling = logits_sampling / temperature
     if top_p is not None and top_p < 1:
+        topp_time = time.time()
         logits_sampling = top_p_logits_efficient(logits_sampling, top_p)
         logger.info(f"logits_sampling shape after top_p: {logits_sampling.shape}")
+        topp_time = time.time() - topp_time
     if top_k is not None:
+        topk_time = time.time()
         logits_sampling = top_k_logits_efficient(logits_sampling, top_k)
         logger.info(f"logits_sampling shape after top_k: {logits_sampling.shape}")
+        topk_time = time.time() - topk_time
     probs = torch.softmax(logits_sampling, dim=-1)
 
     logits_processing_time = time.time() - logits_processing_start_time
@@ -145,7 +145,7 @@ def sample_(
     
     # Log timing results with detailed breakdown
     logger.info(f"sample_ timing - total: {total_time:.4f}s, logits_processing: {logits_processing_time:.4f}s, sampling: {sampling_time:.4f}s, entropy: {entropy_time:.4f}s")
-    logger.info(f"sample_ detailed timing - topk: {topk_time:.4f}s, topp: {topp_time:.4f}s, softmax: {softmax_time:.4f}s, scatter: {scatter_time:.4f}s")
+    logger.info(f"sample_ detailed logits processing timing - total: {logits_processing_time:.4f}s, topk: {topk_time:.4f}s, topp: {topp_time:.4f}s")
     
     return confidence, x0
 
