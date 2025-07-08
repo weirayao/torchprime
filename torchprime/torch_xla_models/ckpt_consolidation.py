@@ -1,7 +1,7 @@
 import logging
 import sys
 from contextlib import contextmanager
-
+from pathlib import Path
 
 import datasets
 import hydra
@@ -12,12 +12,12 @@ import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
 import transformers
 from omegaconf import DictConfig, OmegaConf
-from torch_xla._internal.jax_workarounds import jax_env_context
 from transformers import AutoTokenizer
 from transformers.utils import check_min_version
 
 from torchprime.utils.retry import retry
-from torchprime.torch_xla_models.train import Trainer, initialize_model_class
+from torchprime.torch_xla_models.train import initialize_model_class
+from torchprime.torch_xla_models.model_utils import convert_to_safetensors_on_cpu
 
 check_min_version("4.39.3")
 logger = logging.getLogger(__name__)
@@ -73,25 +73,13 @@ def main(config: DictConfig):
   with set_default_dtype(torch.bfloat16), torch_xla.device():
     model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
 
-  trainer = Trainer(
-    model=model,
-    tokenizer=tokenizer,
-    config=config,
-    train_dataset=None,
-  )
-
-  # Synchronize all processes before starting training
-  xm.wait_device_ops()  # Wait for all XLA operations to complete
-  if is_main_process():
-    logger.info("All processes synchronized, starting checkpoint consolidation")
-
-  # TODO(https://github.com/pytorch/xla/issues/8954): Remove `jax_env_context`.
-  trainer._load_checkpoint()
-  logger.info("Checkpoint loaded, starting consolidation")
-  xm.mark_step()
+  # Synchronize all processes before starting checkpoint consolidation
+  torch_xla.sync()
   xm.wait_device_ops()
+  logger.info("All processes synchronized, starting checkpoint consolidation")
   if is_main_process():
-    trainer._consolidate_checkpoint(config.resume_from_checkpoint)
+    convert_to_safetensors_on_cpu(model, Path(config.checkpoint_dir) / f"{config.resume_from_checkpoint}")
+    tokenizer.save_pretrained(Path(config.checkpoint_dir) / f"{config.resume_from_checkpoint}")
   xm.rendezvous("checkpoint_consolidation_barrier")
   logger.info("Checkpoint consolidation complete")
 

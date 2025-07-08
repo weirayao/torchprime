@@ -363,6 +363,7 @@ def convert_to_safetensors_on_cpu_(model: torch.nn.Module, save_dir: Path) -> No
   }
 
   cpu_state = {k.replace("._orig_mod", ""): v for k, v in reload_sd["model"].items()}
+  logger.info("Finished duplicating checkpoint for safetensors export")
 
   try:
     tmp_dir = tempfile.mkdtemp(dir="/mnt/localssd")
