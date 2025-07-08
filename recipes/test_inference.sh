@@ -3,9 +3,9 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/inference.py \
     model.tokenizer_name=Qwen/Qwen3-1.7B \
     generation.diffusion_steps=10 \
     generation.max_tokens=0 \
-    generation.temperature=0.7 \
+    generation.temperature=0.2 \
     generation.top_p=0.95 \
-    generation.top_k=null \
+    generation.top_k=10000 \
     generation.alg=original \
     generation.alg_temp=0.2 \
     generation.output_history=true \
