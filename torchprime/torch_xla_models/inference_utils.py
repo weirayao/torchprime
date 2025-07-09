@@ -293,6 +293,7 @@ def generate_(
         forward_start_time = time.time()
         if output_hidden_states:
             logits, _, hidden_states_dict = model(x, attention_mask=None, output_hidden_states=output_hidden_states)
+            print(f"hidden_states_dict: {hidden_states_dict}")
             torch.save(hidden_states_dict, f"outputs/hidden_states_dict_diffusion_step_{i}.pth")
         else:
             logits, _ = model(x, attention_mask=None)  # NOTE: flex model doesn't use attention mask

@@ -322,7 +322,7 @@ class Qwen3DecoderLayer(nn.Module):
     # Collect hidden states if requested
     if _output_hidden_states and _hidden_states_collector is not None:
       key = f"{self.layer_idx}_{self.__class__.__name__}"
-      _hidden_states_collector[key] = hidden_states
+      _hidden_states_collector[key] = hidden_states.detach().cpu().clone()
     
     return hidden_states
 
@@ -402,7 +402,7 @@ class Qwen3Model(nn.Module):
     
     # Add embeddings to collector if requested
     if output_hidden_states:
-      _hidden_states_collector["embeddings"] = hidden_states
+      _hidden_states_collector["embeddings"] = hidden_states.detach().cpu().clone()
 
     hidden_states = self.layers(
       hidden_states,
