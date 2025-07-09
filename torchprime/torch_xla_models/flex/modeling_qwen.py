@@ -19,6 +19,20 @@ from torchprime.torch_xla_models.flex.attention import AttentionModule
 
 logger = logging.get_logger(__name__)
 
+_output_hidden_states = False
+_hidden_states_collector = None
+
+def set_hidden_states_collection(enabled: bool):
+  """Helper function to enable/disable hidden states collection globally."""
+  global _output_hidden_states, _hidden_states_collector
+  _output_hidden_states = enabled
+  _hidden_states_collector = {} if enabled else None
+
+def get_hidden_states_collector():
+  """Helper function to get the current hidden states collector."""
+  global _hidden_states_collector
+  return _hidden_states_collector
+
 class Qwen3RMSNorm(nn.Module):
   def __init__(self, hidden_size, eps=1e-6):
     """
@@ -269,10 +283,7 @@ class Qwen3DecoderLayer(nn.Module):
     hidden_states: torch.Tensor,
     attention_mask: torch.Tensor | None = None,
     position_ids: torch.Tensor | None = None,
-    position_embeddings: tuple[torch.Tensor, torch.Tensor]
-    | None = None,  # necessary, but kept here for BC
-    output_hidden_states: bool = False,
-    hidden_states_collector: dict | None = None,
+    position_embeddings: tuple[torch.Tensor, torch.Tensor]| None = None,  # necessary, but kept here for BC
   ) -> torch.Tensor:
     """
     Args:
@@ -280,9 +291,9 @@ class Qwen3DecoderLayer(nn.Module):
       attention_mask (`torch.FloatTensor`, *optional*):
         attention mask of size `(batch_size, sequence_length)` if flash attention is used or `(batch_size, 1,
         query_sequence_length, key_sequence_length)` if default attention is used.
-      output_hidden_states (`bool`, *optional*): whether to collect hidden states
-      hidden_states_collector (`dict`, *optional*): dict to collect hidden states with layer_idx_classname as keys
     """
+    global _output_hidden_states, _hidden_states_collector
+    
     # This gives the `hidden_states` tensor a name so that we can layer specify
     # to offload this tensor to host RAM to save memory. This is not a standard
     # torch API because there is no such feature in PyTorch. Instead, the name
@@ -312,9 +323,9 @@ class Qwen3DecoderLayer(nn.Module):
     logger.info(f"layer {self.layer_idx} output hidden_states: {hidden_states}")
     
     # Collect hidden states if requested
-    if output_hidden_states and hidden_states_collector is not None:
+    if _output_hidden_states and _hidden_states_collector is not None:
       key = f"{self.layer_idx}_{self.__class__.__name__}"
-      hidden_states_collector[key] = hidden_states
+      _hidden_states_collector[key] = hidden_states
     
     return hidden_states
 
@@ -387,26 +398,26 @@ class Qwen3Model(nn.Module):
     position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
     # decoder layers
-    # Create a collector dictionary for hidden states
-    hidden_states_collector = {} if output_hidden_states else None
+    # Setup global state for hidden states collection
+    global _output_hidden_states, _hidden_states_collector
+    _output_hidden_states = output_hidden_states
+    _hidden_states_collector = {} if output_hidden_states else None
     
     # Add embeddings to collector if requested
     if output_hidden_states:
-      hidden_states_collector["embeddings"] = hidden_states
+      _hidden_states_collector["embeddings"] = hidden_states
 
     hidden_states = self.layers(
       hidden_states,
       attention_mask=causal_mask,
       position_ids=position_ids,
       position_embeddings=position_embeddings,
-      output_hidden_states=output_hidden_states,
-      hidden_states_collector=hidden_states_collector,
     )
 
     hidden_states = self.norm(hidden_states)
     
     if output_hidden_states:
-      return hidden_states, hidden_states_collector
+      return hidden_states, _hidden_states_collector
     return hidden_states
 
 
