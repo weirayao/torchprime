@@ -20,8 +20,8 @@ from pathlib import Path
 import safetensors
 import torch
 import torch.distributed.checkpoint as dist_cp
-ON_TPU = not torch.cuda.is_available()
-if ON_TPU:
+IS_TPU = not torch.cuda.is_available()
+if IS_TPU:
   import torch_xla.experimental.distributed_checkpoint as xc
 
 logger = logging.getLogger(__name__)

@@ -1,11 +1,9 @@
 import logging
 import sys
 import torch
-ON_TPU = not torch.cuda.is_available()
-if ON_TPU:
-    import torch_xla
-    import torch_xla.core.xla_model as xm
-    import torch_xla.runtime as xr
+import torch_xla
+import torch_xla.core.xla_model as xm
+import torch_xla.runtime as xr
 import torch.distributed as dist
 import hydra
 import copy
@@ -57,7 +55,6 @@ def main(config: DictConfig):
         model = initialize_model_class(model_config)
     xm.wait_device_ops()
 
-    logger.info(f"hf model weights: {model.state_dict()['model.embed_tokens.weight']}")
 
     logger.info("Preparing inputs...")
 #     prompt = """#coding utf-8
@@ -125,9 +122,6 @@ if __name__ ==<|mask|><|mask|>__':
         model=model, tokenizer=tokenizer, config=config, eval_dataset=dataset
     )
     trainer._load_checkpoint()
-    logger.info(
-        f"ckpt model weights: {trainer.model.state_dict()}"
-    )
 
     logger.info("Generating...")
     loader = trainer._get_eval_dataloader()

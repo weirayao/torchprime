@@ -7,8 +7,8 @@ import torch.nn.functional as F
 from transformers import PreTrainedModel, PreTrainedTokenizerBase, BatchEncoding
 from dataclasses import dataclass, asdict
 
-ON_TPU = not torch.cuda.is_available()
-if ON_TPU:
+IS_TPU = not torch.cuda.is_available()
+if IS_TPU:
     import torch_xla
 
 
@@ -249,7 +249,7 @@ def generate_(
 ) -> dict[str, torch.Tensor | list[torch.Tensor]] | torch.Tensor:
     logger.info(f"Generating with config: {asdict(generation_config)}")
     model.eval()
-    device = torch_xla.device() if ON_TPU else torch.device("cuda")
+    device = torch_xla.device() if IS_TPU else torch.device("cuda")
 
     # Timing setup
     timing_results = {
@@ -293,14 +293,11 @@ def generate_(
         forward_start_time = time.time()
         if output_hidden_states:
             logits, _, hidden_states_dict = model(x, attention_mask=None, output_hidden_states=output_hidden_states)
-            print(f"hidden_states_dict: {hidden_states_dict['embeddings'][:1, :235, :]}, {hidden_states_dict['embeddings'].shape}")
-            # torch.save(hidden_states_dict, f"outputs/hidden_states_dict_diffusion_step_{i}.pth")
         else:
             logits, _ = model(x, attention_mask=None)  # NOTE: flex model doesn't use attention mask
         forward_time = time.time() - forward_start_time
         timing_results['model_forward_time'] += forward_time
         
-        logger.info(f"step {i}; logits shape: {logits.shape}; logits: {logits[:1, :235, :]}")
         
         tensor_ops_start = time.time()
         # Optimize logits shifting - avoid cat operation when possible
@@ -393,10 +390,10 @@ def generate_(
         logger.info(f"Step {i} time: {step_time:.4f}s (forward: {forward_time:.4f}s, sampling: {sampling_time:.4f}s, tensor_ops: {tensor_ops_time:.4f}s)")
 
     # Single sync at the end instead of every step
-    if ON_TPU:
+    if IS_TPU:
         torch_xla.sync()
 
-    timing_results['total_time'] = time.time() - total_start_time
+    timISg_results['total_time'] = time.time() - total_start_time
     
     # Print profiling results
     logger.info("=== PROFILING RESULTS ===")
@@ -501,7 +498,7 @@ def generate(
     top_p = args.top_p
     top_k = args.top_k
     steps = args.diffusion_steps
-    device = torch_xla.device() if ON_TPU else torch.device("cuda")
+    device = torch_xla.device() if IS_TPU else torch.device("cuda")
 
     x = inputs["input_ids"].to(device)
     if "src_mask" not in inputs:
