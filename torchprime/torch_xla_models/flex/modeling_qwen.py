@@ -254,6 +254,7 @@ class Qwen3DecoderLayer(nn.Module):
   def __init__(self, config: DictConfig, layer_idx: int):
     super().__init__()
     self.hidden_size = config.hidden_size
+    self.layer_idx = layer_idx
 
     self.self_attn = Qwen3Attention(config=config, layer_idx=layer_idx)
 
@@ -270,6 +271,8 @@ class Qwen3DecoderLayer(nn.Module):
     position_ids: torch.Tensor | None = None,
     position_embeddings: tuple[torch.Tensor, torch.Tensor]
     | None = None,  # necessary, but kept here for BC
+    output_hidden_states: bool = False,
+    hidden_states_collector: dict | None = None,
   ) -> torch.Tensor:
     """
     Args:
@@ -277,6 +280,8 @@ class Qwen3DecoderLayer(nn.Module):
       attention_mask (`torch.FloatTensor`, *optional*):
         attention mask of size `(batch_size, sequence_length)` if flash attention is used or `(batch_size, 1,
         query_sequence_length, key_sequence_length)` if default attention is used.
+      output_hidden_states (`bool`, *optional*): whether to collect hidden states
+      hidden_states_collector (`dict`, *optional*): dict to collect hidden states with layer_idx_classname as keys
     """
     # This gives the `hidden_states` tensor a name so that we can layer specify
     # to offload this tensor to host RAM to save memory. This is not a standard
@@ -305,6 +310,12 @@ class Qwen3DecoderLayer(nn.Module):
     hidden_states = self.mlp(hidden_states)
     hidden_states = residual + hidden_states
     logger.info(f"layer {self.layer_idx} output hidden_states: {hidden_states}")
+    
+    # Collect hidden states if requested
+    if output_hidden_states and hidden_states_collector is not None:
+      key = f"{self.layer_idx}_{self.__class__.__name__}"
+      hidden_states_collector[key] = hidden_states
+    
     return hidden_states
 
 
@@ -347,7 +358,8 @@ class Qwen3Model(nn.Module):
     self,
     input_ids: torch.LongTensor,
     attention_mask: torch.FloatTensor | None = None,
-  ) -> torch.Tensor:
+    output_hidden_states: bool = False,
+  ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
     # convert input ids to embeddings
     inputs_embeds = self.embed_tokens(input_ids)
 
@@ -375,14 +387,26 @@ class Qwen3Model(nn.Module):
     position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
     # decoder layers
+    # Create a collector dictionary for hidden states
+    hidden_states_collector = {} if output_hidden_states else None
+    
+    # Add embeddings to collector if requested
+    if output_hidden_states:
+      hidden_states_collector["embeddings"] = hidden_states
+
     hidden_states = self.layers(
       hidden_states,
       attention_mask=causal_mask,
       position_ids=position_ids,
       position_embeddings=position_embeddings,
+      output_hidden_states=output_hidden_states,
+      hidden_states_collector=hidden_states_collector,
     )
 
     hidden_states = self.norm(hidden_states)
+    
+    if output_hidden_states:
+      return hidden_states, hidden_states_collector
     return hidden_states
 
 
@@ -414,13 +438,22 @@ class Qwen3ForCausalLM(nn.Module):
     input_ids: torch.LongTensor,
     labels: torch.LongTensor | None = None,
     attention_mask: torch.FloatTensor | None = None,
-  ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:
+    output_hidden_states: bool = False,
+  ) -> tuple[torch.FloatTensor, torch.FloatTensor | None] | tuple[torch.FloatTensor, torch.FloatTensor | None, dict[str, torch.Tensor]]:
     if not self.training:
       # haolin: during inference the masking is done when preprocessing the input, we don't need src_mask and noising
-      hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
-      logits = self.lm_head(hidden_states) # NOTE: we shift logits in generate()
-      # logits = logits.float()[..., :-1, :].contiguous() # NOTE: we don't need the logits of the last token
-      return logits, None
+      model_output = self.model(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=output_hidden_states)
+      
+      if output_hidden_states:
+        hidden_states, all_hidden_states = model_output
+        logits = self.lm_head(hidden_states) # NOTE: we shift logits in generate()
+        # logits = logits.float()[..., :-1, :].contiguous() # NOTE: we don't need the logits of the last token
+        return logits, None, all_hidden_states
+      else:
+        hidden_states = model_output
+        logits = self.lm_head(hidden_states) # NOTE: we shift logits in generate()
+        # logits = logits.float()[..., :-1, :].contiguous() # NOTE: we don't need the logits of the last token
+        return logits, None
 
     # weiran: diffullama
     sampling_eps = 1e-3

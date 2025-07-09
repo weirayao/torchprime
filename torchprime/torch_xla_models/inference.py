@@ -144,7 +144,7 @@ if __name__ ==<|mask|><|mask|>__':
     #     trainer.model, tokenizer, batch, generation_config, verbose=True
     # )
     generation = generate_(
-        trainer.model, batch["input_ids"], generation_config
+        trainer.model, batch["input_ids"], generation_config, output_hidden_states=True
     )
     xm.wait_device_ops()
     if generation_config.return_dict_in_generate:

@@ -245,6 +245,7 @@ def generate_(
     model: PreTrainedModel,
     input_ids: torch.LongTensor,
     generation_config: GenerationConfig_,
+    output_hidden_states: bool = False,
 ) -> dict[str, torch.Tensor | list[torch.Tensor]] | torch.Tensor:
     logger.info(f"Generating with config: {asdict(generation_config)}")
     model.eval()
@@ -290,7 +291,11 @@ def generate_(
         
         # Model forward pass timing
         forward_start_time = time.time()
-        logits, _ = model(x, attention_mask=None)  # NOTE: flex model doesn't use attention mask
+        if output_hidden_states:
+            logits, _, hidden_states_dict = model(x, attention_mask=None, output_hidden_states=output_hidden_states)
+            torch.save(hidden_states_dict, f"outputs/hidden_states_dict_diffusion_step_{i}.pth")
+        else:
+            logits, _ = model(x, attention_mask=None)  # NOTE: flex model doesn't use attention mask
         forward_time = time.time() - forward_start_time
         timing_results['model_forward_time'] += forward_time
         
