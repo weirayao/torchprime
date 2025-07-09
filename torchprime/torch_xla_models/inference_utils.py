@@ -300,7 +300,7 @@ def generate_(
         forward_time = time.time() - forward_start_time
         timing_results['model_forward_time'] += forward_time
         
-        logger.info(f"logits shape: {logits.shape}")
+        logger.info(f"step {i}; logits shape: {logits.shape}; logits: {logits[:1, :235, :]}")
         
         tensor_ops_start = time.time()
         # Optimize logits shifting - avoid cat operation when possible
