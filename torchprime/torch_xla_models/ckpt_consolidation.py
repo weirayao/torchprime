@@ -1,7 +1,8 @@
 import logging
 import sys
 from contextlib import contextmanager
-
+from pathlib import Path
+import tempfile
 
 import datasets
 import hydra
@@ -10,6 +11,9 @@ import torch.distributed as dist
 import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.runtime as xr
+import torch.distributed.checkpoint as dist_cp
+from torch.distributed.checkpoint.format_utils import dcp_to_torch_save
+import torch_xla.experimental.distributed_checkpoint as xc
 import transformers
 from omegaconf import DictConfig, OmegaConf
 from torch_xla._internal.jax_workarounds import jax_env_context
@@ -18,6 +22,7 @@ from transformers.utils import check_min_version
 
 from torchprime.utils.retry import retry
 from torchprime.torch_xla_models.train import Trainer, initialize_model_class
+from torchprime.torch_xla_models.model_utils import save_sharded_safetensors_by_layer
 
 check_min_version("4.39.3")
 logger = logging.getLogger(__name__)
@@ -86,14 +91,41 @@ def main(config: DictConfig):
     logger.info("All processes synchronized, starting checkpoint consolidation")
 
   # TODO(https://github.com/pytorch/xla/issues/8954): Remove `jax_env_context`.
-  trainer._load_checkpoint()
-  logger.info("Checkpoint loaded, starting consolidation")
-  torch_xla.sync()
-  xm.wait_device_ops()
-  if is_main_process():
-    trainer._consolidate_checkpoint(config.resume_from_checkpoint)
-  xm.rendezvous("checkpoint_consolidation_barrier")
-  logger.info("Checkpoint consolidation complete")
+  with jax_env_context():
+    gcs_prefix = "gs://sfr-text-diffusion-model-research/"
+    save_dir = Path(MOUNTED_GCS_DIR) / config.checkpoint_dir.split(gcs_prefix)[1] / f"{config.resume_from_checkpoint}"
+    model_sd = model.state_dict()
+    reload_sd = {
+      "model": {
+        name: torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu")
+        for name, tensor in model_sd.items()
+      }
+    }
+
+    trainer.ckpt_mgr.restore(config.resume_from_checkpoint, reload_sd)
+    cpu_state = {k.replace("._orig_mod", ""): v for k, v in reload_sd["model"].items()}
+    # dist_cp.load(
+    #   state_dict=reload_sd,
+    #   storage_reader=dist_cp.FileSystemReader(str(save_dir)),
+    #   planner=xc.SPMDLoadPlanner(),
+    # )
+    # trainer._load_checkpoint()
+    logger.info("Checkpoint loaded, starting consolidation")
+    torch_xla.sync()
+    xm.wait_device_ops()
+    if is_main_process():
+      try:
+        tmp_dir = tempfile.mkdtemp(dir="/mnt/localssd")
+        logger.info("Using local SSD for safetensors shards: %s", tmp_dir)
+      except (FileNotFoundError, PermissionError):
+        tmp_dir = tempfile.mkdtemp()
+        logger.info("Using default temp directory for safetensors shards: %s", tmp_dir)
+
+      save_sharded_safetensors_by_layer(cpu_state, str(save_dir), tmp_dir=tmp_dir)
+      logger.info("Safetensors shards + index written to %s", save_dir)
+      # trainer._consolidate_checkpoint(config.resume_from_checkpoint)
+    xm.rendezvous("checkpoint_consolidation_barrier")
+    logger.info("Checkpoint consolidation complete")
 
 if __name__ == "__main__":
   logging.basicConfig(

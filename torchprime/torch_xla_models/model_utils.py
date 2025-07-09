@@ -292,7 +292,7 @@ def save_distributed_checkpoint(model: torch.nn.Module, save_dir: Path) -> None:
   logger.info("DCP checkpoint written to %s", save_dir)
 
 
-def convert_to_safetensors_on_cpu(cpu_state: dict, save_dir: Path) -> None:
+def convert_to_safetensors_on_cpu(model: torch.nn.Module, save_dir: Path) -> None:
   """Reload checkpoint on CPU and export sharded safetensors files.
 
   Assumes the checkpoint has already been written. This method should only be run on Rank 0.
@@ -307,24 +307,24 @@ def convert_to_safetensors_on_cpu(cpu_state: dict, save_dir: Path) -> None:
     save_dir: Directory where the original checkpoint is saved.
               Safetensors files and index will also be written here.
   """
-  # logger.info("Reloading checkpoint for safetensors export …")
+  logger.info("Reloading checkpoint for safetensors export …")
 
-  # model_sd = model.state_dict()
-  # reload_sd = {
-  #   "model": {
-  #     name: torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu")
-  #     for name, tensor in model_sd.items()
-  #   }
-  # }
+  model_sd = model.state_dict()
+  reload_sd = {
+    "model": {
+      name: torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu")
+      for name, tensor in model_sd.items()
+    }
+  }
 
-  # dist_cp.load(
-  #   state_dict=reload_sd,
-  #   storage_reader=dist_cp.FileSystemReader(str(save_dir)),
-  #   planner=xc.SPMDLoadPlanner(),
-  # )
-  # logger.info("Checkpoint fully materialised on CPU")
+  dist_cp.load(
+    state_dict=reload_sd,
+    storage_reader=dist_cp.FileSystemReader(str(save_dir)),
+    planner=xc.SPMDLoadPlanner(),
+  )
+  logger.info("Checkpoint fully materialised on CPU")
 
-  # cpu_state = {k.replace("._orig_mod", ""): v for k, v in reload_sd["model"].items()}
+  cpu_state = {k.replace("._orig_mod", ""): v for k, v in reload_sd["model"].items()}
 
   try:
     tmp_dir = tempfile.mkdtemp(dir="/mnt/localssd")
