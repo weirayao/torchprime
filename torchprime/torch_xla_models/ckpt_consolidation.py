@@ -99,7 +99,7 @@ def main(config: DictConfig):
   # TODO(https://github.com/pytorch/xla/issues/8954): Remove `jax_env_context`.
   with jax_env_context():
     gcs_prefix = "gs://sfr-text-diffusion-model-research/"
-    save_dir = Path(MOUNTED_GCS_DIR) / config.checkpoint_dir.split(gcs_prefix)[1] / f"{config.resume_from_checkpoint}"
+    save_dir = Path(MOUNTED_GCS_DIR) / config.checkpoint_dir.split(gcs_prefix)[1].replace("checkpoints", "consolidated_checkpoints") / f"{config.resume_from_checkpoint}"
     model_sd = model.state_dict()
     reload_sd = {
       "model": {
