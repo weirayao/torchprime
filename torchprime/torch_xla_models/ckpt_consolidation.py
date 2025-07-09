@@ -24,6 +24,8 @@ from torchprime.utils.retry import retry
 from torchprime.torch_xla_models.train import Trainer, initialize_model_class
 from torchprime.torch_xla_models.model_utils import save_sharded_safetensors_by_layer
 
+MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
+
 check_min_version("4.39.3")
 logger = logging.getLogger(__name__)
 
