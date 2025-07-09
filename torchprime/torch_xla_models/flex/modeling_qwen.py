@@ -320,9 +320,9 @@ class Qwen3DecoderLayer(nn.Module):
     hidden_states = residual + hidden_states
     
     # Collect hidden states if requested
-    if _output_hidden_states and _hidden_states_collector is not None:
-      key = f"{self.layer_idx}_{self.__class__.__name__}"
-      _hidden_states_collector[key] = hidden_states.detach().cpu().clone()
+    # if _output_hidden_states and _hidden_states_collector is not None:
+    #   key = f"{self.layer_idx}_{self.__class__.__name__}"
+    #   _hidden_states_collector[key] = hidden_states.detach().cpu().clone()
     
     return hidden_states
 
