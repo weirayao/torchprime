@@ -126,7 +126,7 @@ if __name__ ==<|mask|><|mask|>__':
     )
     trainer._load_checkpoint()
     logger.info(
-        f"ckpt model weights: {trainer.model.state_dict()['model.embed_tokens.weight']}"
+        f"ckpt model weights: {trainer.model.state_dict()}"
     )
 
     logger.info("Generating...")
