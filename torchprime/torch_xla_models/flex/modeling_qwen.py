@@ -303,7 +303,6 @@ class Qwen3DecoderLayer(nn.Module):
 
     residual = hidden_states
     hidden_states = self.input_layernorm(hidden_states)
-    logger.info(f"layer {self.layer_idx} input_layernorm: {hidden_states}")
 
     # Self Attention
     hidden_states = self.self_attn(
@@ -312,7 +311,6 @@ class Qwen3DecoderLayer(nn.Module):
       position_ids=position_ids,
       position_embeddings=position_embeddings,
     )
-    logger.info(f"layer {self.layer_idx} self_attn: {hidden_states}")
     hidden_states = residual + hidden_states
 
     # Fully Connected
@@ -320,7 +318,6 @@ class Qwen3DecoderLayer(nn.Module):
     hidden_states = self.post_attention_layernorm(hidden_states)
     hidden_states = self.mlp(hidden_states)
     hidden_states = residual + hidden_states
-    logger.info(f"layer {self.layer_idx} output hidden_states: {hidden_states}")
     
     # Collect hidden states if requested
     if _output_hidden_states and _hidden_states_collector is not None:
