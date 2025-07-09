@@ -1,3 +1,6 @@
+"""
+RUN ON v4-8 ONLY
+"""
 import logging
 import os
 import sys
@@ -127,6 +130,7 @@ def main(config: DictConfig):
       save_sharded_safetensors_by_layer(cpu_state, str(save_dir), tmp_dir=tmp_dir)
       logger.info("Safetensors shards + index written to %s", save_dir)
       # trainer._consolidate_checkpoint(config.resume_from_checkpoint)
+      tokenizer.save_pretrained(save_dir)
     xm.rendezvous("checkpoint_consolidation_barrier")
     logger.info("Checkpoint consolidation complete")
 
