@@ -174,7 +174,6 @@ class AttentionModule(nn.Module):
     kv_seq_len = key_states.shape[-2]
 
     # Use SDPA with appropriate backend
-    query_states = query_states / math.sqrt(head_dim)
     
     match self.config.attention_kernel:
       case "splash_attention":
