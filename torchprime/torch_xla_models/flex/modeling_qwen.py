@@ -298,8 +298,8 @@ class Qwen3DecoderLayer(nn.Module):
     # to offload this tensor to host RAM to save memory. This is not a standard
     # torch API because there is no such feature in PyTorch. Instead, the name
     # becomes node metadata during FX graph capture.
-    if IS_TPU:
-      hidden_states = offloading.offload_name(hidden_states, "decoder_input")
+    # if IS_TPU:
+    #   hidden_states = offloading.offload_name(hidden_states, "decoder_input")
 
     residual = hidden_states
     hidden_states = self.input_layernorm(hidden_states)
