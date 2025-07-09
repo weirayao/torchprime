@@ -20,10 +20,21 @@ from pathlib import Path
 import safetensors
 import torch
 import torch.distributed.checkpoint as dist_cp
-import torch_xla.experimental.distributed_checkpoint as xc
+ON_TPU = not torch.cuda.is_available()
+if ON_TPU:
+  import torch_xla.experimental.distributed_checkpoint as xc
 
 logger = logging.getLogger(__name__)
 
+# Map torchprime model classes to their corresponding HuggingFace model classes
+HF_MODEL_CLASS_MAPPING = {
+  "llama.LlamaForCausalLM": "LlamaForCausalLM",
+  "flex.LlamaForCausalLM": "LlamaForCausalLM", 
+  "flex.Qwen3ForCausalLM": "Qwen3ForCausalLM",
+  "mixtral.MixtralForCausalLM": "MixtralForCausalLM",
+  "llama4.Llama4TextForCausalLM": "Llama4ForCausalLM",
+  "qwen.Qwen3ForCausalLM": "Qwen3ForCausalLM",
+}
 
 def load_safetensors_to_state_dict(model_dir: str) -> dict:
   """Load a model state dict from safetensors, supporting both sharded and single-file formats.
@@ -128,32 +139,74 @@ def save_sharded_safetensors_by_layer(
   maybe_move_to_mounted_gcs(tmp_dir, save_dir)
 
 
-def initialize_model_class(model_config):
+# def initialize_model_class(model_config):
+#   """Import and initialize model_class specified by the config."""
+#   full_model_class_string = model_config.model_class
+#   module_name, model_class_name = full_model_class_string.rsplit(".", 1)
+#   module = None
+
+#   for candidate_module_name in [f"model.{module_name}", module_name]:
+#     # use full import path to avoid issues with relative imports
+#     full_module_name = f"torchprime.torch_xla_models.{candidate_module_name}"
+#     try:
+#       module = importlib.import_module(full_module_name)
+#       break
+#     except ModuleNotFoundError:
+#       module = None
+
+#   if module is None:
+#     print(f"Error: Failed to import module '{module_name}' or 'model.{module_name}'")
+#     sys.exit(1)
+
+#   if not hasattr(module, model_class_name):
+#     print(f"Error: Class '{model_class_name}' not found in module '{module.__name__}'")
+#     sys.exit(1)
+
+#   model_class = getattr(module, model_class_name)
+#   return model_class(model_config)
+def initialize_model_class(model_config, load_from_hf=True):
   """Import and initialize model_class specified by the config."""
-  full_model_class_string = model_config.model_class
-  module_name, model_class_name = full_model_class_string.rsplit(".", 1)
-  module = None
+  module_name, model_class_name = model_config.model_class.rsplit(".", 1)
+  try:
+    module = importlib.import_module(module_name)
+  except ModuleNotFoundError as e:
+    print(f"Error importing relative module: {e}")
+    sys.exit(1)
+  if hasattr(module, model_class_name):
+    model_class = getattr(module, model_class_name)
+  else:
+    print(f"Error: Function '{model_class_name}' not found in module '{module_name}'")
+    sys.exit(1)
+  model = model_class(model_config)
+  # Load pretrained weights from HuggingFace model
+  if load_from_hf:
+    hf_model = load_hf_model(model_config)
+    logger.info("Loaded model from HuggingFace. Now loading state dict.")
+    model.load_state_dict(hf_model.state_dict())
+    del hf_model
+  return model
 
-  for candidate_module_name in [f"model.{module_name}", module_name]:
-    # use full import path to avoid issues with relative imports
-    full_module_name = f"torchprime.torch_xla_models.{candidate_module_name}"
-    try:
-      module = importlib.import_module(full_module_name)
-      break
-    except ModuleNotFoundError:
-      module = None
-
-  if module is None:
-    print(f"Error: Failed to import module '{module_name}' or 'model.{module_name}'")
+def load_hf_model(model_config):
+  logger.info(f"Loading HuggingFace model from {model_config.tokenizer_name}")
+  hf_model_class_name = HF_MODEL_CLASS_MAPPING.get(model_config.model_class)
+  if hf_model_class_name is None:
+    print(f"Error: No HuggingFace model mapping found for '{model_config.model_class}'")
+    print(f"Available mappings: {list(HF_MODEL_CLASS_MAPPING.keys())}")
     sys.exit(1)
 
-  if not hasattr(module, model_class_name):
-    print(f"Error: Class '{model_class_name}' not found in module '{module.__name__}'")
+# Dynamically import the HuggingFace model class
+  try:
+    transformers_module = importlib.import_module("transformers")
+    hf_model_class = getattr(transformers_module, hf_model_class_name)
+  except (ModuleNotFoundError, AttributeError) as e:
+    print(f"Error importing HuggingFace model class '{hf_model_class_name}': {e}")
     sys.exit(1)
 
-  model_class = getattr(module, model_class_name)
-  return model_class(model_config)
-
+  hf_model = hf_model_class.from_pretrained(
+    model_config.tokenizer_name,
+    torch_dtype=torch.bfloat16,
+  )
+  return hf_model
 
 @contextmanager
 def set_default_dtype(dtype: torch.dtype):
@@ -199,6 +252,11 @@ def extract_model_size_from_model_name(model_name: str) -> int | float:
       return -1
   return -1
 
+def get_model_dtype(module):
+  dtypes = {param.dtype for param in module.parameters()}
+  if len(dtypes) != 1:
+    raise ValueError(f"Inconsistent dtypes found: {dtypes}")
+  return dtypes.pop()
 
 def log_parameter_breakdown(model: torch.nn.Module, logger: logging.Logger) -> None:
   """Logs the number of parameters in different components of the model.

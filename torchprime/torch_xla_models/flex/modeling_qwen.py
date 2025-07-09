@@ -5,7 +5,6 @@ Adapted from https://github.com/huggingface/transformers/blob/main/src/transform
 from typing import Callable, Optional, Tuple, Union
 
 import torch
-import torch_xla.debug.profiler as xp
 from omegaconf import DictConfig
 from torch import nn
 from transformers.activations import ACT2FN
@@ -13,7 +12,9 @@ from transformers.utils import logging
 
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.rope.rope import RopeScaling, default_rope_frequencies
-from torchprime.torch_xla_models import offloading
+IS_TPU = not torch.cuda.is_available()
+if IS_TPU:
+  from torchprime.torch_xla_models import offloading
 from torchprime.torch_xla_models.flex.attention import AttentionModule
 
 logger = logging.get_logger(__name__)
@@ -48,7 +49,6 @@ class Qwen3MLP(nn.Module):
     self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False)
     self.act_fn = ACT2FN[config.hidden_act]
 
-  @xp.trace_me("Qwen3MLP")
   def forward(self, x):
     down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
     return down_proj
@@ -263,7 +263,6 @@ class Qwen3DecoderLayer(nn.Module):
       config.hidden_size, eps=getattr(config, "rms_norm_eps", 1e-6)
     )
 
-  @xp.trace_me("Qwen3DecoderLayer")
   def forward(
     self,
     hidden_states: torch.Tensor,
@@ -283,11 +282,12 @@ class Qwen3DecoderLayer(nn.Module):
     # to offload this tensor to host RAM to save memory. This is not a standard
     # torch API because there is no such feature in PyTorch. Instead, the name
     # becomes node metadata during FX graph capture.
-    hidden_states = offloading.offload_name(hidden_states, "decoder_input")
+    if IS_TPU:
+      hidden_states = offloading.offload_name(hidden_states, "decoder_input")
 
     residual = hidden_states
-
     hidden_states = self.input_layernorm(hidden_states)
+    logger.info(f"layer {self.layer_idx} input_layernorm: {hidden_states}")
 
     # Self Attention
     hidden_states = self.self_attn(
@@ -296,6 +296,7 @@ class Qwen3DecoderLayer(nn.Module):
       position_ids=position_ids,
       position_embeddings=position_embeddings,
     )
+    logger.info(f"layer {self.layer_idx} self_attn: {hidden_states}")
     hidden_states = residual + hidden_states
 
     # Fully Connected
@@ -303,7 +304,7 @@ class Qwen3DecoderLayer(nn.Module):
     hidden_states = self.post_attention_layernorm(hidden_states)
     hidden_states = self.mlp(hidden_states)
     hidden_states = residual + hidden_states
-
+    logger.info(f"layer {self.layer_idx} output hidden_states: {hidden_states}")
     return hidden_states
 
 
@@ -342,7 +343,6 @@ class Qwen3Model(nn.Module):
       head_dim=head_dim, rope_theta=self.rope_theta, scaling=rope_scaling
     )
 
-  @xp.trace_me("Qwen3Model")
   def forward(
     self,
     input_ids: torch.LongTensor,
@@ -409,7 +409,6 @@ class Qwen3ForCausalLM(nn.Module):
       if module.padding_idx is not None:
         module.weight.data[module.padding_idx].zero_()
 
-  @xp.trace_me("Qwen3ForCausalLM")
   def forward(
     self,
     input_ids: torch.LongTensor,
@@ -462,7 +461,6 @@ class Qwen3ForCausalLM(nn.Module):
     loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
     return logits, loss
 
-@xp.trace_me("transition")
 def transition(x_0, sigma, maskable_mask, mask_token_id):
     # weiran: diffullama
     # move_chance = 1 - (-sigma).exp()

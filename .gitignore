@@ -83,3 +83,5 @@ checkpoints/
 *.ipynb
 
 evaluations/
+
+gpu_venv

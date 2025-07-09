@@ -59,7 +59,14 @@ from torchprime.torch_xla_models.topology import (
   get_num_slices,
   is_1d_sharding,
 )
-from torchprime.torch_xla_models.model_utils import convert_to_safetensors_on_cpu, convert_to_safetensors_on_cpu_
+from torchprime.torch_xla_models.model_utils import (
+  convert_to_safetensors_on_cpu,
+  convert_to_safetensors_on_cpu_,
+  initialize_model_class,
+  set_default_dtype,
+  load_hf_model,
+  get_model_dtype,
+)
 from torchprime.utils.retry import retry
 
 check_min_version("4.39.3")
@@ -75,15 +82,6 @@ def is_main_process():
   """Check if this is the main process (rank 0)."""
   return xr.process_index() == 0
 
-# Map torchprime model classes to their corresponding HuggingFace model classes
-HF_MODEL_CLASS_MAPPING = {
-  "llama.LlamaForCausalLM": "LlamaForCausalLM",
-  "flex.LlamaForCausalLM": "LlamaForCausalLM", 
-  "flex.Qwen3ForCausalLM": "Qwen3ForCausalLM",
-  "mixtral.MixtralForCausalLM": "MixtralForCausalLM",
-  "llama4.Llama4TextForCausalLM": "Llama4ForCausalLM",
-  "qwen.Qwen3ForCausalLM": "Qwen3ForCausalLM",
-}
 
 MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
 
@@ -472,9 +470,7 @@ class Trainer:
           logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
-        if is_main_process():
-          self._consolidate_checkpoint(step)
-        xm.rendezvous("checkpoint_consolidation_barrier")  # Ensure save is complete before logging
+        xm.wait_device_ops()
 
       # Capture profile at the prefer step
       if step == self.config.profile_step:
@@ -528,70 +524,6 @@ class Trainer:
     self.lr_scheduler.step()
     self.model.zero_grad()
     return loss
-
-def load_hf_model(model_config):
-  logger.info(f"Loading HuggingFace model from {model_config.tokenizer_name}")
-  hf_model_class_name = HF_MODEL_CLASS_MAPPING.get(model_config.model_class)
-  if hf_model_class_name is None:
-    print(f"Error: No HuggingFace model mapping found for '{model_config.model_class}'")
-    print(f"Available mappings: {list(HF_MODEL_CLASS_MAPPING.keys())}")
-    sys.exit(1)
-
-# Dynamically import the HuggingFace model class
-  try:
-    transformers_module = importlib.import_module("transformers")
-    hf_model_class = getattr(transformers_module, hf_model_class_name)
-  except (ModuleNotFoundError, AttributeError) as e:
-    print(f"Error importing HuggingFace model class '{hf_model_class_name}': {e}")
-    sys.exit(1)
-
-  hf_model = hf_model_class.from_pretrained(
-    model_config.tokenizer_name,
-    torch_dtype=torch.bfloat16,
-  )
-  return hf_model
-
-def initialize_model_class(model_config, load_from_hf=True):
-  """Import and initialize model_class specified by the config."""
-  module_name, model_class_name = model_config.model_class.rsplit(".", 1)
-  try:
-    module = importlib.import_module(module_name)
-  except ModuleNotFoundError as e:
-    print(f"Error importing relative module: {e}")
-    sys.exit(1)
-  if hasattr(module, model_class_name):
-    model_class = getattr(module, model_class_name)
-  else:
-    print(f"Error: Function '{model_class_name}' not found in module '{module_name}'")
-    sys.exit(1)
-  model = model_class(model_config)
-  # Load pretrained weights from HuggingFace model
-  if load_from_hf:
-    hf_model = load_hf_model(model_config)
-    logger.info("Loaded model from HuggingFace. Now loading state dict.")
-    model.load_state_dict(hf_model.state_dict())
-    del hf_model
-  return model
-
-
-@contextmanager
-def set_default_dtype(dtype):
-  # Get the current default dtype
-  previous_dtype = torch.get_default_dtype()
-  # Set the new default dtype
-  torch.set_default_dtype(dtype)
-  try:
-    yield
-  finally:
-    # Revert to the original default dtype
-    torch.set_default_dtype(previous_dtype)
-
-
-def get_model_dtype(module):
-  dtypes = {param.dtype for param in module.parameters()}
-  if len(dtypes) != 1:
-    raise ValueError(f"Inconsistent dtypes found: {dtypes}")
-  return dtypes.pop()
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="default")
