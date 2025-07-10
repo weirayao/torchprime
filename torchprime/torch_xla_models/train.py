@@ -460,6 +460,11 @@ class Trainer:
         batch = next(train_iterator)
 
       trace_start_time = timer()
+      
+      # Validate batch for SFT mode
+      if self.config.training_mode == "sft":
+        self._validate_sft_batch(batch)
+      
       loss = self.train_step(batch)
       trace_end_time = timer()
 
@@ -555,14 +560,28 @@ class Trainer:
     logger.info("***** train metrics *****\n%s", metrics)
     metrics.save(Path(self.config.output_dir) / "train_metrics.json")
 
+  def _validate_sft_batch(self, batch):
+    """Validate SFT batch before training step."""
+    if "src_mask" not in batch:
+      raise ValueError("src_mask not found in batch for SFT training")
+    
+    src_mask = batch["src_mask"]
+    input_ids = batch["input_ids"]
+    
+    # Validate src_mask shape and content
+    if src_mask.shape != input_ids.shape:
+      raise ValueError(f"src_mask shape {src_mask.shape} doesn't match input_ids shape {input_ids.shape}")
+    
+    # Ensure we have at least some instruction tokens
+    if src_mask.sum() == 0:
+      raise ValueError("src_mask has no True values - no instruction tokens found")
+    
+    return True
+
   @torch_xla.compile(full_graph=True)
   def train_step(self, batch):
     if self.config.training_mode == "sft":
       # For SFT, src_mask should already be in the batch from data collator
-      # Add some debugging to check batch contents
-      if "src_mask" not in batch:
-        raise ValueError("src_mask not found in batch for SFT training")
-      
       _logits, loss = self.model(
         input_ids=batch["input_ids"],
         attention_mask=batch["attention_mask"],

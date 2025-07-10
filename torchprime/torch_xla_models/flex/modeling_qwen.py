@@ -462,28 +462,12 @@ class Qwen3ForCausalLM(nn.Module):
     loss_func = nn.CrossEntropyLoss(reduction="none")
     # input_ids: [bs, seq_len]
     
-    # Determine source mask based on training mode
-    if training_mode == "sft":
-      # For SFT: use provided src_mask where True = instruction/context (should not be masked)
-      # and False = response (should be masked for training)
-      if src_mask is None:
-        raise ValueError("src_mask must be provided for SFT training mode")
-      
-      # Validate src_mask shape and content
-      if src_mask.shape != input_ids.shape:
-        raise ValueError(f"src_mask shape {src_mask.shape} doesn't match input_ids shape {input_ids.shape}")
-      
-      # Ensure we have at least some instruction tokens
-      if src_mask.sum() == 0:
-        raise ValueError("src_mask has no True values - no instruction tokens found")
-      
-      # src_mask: True for instruction/context tokens (should not be masked)
-      # maskable_mask: True for response tokens (should be masked)
+    # Create maskable_mask based on training mode and src_mask
+    # For SFT: src_mask is provided, maskable_mask = ~src_mask
+    # For pretrain: src_mask is None, maskable_mask = all True
+    maskable_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
+    if src_mask is not None:
       maskable_mask = ~src_mask
-    else:  # pretrain mode
-      # For pre-training: all tokens can be masked (src_mask is all False)
-      src_mask = torch.zeros_like(input_ids, dtype=torch.bool, device=input_ids.device)
-      maskable_mask = ~src_mask  # All tokens are maskable
     
     t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
     sigma = t
