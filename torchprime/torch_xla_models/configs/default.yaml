@@ -12,6 +12,8 @@ global_batch_size: 4
 logging_steps: 10
 max_steps: 45000
 
+# Training mode: "pretrain" or "sft"
+training_mode: pretrain
 
 seed: 42
 profile_step: -1

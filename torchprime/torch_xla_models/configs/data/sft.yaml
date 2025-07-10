@@ -1,0 +1,33 @@
+defaults:
+  - _self_  # refers to this config file
+
+block_size: 8192
+cache_dir: /tmp/
+
+# For SFT, we typically use instruction-following datasets
+# Huggingface dataset name, will OVERRIDE gcs_dataset_names if provided
+dataset_name: null
+dataset_config_name: null
+
+# GCS dataset names and mixing weights for SFT datasets
+gcs_dataset_names: null
+weights: null
+
+# SFT-specific configuration
+sft:
+  # Format of the instruction data: "alpaca", "sharegpt", "custom"
+  # This determines how instruction_lengths are extracted from the data
+  format: alpaca
+  
+  # For custom format, specify the field names
+  custom_format:
+    instruction_field: "instruction"
+    response_field: "response"
+    # Optional: field that contains system prompt
+    system_field: "system"
+  
+  # Whether to include system prompts in the instruction part
+  include_system_prompt: true
+  
+  # Separator between instruction and response (if not using structured format)
+  instruction_response_separator: "\n\n### Response:\n" 

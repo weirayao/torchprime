@@ -1,7 +1,7 @@
 defaults:
   - _self_  # refers to this config file
 
-block_size: 4096
+block_size: 8192
 cache_dir: /tmp/
 # Huggingface dataset name, will OVERRIDE gcs_dataset_names if provided
 dataset_name: tulu-3-sft-personas-instruction-following
