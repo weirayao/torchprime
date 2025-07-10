@@ -148,11 +148,24 @@ class SFTDataCollator(DataCollatorMixin):
             padded_input_ids.append(input_ids + [self.tokenizer.pad_token_id] * padding_length)
             padded_attention_mask.append(attention_mask + [0] * padding_length)
         
-        return {
+        # Create src_mask for SFT training
+        src_mask = torch.zeros(len(padded_input_ids), max_length, dtype=torch.bool)
+        for i, length in enumerate(batch_instruction_lengths):
+            src_mask[i, :length] = True
+        
+        result = {
             "input_ids": torch.tensor(padded_input_ids, dtype=torch.long),
             "attention_mask": torch.tensor(padded_attention_mask, dtype=torch.long),
             "instruction_lengths": torch.tensor(batch_instruction_lengths, dtype=torch.long),
+            "src_mask": src_mask,
         }
+        
+        # Debug: print batch info
+        print(f"SFTDataCollator: Created batch with keys: {list(result.keys())}")
+        print(f"SFTDataCollator: src_mask shape: {result['src_mask'].shape}")
+        print(f"SFTDataCollator: instruction_lengths: {result['instruction_lengths']}")
+        
+        return result
 
 
 def create_sft_dataset(
@@ -202,9 +215,13 @@ def create_sft_dataset(
             # Adjust instruction length if it was truncated
             instruction_length = min(instruction_length, len(sequence))
         
+        # Create src_mask for this example
+        src_mask = [True] * instruction_length + [False] * (len(sequence) - instruction_length)
+        
         return {
             "input_ids": sequence,
             "instruction_length": instruction_length,
+            "src_mask": src_mask,
         }
     
     return dataset.map(process_example, remove_columns=dataset.column_names) 

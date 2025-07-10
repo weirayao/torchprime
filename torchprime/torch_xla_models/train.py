@@ -558,20 +558,15 @@ class Trainer:
   @torch_xla.compile(full_graph=True)
   def train_step(self, batch):
     if self.config.training_mode == "sft":
-      # For SFT, we need to create src_mask from instruction_lengths
-      input_ids = batch["input_ids"]
-      instruction_lengths = batch["instruction_lengths"]
+      # For SFT, src_mask should already be in the batch from data collator
+      # Add some debugging to check batch contents
+      if "src_mask" not in batch:
+        raise ValueError("src_mask not found in batch for SFT training")
       
-      # Create src_mask where True = instruction tokens (should not be masked)
-      src_mask = torch.zeros_like(input_ids, dtype=torch.bool)
-      for i, length in enumerate(instruction_lengths):
-        src_mask[i, :length] = True
-      
-      # Call model with SFT parameters
       _logits, loss = self.model(
-        input_ids=input_ids,
+        input_ids=batch["input_ids"],
         attention_mask=batch["attention_mask"],
-        src_mask=src_mask,
+        src_mask=batch["src_mask"],
         training_mode="sft"
       )
     else:
@@ -730,15 +725,22 @@ def main(config: DictConfig):
     
     # Process raw dataset for SFT
     sft_config = config.data.get("sft", {})
-    data = create_sft_dataset(
-      dataset=raw_data,
-      tokenizer=tokenizer,
-      format=sft_config.get("format", "alpaca"),
-      include_system_prompt=sft_config.get("include_system_prompt", True),
-      instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-      custom_format=sft_config.get("custom_format"),
-      block_size=config.data.block_size,
-    )
+    
+    # Check if the dataset already has src_mask (from create_sft_dataset)
+    if hasattr(raw_data, 'features') and 'src_mask' in raw_data.features:
+      # Dataset already processed, use as is
+      data = raw_data
+    else:
+      # Process raw dataset for SFT
+      data = create_sft_dataset(
+        dataset=raw_data,
+        tokenizer=tokenizer,
+        format=sft_config.get("format", "alpaca"),
+        include_system_prompt=sft_config.get("include_system_prompt", True),
+        instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+        custom_format=sft_config.get("custom_format"),
+        block_size=config.data.block_size,
+      )
   else:
     # Pre-training mode (original behavior)
     if config.data.dataset_name:
