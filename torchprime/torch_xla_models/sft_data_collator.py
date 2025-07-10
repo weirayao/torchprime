@@ -147,11 +147,26 @@ class SFTDataCollator(DataCollatorMixin):
             padding_length = max_length - len(input_ids)
             padded_input_ids.append(input_ids + [self.tokenizer.pad_token_id] * padding_length)
             padded_attention_mask.append(attention_mask + [0] * padding_length)
+            
+            # Ensure we have at least one valid token in each sequence
+            if len(input_ids) == 0:
+                padded_input_ids[-1][0] = self.tokenizer.eos_token_id or 1
+                padded_attention_mask[-1][0] = 1
         
         # Create src_mask for SFT training
         src_mask = torch.zeros(len(padded_input_ids), max_length, dtype=torch.bool)
         for i, length in enumerate(batch_instruction_lengths):
-            src_mask[i, :length] = True
+            # Ensure length is valid and within bounds
+            valid_length = min(length, max_length)
+            if valid_length > 0:
+                src_mask[i, :valid_length] = True
+        
+        # Ensure we don't have completely empty sequences
+        # If any sequence has zero instruction length, give it at least 1 token
+        for i, length in enumerate(batch_instruction_lengths):
+            if length == 0:
+                src_mask[i, 0] = True
+                batch_instruction_lengths[i] = 1
         
         result = {
             "input_ids": torch.tensor(padded_input_ids, dtype=torch.long),
@@ -159,11 +174,6 @@ class SFTDataCollator(DataCollatorMixin):
             "instruction_lengths": torch.tensor(batch_instruction_lengths, dtype=torch.long),
             "src_mask": src_mask,
         }
-        
-        # Debug: print batch info
-        print(f"SFTDataCollator: Created batch with keys: {list(result.keys())}")
-        print(f"SFTDataCollator: src_mask shape: {result['src_mask'].shape}")
-        print(f"SFTDataCollator: instruction_lengths: {result['instruction_lengths']}")
         
         return result
 

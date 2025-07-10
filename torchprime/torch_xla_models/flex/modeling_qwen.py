@@ -367,7 +367,12 @@ class Qwen3Model(nn.Module):
     causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # Add batch and head dimension
 
     if attention_mask is not None:
-      causal_mask = causal_mask * attention_mask[:, None, None, :]
+      # Ensure attention_mask has valid dimensions
+      if attention_mask.dim() == 2:
+        # Expand to match causal_mask dimensions
+        attention_mask = attention_mask.unsqueeze(1).unsqueeze(1)
+      
+      causal_mask = causal_mask * attention_mask
 
     hidden_states = inputs_embeds
 
@@ -463,6 +468,15 @@ class Qwen3ForCausalLM(nn.Module):
       # and False = response (should be masked for training)
       if src_mask is None:
         raise ValueError("src_mask must be provided for SFT training mode")
+      
+      # Validate src_mask shape and content
+      if src_mask.shape != input_ids.shape:
+        raise ValueError(f"src_mask shape {src_mask.shape} doesn't match input_ids shape {input_ids.shape}")
+      
+      # Ensure we have at least some instruction tokens
+      if src_mask.sum() == 0:
+        raise ValueError("src_mask has no True values - no instruction tokens found")
+      
       # src_mask: True for instruction/context tokens (should not be masked)
       # maskable_mask: True for response tokens (should be masked)
       maskable_mask = ~src_mask
