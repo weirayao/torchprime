@@ -367,12 +367,7 @@ class Qwen3Model(nn.Module):
     causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # Add batch and head dimension
 
     if attention_mask is not None:
-      # Ensure attention_mask has valid dimensions
-      if attention_mask.dim() == 2:
-        # Expand to match causal_mask dimensions
-        attention_mask = attention_mask.unsqueeze(1).unsqueeze(1)
-      
-      causal_mask = causal_mask * attention_mask
+      causal_mask = causal_mask * attention_mask[:, None, None, :]
 
     hidden_states = inputs_embeds
 
@@ -414,31 +409,7 @@ class Qwen3ForCausalLM(nn.Module):
       if module.padding_idx is not None:
         module.weight.data[module.padding_idx].zero_()
 
-  def create_sft_src_mask(
-    self,
-    input_ids: torch.LongTensor,
-    instruction_lengths: torch.LongTensor,
-  ) -> torch.BoolTensor:
-    """
-    Create source mask for SFT training.
-    
-    Args:
-      input_ids: Input token IDs [batch_size, seq_len]
-      instruction_lengths: Length of instruction/context for each sequence [batch_size]
-    
-    Returns:
-      src_mask: Boolean mask where True = instruction/context tokens (should not be masked),
-                False = response tokens (should be masked for training)
-    """
-    batch_size, seq_len = input_ids.shape
-    src_mask = torch.zeros(batch_size, seq_len, dtype=torch.bool, device=input_ids.device)
-    
-    for i in range(batch_size):
-      # Mark instruction tokens as True (should not be masked)
-      src_mask[i, :instruction_lengths[i]] = True
-      # Response tokens remain False (should be masked)
-    
-    return src_mask
+
 
   @xp.trace_me("Qwen3ForCausalLM")
   def forward(

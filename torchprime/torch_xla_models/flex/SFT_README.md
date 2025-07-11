@@ -25,17 +25,9 @@ def forward(
 ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:
 ```
 
-### 2. New Helper Method
+### 2. Automatic Source Mask Generation
 
-Added `create_sft_src_mask` method to easily create source masks for SFT:
-
-```python
-def create_sft_src_mask(
-    self,
-    input_ids: torch.LongTensor,
-    instruction_lengths: torch.LongTensor,
-) -> torch.BoolTensor:
-```
+The SFT training pipeline automatically generates source masks from instruction lengths during data preprocessing. No manual mask creation is required.
 
 ## Usage Examples
 
@@ -50,17 +42,14 @@ logits, loss = model(
 )
 ```
 
-### SFT Mode with Helper Method
+### SFT Mode (Automatic Masking)
 
 ```python
-# SFT: only response tokens are masked
-instruction_lengths = torch.tensor([4, 6])  # Length of instruction for each sequence
-src_mask = model.create_sft_src_mask(input_ids, instruction_lengths)
-
+# SFT: src_mask is automatically generated from instruction lengths
 logits, loss = model(
     input_ids=input_ids,
     attention_mask=attention_mask,
-    src_mask=src_mask,
+    src_mask=batch["src_mask"],  # Automatically provided by data collator
     training_mode="sft"
 )
 ```
@@ -125,18 +114,19 @@ logits, loss = model(input_ids=input_ids, attention_mask=attention_mask)
 
 ### For New SFT Code
 
-Add the required parameters:
+The SFT training pipeline automatically handles src_mask generation. Simply use the training script:
+
+```bash
+./recipes/train_qwen3_1.7b_sft.sh
+```
+
+Or manually specify SFT parameters:
 
 ```python
-# Before (would raise error)
-logits, loss = model(input_ids=input_ids, attention_mask=attention_mask, training_mode="sft")
-
-# After (correct)
-src_mask = model.create_sft_src_mask(input_ids, instruction_lengths)
 logits, loss = model(
     input_ids=input_ids, 
     attention_mask=attention_mask, 
-    src_mask=src_mask,
+    src_mask=batch["src_mask"],  # Provided by data collator
     training_mode="sft"
 )
 ``` 

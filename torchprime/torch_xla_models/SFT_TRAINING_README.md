@@ -4,7 +4,7 @@
 
 The training infrastructure supports both pre-training and SFT modes:
 - **Pre-training**: All tokens can be masked
-- **SFT**: Only response tokens are masked, instruction tokens remain unmasked
+- **SFT**: Only response tokens are masked, instruction tokens remain unmasked (automatic masking)
 
 ## Quick Start
 
