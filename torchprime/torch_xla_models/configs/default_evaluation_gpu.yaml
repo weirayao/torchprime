@@ -1,0 +1,25 @@
+defaults:
+  - _self_ # refers to this config file
+  - model: flex-qwen-1b
+
+eval_dataset_name_or_path: "loubnabnl/humaneval_infilling"
+eval_results_save_path: "evaluations"
+eval_batch_size: 8
+seed: 42
+
+generation:
+  diffusion_steps: 10
+  mask_token_id: 151669
+  max_tokens: 256
+  max_new_tokens: null
+  temperature: 1.0
+  top_p: 0.95
+  top_k: 32
+  eps: 1e-3
+  alg: "original"
+  alg_temp: 0.2
+  output_history: false
+  return_dict_in_generate: false
+
+checkpoint_dir: "flex_processed_v1_qw1_7b_512_split_datafix"
+resume_from_checkpoint: 16000

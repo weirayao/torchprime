@@ -40,6 +40,7 @@ class GenerationConfig:
     top_p: float | None = None
     top_k: int | None = None
 
+
 def prepare_inputs(
     tokenizer: PreTrainedTokenizerBase,
     messages: str | list[dict],
@@ -109,14 +110,17 @@ def prepare_inputs(
             ],
             dim=1,
         )
-    # Right pad input_ids to nearest multiple of 256
-    seq_len = input_ids.shape[1]
-    pad_len = (256 - seq_len % 256) % 256  # Calculate padding needed
-    if pad_len > 0:
-        pad_ids = torch.full(
-            (input_ids.shape[0], pad_len), tokenizer.pad_token_id, dtype=input_ids.dtype
-        )
-        input_ids = torch.cat([input_ids, pad_ids], dim=1)
+    if IS_TPU:
+        # Right pad input_ids to nearest multiple of 256
+        seq_len = input_ids.shape[1]
+        pad_len = (256 - seq_len % 256) % 256  # Calculate padding needed
+        if pad_len > 0:
+            pad_ids = torch.full(
+                (input_ids.shape[0], pad_len),
+                tokenizer.pad_token_id,
+                dtype=input_ids.dtype,
+            )
+            input_ids = torch.cat([input_ids, pad_ids], dim=1)
 
     input_ids = input_ids.squeeze(0)
     src_mask = torch.where(input_ids == tokenizer.mask_token_id, 0, 1)
@@ -146,6 +150,7 @@ def top_p_logits(logits, p: float = 0.9):
     logits = logits.masked_fill(mask, torch.finfo(logits.dtype).min)
     return logits
 
+
 # def top_p_logits_efficient(logits, p: float = 0.9):
 #     sorted_logits, sorted_indices = torch.sort(logits, descending=True)
 #     cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
@@ -159,12 +164,13 @@ def top_p_logits(logits, p: float = 0.9):
 #     # Find max tokens to keep across batch and truncate
 #     sorted_indices_to_keep = ~sorted_indices_to_remove
 #     max_tokens_to_keep = sorted_indices_to_keep.sum(dim=-1).max().item()
-    
+
 #     # Truncate and apply mask
 #     truncated_logits = sorted_logits[:, :max_tokens_to_keep]
 #     truncated_mask = sorted_indices_to_keep[:, :max_tokens_to_keep]
 #     logits = truncated_logits.masked_fill(~truncated_mask, torch.finfo(logits.dtype).min)
 #     return logits
+
 
 def top_k_logits(logits, top_k: int):
     top_k = min(top_k, logits.size(-1))  # Safety check
@@ -172,6 +178,7 @@ def top_k_logits(logits, top_k: int):
     indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
     logits = logits.masked_fill(indices_to_remove, torch.finfo(logits.dtype).min)
     return logits
+
 
 # def top_k_logits_efficient(logits, top_k: int):
 #     top_k = min(top_k, logits.size(-1))  # Safety check
@@ -191,11 +198,13 @@ def sample_(
     # Timing instrumentation
     logits_processing_time = topp_time = topk_time = 0.0
     total_start_time = time.time()
-    logger.info(f"sampling tokens with logits shape: {logits.shape}; temperature: {temperature}; top_p: {top_p}; top_k: {top_k}; neg_entropy: {neg_entropy}")
-    
+    logger.info(
+        f"sampling tokens with logits shape: {logits.shape}; temperature: {temperature}; top_p: {top_p}; top_k: {top_k}; neg_entropy: {neg_entropy}"
+    )
+
     # Scale by temperature
     logits_processing_start_time = time.time()
-    
+
     if temperature > 0:
         logits = logits / temperature
     if top_p is not None and top_p < 1:
@@ -209,7 +218,7 @@ def sample_(
     probs = torch.softmax(logits, dim=-1)
 
     logits_processing_time = time.time() - logits_processing_start_time
-    
+
     # Sample from the distribution efficiently
     sampling_start_time = time.time()
     if temperature > 0:
@@ -220,9 +229,9 @@ def sample_(
             confidence, x0 = torch.max(probs, dim=-1)
     else:
         confidence, x0 = torch.max(probs, dim=-1)
-    
+
     sampling_time = time.time() - sampling_start_time
-    
+
     entropy_time = 0.0
     if neg_entropy:
         entropy_start_time = time.time()
@@ -230,12 +239,16 @@ def sample_(
         log_probs = torch.log(probs + epsilon)
         confidence = torch.sum(probs * log_probs, dim=-1)
         entropy_time = time.time() - entropy_start_time
-    
+
     total_time = time.time() - total_start_time
-    
+
     # Log timing results with detailed breakdown
-    logger.info(f"sample_ timing - total: {total_time:.4f}s, logits_processing: {logits_processing_time:.4f}s, sampling: {sampling_time:.4f}s, entropy: {entropy_time:.4f}s")
-    logger.info(f"sample_ detailed logits processing timing - total: {logits_processing_time:.4f}s, topk: {topk_time:.4f}s, topp: {topp_time:.4f}s")
+    logger.info(
+        f"sample_ timing - total: {total_time:.4f}s, logits_processing: {logits_processing_time:.4f}s, sampling: {sampling_time:.4f}s, entropy: {entropy_time:.4f}s"
+    )
+    logger.info(
+        f"sample_ detailed logits processing timing - total: {logits_processing_time:.4f}s, topk: {topk_time:.4f}s, topp: {topp_time:.4f}s"
+    )
 
     return confidence, x0
 
@@ -253,11 +266,11 @@ def generate_(
 
     # Timing setup
     timing_results = {
-        'total_time': 0,
-        'model_forward_time': 0,
-        'sampling_time': 0,
-        'tensor_ops_time': 0,
-        'step_times': []
+        "total_time": 0,
+        "model_forward_time": 0,
+        "sampling_time": 0,
+        "tensor_ops_time": 0,
+        "step_times": [],
     }
     total_start_time = time.time()
 
@@ -275,43 +288,49 @@ def generate_(
 
     histories = [] if (return_dict_in_generate and output_history) else None
 
-    x = input_ids.to(device)
+    if IS_TPU:
+        x = input_ids.to(device)
+    elif not input_ids.device.type.startswith("cuda"):
+        x = input_ids.to(device)
+    else:
+        x = input_ids
     timesteps = torch.linspace(1, eps, steps + 1, device=device)
-    
+
     for i in range(steps):
         step_start_time = time.time()
         tensor_ops_time = 0.0  # Initialize tensor ops time for this step
         sampling_time = 0.0  # Initialize sampling time for this step
 
         logger.info(f"Diffusion step {i} of {steps}...")
-        
+
         tensor_ops_start = time.time()
         mask_index = x == mask_token_id
         tensor_ops_time += time.time() - tensor_ops_start
-        
+
         # Model forward pass timing
         forward_start_time = time.time()
         if output_hidden_states:
-            logits, _, hidden_states_dict = model(x, attention_mask=None, output_hidden_states=output_hidden_states)
+            logits, _, hidden_states_dict = model(
+                x, attention_mask=None, output_hidden_states=output_hidden_states
+            )
         else:
-            logits, _ = model(x, attention_mask=None)  # NOTE: flex model doesn't use attention mask
+            logits, _ = model(
+                x, attention_mask=None
+            )  # NOTE: flex model doesn't use attention mask
         forward_time = time.time() - forward_start_time
-        timing_results['model_forward_time'] += forward_time
-        
-        
+        timing_results["model_forward_time"] += forward_time
+
         tensor_ops_start = time.time()
         # Optimize logits shifting - avoid cat operation when possible
         shifted_logits = torch.empty_like(logits, device=device)
         shifted_logits[:, 0:1] = logits[:, 0:1]  # Copy first token
-        shifted_logits[:, 1:] = logits[:, :-1]   # Shift remaining tokens
-        
+        shifted_logits[:, 1:] = logits[:, :-1]  # Shift remaining tokens
+
         mask_logits = shifted_logits[mask_index]
         t = timesteps[i]
         s = timesteps[i + 1]
         tensor_ops_time += time.time() - tensor_ops_start
 
-        
-        
         if alg == "original":
             logger.info(f"original sampling algorithm...")
             tensor_ops_start = time.time()
@@ -319,7 +338,7 @@ def generate_(
             x0 = torch.full_like(x[mask_index], mask_token_id, device=device)
             transfer_index_t_s = torch.rand(*x0.shape, device=device) < p_transfer
             tensor_ops_time += time.time() - tensor_ops_start
-            
+
             sampling_start_time = time.time()
             if transfer_index_t_s.any():
                 _, x0[transfer_index_t_s] = sample_(
@@ -329,12 +348,12 @@ def generate_(
                     top_k=top_k,
                 )
             sampling_time = time.time() - sampling_start_time
-            timing_results['sampling_time'] += sampling_time
+            timing_results["sampling_time"] += sampling_time
 
             tensor_ops_start = time.time()
             x[mask_index] = x0.clone()
             tensor_ops_time += time.time() - tensor_ops_start
-            
+
         elif alg == "neg_entropy":
             logger.info(f"negative entropy sampling...")
             sampling_start_time = time.time()
@@ -342,8 +361,8 @@ def generate_(
                 mask_logits, temperature, top_p=top_p, top_k=top_k, neg_entropy=True
             )
             sampling_time = time.time() - sampling_start_time
-            timing_results['sampling_time'] += sampling_time
-            
+            timing_results["sampling_time"] += sampling_time
+
             tensor_ops_start = time.time()
             num_mask_token = mask_index.sum() / mask_index.shape[0]
             number_transfer_tokens = (
@@ -367,8 +386,7 @@ def generate_(
                         full_confidence, num_samples=number_transfer_tokens
                     )
                 x_ = (
-                    torch.zeros_like(x, device=device, dtype=torch.long)
-                    + mask_token_id
+                    torch.zeros_like(x, device=device, dtype=torch.long) + mask_token_id
                 )
                 x_[mask_index] = x0.clone()
                 row_indices = (
@@ -385,23 +403,33 @@ def generate_(
             histories.append(x.detach().cpu().clone())
 
         step_time = time.time() - step_start_time
-        timing_results['step_times'].append(step_time)
-        timing_results['tensor_ops_time'] += tensor_ops_time
-        logger.info(f"Step {i} time: {step_time:.4f}s (forward: {forward_time:.4f}s, sampling: {sampling_time:.4f}s, tensor_ops: {tensor_ops_time:.4f}s)")
+        timing_results["step_times"].append(step_time)
+        timing_results["tensor_ops_time"] += tensor_ops_time
+        logger.info(
+            f"Step {i} time: {step_time:.4f}s (forward: {forward_time:.4f}s, sampling: {sampling_time:.4f}s, tensor_ops: {tensor_ops_time:.4f}s)"
+        )
 
     # Single sync at the end instead of every step
     if IS_TPU:
         torch_xla.sync()
 
-    timISg_results['total_time'] = time.time() - total_start_time
-    
+    timing_results["total_time"] = time.time() - total_start_time
+
     # Print profiling results
     logger.info("=== PROFILING RESULTS ===")
     logger.info(f"Total time: {timing_results['total_time']:.4f}s")
-    logger.info(f"Model forward time: {timing_results['model_forward_time']:.4f}s ({timing_results['model_forward_time']/timing_results['total_time']*100:.1f}%)")
-    logger.info(f"Sampling time: {timing_results['sampling_time']:.4f}s ({timing_results['sampling_time']/timing_results['total_time']*100:.1f}%)")
-    logger.info(f"Tensor ops time: {timing_results['tensor_ops_time']:.4f}s ({timing_results['tensor_ops_time']/timing_results['total_time']*100:.1f}%)")
-    logger.info(f"Average step time: {sum(timing_results['step_times'])/len(timing_results['step_times']):.4f}s")
+    logger.info(
+        f"Model forward time: {timing_results['model_forward_time']:.4f}s ({timing_results['model_forward_time']/timing_results['total_time']*100:.1f}%)"
+    )
+    logger.info(
+        f"Sampling time: {timing_results['sampling_time']:.4f}s ({timing_results['sampling_time']/timing_results['total_time']*100:.1f}%)"
+    )
+    logger.info(
+        f"Tensor ops time: {timing_results['tensor_ops_time']:.4f}s ({timing_results['tensor_ops_time']/timing_results['total_time']*100:.1f}%)"
+    )
+    logger.info(
+        f"Average step time: {sum(timing_results['step_times'])/len(timing_results['step_times']):.4f}s"
+    )
     logger.info(f"Step times: {[f'{t:.4f}' for t in timing_results['step_times']]}")
     logger.info("========================")
 
