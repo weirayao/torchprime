@@ -412,7 +412,7 @@ class Trainer:
       logger.info(f"    Resuming from step: {self.start_step}")
     if is_main_process():
       wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
-      wandb.init(project="text-diffusion-model-research-qwen3-1b-pretrain-diffucoder-data-run", name=self.config.model.model_class)
+      wandb.init(project="text-diffusion-model-research-qwen3-1b-pretrain-diffucoder-from-scratch", name=self.config.model.model_class)
       # Log the configuration to wandb
       wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
       # Set wandb step to start_step if resuming from checkpoint
@@ -647,7 +647,7 @@ def main(config: DictConfig):
   # NOTE: read HF model from GCS bucket if resume_from_checkpoint is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
   load_from_checkpoint = hasattr(config, 'resume_from_checkpoint')
   with set_default_dtype(torch.bfloat16), torch_xla.device():
-    model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
+    model = initialize_model_class(config.model, load_from_hf=config.load_hf_weights)
 
   n_params = sum([p.numel() for p in model.parameters()])
   if is_main_process():
