@@ -646,6 +646,9 @@ def main(config: DictConfig):
   # sharding annotations to the weights later, and run the constructor on the XLA device.
   # NOTE: read HF model from GCS bucket if resume_from_checkpoint is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
   load_from_checkpoint = hasattr(config, 'resume_from_checkpoint')
+  if config.load_hf_weights:
+    logger.info("We will be loading HF weights from HuggingFace")
+    logger.info("="*100)
   with set_default_dtype(torch.bfloat16), torch_xla.device():
     model = initialize_model_class(config.model, load_from_hf=config.load_hf_weights)
 
