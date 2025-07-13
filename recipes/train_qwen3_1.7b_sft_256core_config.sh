@@ -3,10 +3,10 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     model=flex-qwen-1b \
     training_mode=sft \
     global_batch_size=256 \
-    max_steps=40 \
-    checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/test-flex-qwen3-1b-sft-256core-config \
-    resume_from_checkpoint=20 \
-    save_steps=20 \
+    max_steps=10000 \
+    checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b_512_split \
+    resume_from_checkpoint=15000 \
+    save_steps=500 \
     logging_steps=1 \
     ici_mesh.fsdp=256 \
     ici_mesh.tensor=1 \
