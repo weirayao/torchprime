@@ -248,27 +248,6 @@ def main(config: DictConfig):
         completions.extend(parsed_generation_text)
         raw_text.extend(raw_generation_text)
 
-
-    # if is_main_process() and generation_results:
-    #     # Get number of devices
-    #     num_devices = xr.process_count()
-    #     print(f"Eval dataset length: {eval_dataset_len}; Number of generation results: {len(generation_results)}; num_devices: {num_devices}; global_batch_size: {config.global_batch_size}")
-
-    #     # Extract results from worker 0 only (first 4 elements of each batch of 8)
-    #     worker_0_results = []
-    #     worker_0_raw_results = []
-    #     batch_size_per_device = config.global_batch_size // num_devices
-    #     for i in range(0, len(generation_results), config.global_batch_size):
-    #         # Take the first batch_size_per_device elements from each batch
-    #         worker_0_results.extend(
-    #             generation_results[i:i + batch_size_per_device]
-    #         )
-    #         worker_0_raw_results.extend(
-    #             raw_generation_results[i:i + batch_size_per_device]
-    #         )
-    #     generation_results = worker_0_results
-    #     raw_generation_results = worker_0_raw_results
-    # Truncate to original dataset length to remove dummy batches
     completions = completions[:eval_dataset_len]
     raw_text = raw_text[:eval_dataset_len]
     if generation_config.return_dict_in_generate:
