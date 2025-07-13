@@ -152,6 +152,37 @@ def make_huggingface_dataset(
   return data
 
 
+def make_huggingface_sft_dataset(
+  name: str,
+  config_name: str,
+  split: str,
+  cache_dir: str,
+) -> Dataset:
+  """
+  Load a HuggingFace dataset for SFT training without tokenization.
+  The SFT data collator will handle tokenization later.
+  
+  Args:
+    name: Dataset name
+    config_name: Dataset config name
+    split: Dataset split
+    cache_dir: Cache directory
+    
+  Returns:
+    Raw dataset ready for SFT processing
+  """
+  # Downloading and loading a dataset from the hub.
+  data = load_dataset(
+    name,
+    config_name,
+    cache_dir=cache_dir,
+  )
+  assert isinstance(data, DatasetDict)
+  data = data[split]
+  
+  return data
+
+
 def make_mixed_huggingface_datasets(
   hf_datasets: list[dict],
   split: str,
