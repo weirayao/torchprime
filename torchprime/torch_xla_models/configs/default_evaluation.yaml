@@ -7,6 +7,9 @@ defaults:
   - _self_ # refers to this config file
   - model: flex-qwen-1b # refers to model/llama-3-8b.yaml
 
+eval_dataset_name_or_path: "loubnabnl/humaneval_infilling"
+eval_results_save_path: "evaluations"
+
 generation:
   diffusion_steps: 10
   mask_token_id: 151669
@@ -21,14 +24,12 @@ generation:
   output_history: false
   return_dict_in_generate: false
 
-
 checkpoint_dir: checkpoints/
 resume_from_checkpoint: null
 save_steps: 10
-
+global_batch_size: 4
 
 # Only used for initializing the trainer
-global_batch_size: 4
 logging_steps: 10
 max_steps: 15
 seed: 42
@@ -38,7 +39,6 @@ profile_step: 2
 profile_dir: profile
 profile_duration: 100000
 
-# This might be overwritten when using tp run to launch the run using XPK
 output_dir: outputs
 
 optimizer:
