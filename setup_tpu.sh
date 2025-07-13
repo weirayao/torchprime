@@ -1,5 +1,5 @@
 #! /bin/bash
-TPU_VM_NAME="<your_tpu_vm_name>" # Change with your TPU VM name
+TPU_VM_NAME="sfr-cqin-v4-512" # Change with your TPU VM name
 TPU_ZONE="us-central2-b"
 
 # Install python with venv

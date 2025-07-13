@@ -43,7 +43,7 @@ from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
 from transformers import PreTrainedTokenizerBase
 
-from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset
+from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset, make_mixed_huggingface_datasets
 from torchprime.torch_xla_models.sft_data_collator import SFTDataCollator, create_sft_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
@@ -708,7 +708,17 @@ def main(config: DictConfig):
 
   if config.training_mode == "sft":
     # SFT mode: load instruction-response dataset
-    if config.data.dataset_name:
+    if hasattr(config.data, 'hf_datasets') and config.data.hf_datasets:
+      # Load mixed HuggingFace datasets
+      raw_data = retry(
+        lambda: make_mixed_huggingface_datasets(
+          hf_datasets=config.data.hf_datasets,
+          split="train",
+          cache_dir=config.data.cache_dir,
+          seed=config.seed,
+        )
+      )
+    elif config.data.dataset_name:
       # Load raw dataset from HuggingFace
       dataset_name = config.data.dataset_name
       gcs_prefix = "gs://sfr-text-diffusion-model-research/"

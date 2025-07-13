@@ -59,6 +59,28 @@ python torchprime/torch_xla_models/train.py \
     model.attention_kernel=default
 ```
 
+### OpenCoder Dataset Example
+```bash
+python torchprime/torch_xla_models/train.py \
+    data=sft \
+    model=flex-qwen-1b \
+    training_mode=sft \
+    data.dataset_name=OpenCoder-LLM/opc-sft-stage1 \
+    data.dataset_config_name=filtered_infinity_instruct \
+    data.sft.format=alpaca \
+    model.attention_kernel=default
+```
+
+### Mixed OpenCoder Datasets Example
+```bash
+python torchprime/torch_xla_models/train.py \
+    data=sft_mixed \
+    model=flex-qwen-1b \
+    training_mode=sft \
+    data.sft.format=alpaca \
+    model.attention_kernel=default
+```
+
 ### SFT Data Config
 ```yaml
 data:
@@ -70,6 +92,27 @@ data:
       instruction_field: "instruction"
       response_field: "response"
       system_field: "system"
+```
+
+### Mixed SFT Data Config
+```yaml
+data:
+  # Multiple HuggingFace datasets with weights
+  hf_datasets:
+    - name: OpenCoder-LLM/opc-sft-stage1
+      config: filtered_infinity_instruct
+      weight: 0.4
+    - name: OpenCoder-LLM/opc-sft-stage1
+      config: largescale_diverse_instruct
+      weight: 0.3
+    - name: OpenCoder-LLM/opc-sft-stage1
+      config: realuser_instruct
+      weight: 0.3
+  
+  sft:
+    format: alpaca
+    include_system_prompt: true
+    instruction_response_separator: "\n\n### Response:\n"
 ```
 
 ## Training Process
@@ -105,4 +148,5 @@ print(dataset["train"][0])
 - **Alpaca**: `tatsu-lab/alpaca`
 - **ShareGPT**: `anon8231489123/ShareGPT_Vicuna_unfiltered`
 - **Dolly**: `databricks/databricks-dolly-15k`
-- **CodeAlpaca**: `sahil2801/CodeAlpaca-20k` 
+- **CodeAlpaca**: `sahil2801/CodeAlpaca-20k`
+- **OpenCoder**: `OpenCoder-LLM/opc-sft-stage1` (configs: `filtered_infinity_instruct`, `largescale_diverse_instruct`, `realuser_instruct`) 

@@ -150,3 +150,60 @@ def make_huggingface_dataset(
   # Taken from run_clm.py. It's important to group texts evenly to avoid recompilations in TPU.
   data = data.map(lambda examples: group_texts(examples, block_size), batched=True)
   return data
+
+
+def make_mixed_huggingface_datasets(
+  hf_datasets: list[dict],
+  split: str,
+  cache_dir: str,
+  seed: int = 42,
+) -> Dataset:
+  """
+  Load and mix multiple HuggingFace datasets for SFT training.
+  
+  Args:
+    hf_datasets: List of dicts with 'name', 'config', and 'weight' keys
+    split: Dataset split to load
+    cache_dir: Cache directory for datasets
+    seed: Random seed for shuffling
+    
+  Returns:
+    Mixed dataset with all datasets concatenated
+  """
+  if not hf_datasets:
+    raise ValueError("No datasets provided in hf_datasets")
+  
+  print(f"Loading {len(hf_datasets)} datasets for mixing...")
+  
+  datasets_list = []
+  for i, dataset_config in enumerate(hf_datasets):
+    name = dataset_config["name"]
+    config = dataset_config.get("config")
+    weight = dataset_config.get("weight", 1.0)
+    
+    print(f"Loading dataset {i+1}/{len(hf_datasets)}: {name} (config: {config}, weight: {weight})")
+    
+    # Load the dataset
+    data = load_dataset(
+      name,
+      config,
+      cache_dir=cache_dir,
+    )
+    assert isinstance(data, DatasetDict)
+    data = data[split]
+    
+    # Shuffle the dataset
+    data = data.shuffle(seed=seed + i, buffer_size=10000)
+    
+    datasets_list.append(data)
+  
+  # Concatenate all datasets
+  print("Concatenating datasets...")
+  mixed_dataset = concatenate_datasets(datasets_list)
+  
+  # Final shuffle of the mixed dataset
+  print("Final shuffle of mixed dataset...")
+  mixed_dataset = mixed_dataset.shuffle(seed=seed, buffer_size=10000)
+  
+  print(f"Mixed dataset created with {len(mixed_dataset)} total examples")
+  return mixed_dataset

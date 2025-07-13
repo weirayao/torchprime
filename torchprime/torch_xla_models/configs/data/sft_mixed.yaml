@@ -4,10 +4,22 @@ defaults:
 block_size: 8192
 cache_dir: /tmp/
 
-# For SFT, we typically use instruction-following datasets
-# Huggingface dataset name, will OVERRIDE gcs_dataset_names if provided
-dataset_name: OpenCoder-LLM/opc-sft-stage1
-dataset_config_name: filtered_infinity_instruct
+# For mixed SFT, we can specify multiple datasets with weights
+# Multiple HuggingFace datasets with configs and weights
+hf_datasets:
+  - name: OpenCoder-LLM/opc-sft-stage1
+    config: filtered_infinity_instruct
+    weight: 0.3
+  - name: OpenCoder-LLM/opc-sft-stage1
+    config: largescale_diverse_instruct
+    weight: 0.5
+  - name: OpenCoder-LLM/opc-sft-stage1
+    config: realuser_instruct
+    weight: 0.2
+
+# Legacy single dataset support (will be ignored if hf_datasets is provided)
+dataset_name: null
+dataset_config_name: null
 
 # GCS dataset names and mixing weights for SFT datasets
 gcs_dataset_names: null
