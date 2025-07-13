@@ -51,18 +51,17 @@ DATASET_TYPES = {
 
 def make_gcs_pretokenized_dataset(
   path: str,
-  data_files: Optional[list[str]] = None,
   seed: int = 42,
-) -> tuple[IterableDataset, list[str]]:
+) -> IterableDataset:
   """
   Search for all parquet files in the given path and load them into a dataset.
   Shuffle the files first.
   """
   random.seed(seed)
-  if data_files is None:
-    data_files = glob(f"{path}/**/*.parquet", recursive=True)
-    random.shuffle(data_files)  # Fix: shuffle in-place, don't assign result
-
+  data_files = glob(f"{path}/**/*.parquet", recursive=True)
+  print(f"dataset path: {data_files}")
+  random.shuffle(data_files)
+  
   data = load_dataset(
     "parquet",
     data_files=data_files,
@@ -70,7 +69,7 @@ def make_gcs_pretokenized_dataset(
     split="train",
   )
   data = data.shuffle(seed=seed, buffer_size=32768)
-  return data, data_files
+  return data
 
 def make_gcs_dataset(
   names: list[str],

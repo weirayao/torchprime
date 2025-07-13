@@ -97,15 +97,15 @@ class AttentionModule(nn.Module):
       case "flash_attention":
         # Integrated with PyTorch/XLA Pallas Flash Attention:
         default_block_sizes = {
-          "block_q": 2048,
+          "block_q": 1024,
           "block_k_major": 512,
           "block_k": 512,
           "block_b": 2,
-          "block_q_major_dkv": 2048,
+          "block_q_major_dkv": 1024,
           "block_k_major_dkv": 512,
-          "block_q_dkv": 2048,
+          "block_q_dkv": 1024,
           "block_k_dkv": 512,
-          "block_q_dq": 2048,
+          "block_q_dq": 1024,
           "block_k_dq": 256,
           "block_k_major_dq": 512,
         }
@@ -121,7 +121,8 @@ class AttentionModule(nn.Module):
           causal=False, # weiran: causal=False for bi-directional attention
           partition_spec=self.partition_spec,
         )
-      case _:
+      case "default" | None:
+        # Default attention implementation (no flash attention)
         attn_weights = torch.matmul(
           query_states, key_states.transpose(2, 3)
         ) / math.sqrt(head_dim)
@@ -141,6 +142,8 @@ class AttentionModule(nn.Module):
           attn_weights, p=self.config.attention_dropout, training=self.training
         )
         attn_output = torch.matmul(attn_weights, value_states)
+      case _:
+        raise NotImplementedError(f"Attention kernel {self.config.attention_kernel} is not supported yet")
 
     if attn_output.size() != (bsz, num_heads, q_len, head_dim):
       raise ValueError(

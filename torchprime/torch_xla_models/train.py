@@ -45,6 +45,7 @@ from transformers.utils import check_min_version
 from transformers import PreTrainedTokenizerBase
 
 from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset
+from torchprime.torch_xla_models.sft_data_collator import SFTDataCollator, create_sft_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
 from torchprime.metrics.mfu import compute_mfu
@@ -263,10 +264,25 @@ class Trainer:
     else:
       # Each process will load the global batch, then discard the unneeded parts.
       batch_size = self.global_batch_size
+    
+    # Choose appropriate data collator based on training mode
+    if self.config.training_mode == "sft":
+      # For SFT, we need to use the SFT data collator
+      sft_config = self.config.data.get("sft", {})
+      collate_fn = SFTDataCollator(
+        tokenizer=self.tokenizer,
+        format=sft_config.get("format", "alpaca"),
+        include_system_prompt=sft_config.get("include_system_prompt", True),
+        instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+        custom_format=sft_config.get("custom_format"),
+      )
+    else:
+      # For pre-training, use default data collator
+      collate_fn = default_data_collator
+    
     dataloader = DataLoader(
       self.train_dataset,
-      # Data collator will default to DataCollatorWithPadding, so we change it.
-      collate_fn=default_data_collator,
+      collate_fn=collate_fn,
       batch_size=batch_size,
       sampler=sampler,
       drop_last=True,
@@ -391,7 +407,7 @@ class Trainer:
       logger.info(f"    Resuming from step: {self.start_step}")
     if is_main_process():
       wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
-      wandb.init(project="text-diffusion-model-research", name=self.config.model.model_class)
+      wandb.init(project="text-diffusion-model-research-qwen3-1b-pretrain-diffucoder-data-run", name=self.config.model.model_class)
       # Log the configuration to wandb
       wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
       # Set wandb step to start_step if resuming from checkpoint
@@ -423,6 +439,11 @@ class Trainer:
         batch = next(train_iterator)
 
       trace_start_time = timer()
+      
+      # Validate batch for SFT mode
+      if self.config.training_mode == "sft":
+        self._validate_sft_batch(batch)
+      
       loss = self.train_step(batch)
       trace_end_time = timer()
 
@@ -516,9 +537,38 @@ class Trainer:
     logger.info("***** train metrics *****\n%s", metrics)
     metrics.save(Path(self.config.output_dir) / "train_metrics.json")
 
+  def _validate_sft_batch(self, batch):
+    """Validate SFT batch before training step."""
+    if "src_mask" not in batch:
+      raise ValueError("src_mask not found in batch for SFT training")
+    
+    src_mask = batch["src_mask"]
+    input_ids = batch["input_ids"]
+    
+    # Validate src_mask shape and content
+    if src_mask.shape != input_ids.shape:
+      raise ValueError(f"src_mask shape {src_mask.shape} doesn't match input_ids shape {input_ids.shape}")
+    
+    # Ensure we have at least some instruction tokens
+    if src_mask.sum() == 0:
+      raise ValueError("src_mask has no True values - no instruction tokens found")
+    
+    return True
+
   @torch_xla.compile(full_graph=True)
   def train_step(self, batch):
-    _logits, loss = self.model(**batch)
+    if self.config.training_mode == "sft":
+      # For SFT, src_mask should already be in the batch from data collator
+      _logits, loss = self.model(
+        input_ids=batch["input_ids"],
+        attention_mask=batch["attention_mask"],
+        src_mask=batch["src_mask"],
+        training_mode="sft"
+      )
+    else:
+      # Pre-training mode (original behavior)
+      _logits, loss = self.model(**batch)
+    
     loss.backward()
     self.optimizer.step()
     self.lr_scheduler.step()
@@ -569,56 +619,103 @@ def main(config: DictConfig):
     else:
       logger.info(f"Training from scratch on pretrained model - Total size={n_params} params")
 
-  if config.data.dataset_name:
-    # Downloading and loading a dataset from the hub.
-    dataset_name = config.data.dataset_name
-    gcs_prefix = "gs://sfr-text-diffusion-model-research/"
-    if dataset_name.startswith(gcs_prefix):
-      dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
-      checkpoint_dir = config.checkpoint_dir.split(gcs_prefix)[1]
-      data_files_path = os.path.join(MOUNTED_GCS_DIR, checkpoint_dir, "data_files.json")
-      if load_from_checkpoint:
-        # Load data_files from checkpoint_dir on GCS bucket if resuming from checkpoint
-        with open(data_files_path, "r") as f:
-          data_files = json.load(f)
-        data, data_files = retry(
-          lambda: make_gcs_pretokenized_dataset(dataset_name, data_files=data_files, seed=config.seed)
-        )
-      else:
-        data, data_files = retry(
+  if config.training_mode == "sft":
+    # SFT mode: load instruction-response dataset
+    if config.data.dataset_name:
+      # Load raw dataset from HuggingFace
+      dataset_name = config.data.dataset_name
+      gcs_prefix = "gs://sfr-text-diffusion-model-research/"
+      if dataset_name.startswith(gcs_prefix):
+        dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
+        raw_data = retry(
           lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
         )
-        if is_main_process():
-          # Save data_files to checkpoint_dir on GCS bucket if start from scratch
-          with open(data_files_path, "w") as f:
-            json.dump(data_files, f, indent=4)
-          logger.info(f"Saved data_files list to {data_files_path}")
-    else:
-      data = retry(
-        lambda: make_huggingface_dataset(
-          name=config.data.dataset_name,
-          config_name=config.data.dataset_config_name,
-          split="train",
-          cache_dir=config.data.cache_dir,
+      else:
+        raw_data = retry(
+          lambda: make_huggingface_dataset(
+            name=config.data.dataset_name,
+            config_name=config.data.dataset_config_name,
+            split="train",
+            cache_dir=config.data.cache_dir,
+            tokenizer=tokenizer,
+            block_size=config.data.block_size,
+          )
+        )
+    elif config.data.gcs_dataset_names:
+      # Load raw dataset from GCS
+      raw_data = retry(
+        lambda: make_gcs_dataset(
+          names=config.data.gcs_dataset_names,
+          weights=config.data.weights,
           tokenizer=tokenizer,
+          seed=config.seed,
           block_size=config.data.block_size,
         )
       )
-  elif config.data.gcs_dataset_names:
-    # Downloading and loading a dataset from GCS bucket.
-    data = retry(
-      lambda: make_gcs_dataset(
-        names=config.data.gcs_dataset_names,
-        weights=config.data.weights,
+    else:
+      raise ValueError("No dataset provided for SFT")
+    
+    # Process raw dataset for SFT
+    sft_config = config.data.get("sft", {})
+    
+    # Check if the dataset already has src_mask (from create_sft_dataset)
+    if hasattr(raw_data, 'features') and 'src_mask' in raw_data.features:
+      # Dataset already processed, use as is
+      data = raw_data
+    else:
+      # Process raw dataset for SFT
+      data = create_sft_dataset(
+        dataset=raw_data,
         tokenizer=tokenizer,
-        seed=config.seed,
+        format=sft_config.get("format", "alpaca"),
+        include_system_prompt=sft_config.get("include_system_prompt", True),
+        instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+        custom_format=sft_config.get("custom_format"),
         block_size=config.data.block_size,
       )
-    )
-  
   else:
-    raise ValueError("No dataset provided")
+    # Pre-training mode (original behavior)
+    if config.data.dataset_name:
+      # Downloading and loading a dataset from the hub.
+      dataset_name = config.data.dataset_name
+      gcs_prefix = "gs://sfr-text-diffusion-model-research/"
+      if dataset_name.startswith(gcs_prefix):
+        dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
+        data = retry(
+          lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
+        )
+      else:
+        data = retry(
+          lambda: make_huggingface_dataset(
+            name=config.data.dataset_name,
+            config_name=config.data.dataset_config_name,
+            split="train",
+            cache_dir=config.data.cache_dir,
+            tokenizer=tokenizer,
+            block_size=config.data.block_size,
+          )
+        )
+    elif config.data.gcs_dataset_names:
+      # Downloading and loading a dataset from GCS bucket.
+      data = retry(
+        lambda: make_gcs_dataset(
+          names=config.data.gcs_dataset_names,
+          weights=config.data.weights,
+          tokenizer=tokenizer,
+          seed=config.seed,
+          block_size=config.data.block_size,
+        )
+      )
+    else:
+      raise ValueError("No dataset provided")
   # data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # not working as expected, will only load a subset of the dataset
+  if isinstance(data, IterableDataset):
+    try:
+      logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
+      data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+      logger.info(f"Dataset split successful for device {xr.process_index()}")
+    except Exception as e:
+      logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
   trainer = Trainer(
     model=model,
     tokenizer=tokenizer,

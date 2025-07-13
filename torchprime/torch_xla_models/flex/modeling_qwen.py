@@ -446,6 +446,8 @@ class Qwen3ForCausalLM(nn.Module):
     input_ids: torch.LongTensor,
     labels: torch.LongTensor | None = None,
     attention_mask: torch.FloatTensor | None = None,
+    src_mask: torch.BoolTensor | None = None,
+    training_mode: str = "pretrain",
     output_hidden_states: bool = False,
   ) -> tuple[torch.FloatTensor, torch.FloatTensor | None] | tuple[torch.FloatTensor, torch.FloatTensor | None, dict[str, torch.Tensor]]:
     if not self.training:
@@ -468,13 +470,19 @@ class Qwen3ForCausalLM(nn.Module):
     mask_token_id = self.mask_token_id
     loss_func = nn.CrossEntropyLoss(reduction="none")
     # input_ids: [bs, seq_len]
-    # source mask is all-false, so all tokens in the sequence can be masked for pretraining
-    src_mask = torch.zeros_like(input_ids, dtype=torch.bool, device=input_ids.device)
+    
+    # Create maskable_mask based on training mode and src_mask
+    # For SFT: src_mask is provided, maskable_mask = ~src_mask
+    # For pretrain: src_mask is None, maskable_mask = all True
+    maskable_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
+    if src_mask is not None:
+      maskable_mask = ~src_mask
+    
     t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
     sigma = t
     dsigma = torch.reciprocal(sigma)
     noisy_input_ids = transition(
-      input_ids, sigma[:, None], maskable_mask=~src_mask, mask_token_id=mask_token_id
+      input_ids, sigma[:, None], maskable_mask=maskable_mask, mask_token_id=mask_token_id
     )
     loss_mask = noisy_input_ids == mask_token_id
 

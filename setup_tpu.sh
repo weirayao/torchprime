@@ -31,6 +31,18 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     pip install -e ".[dev]"; \
     pip install gcsfs wandb python-dotenv'
 
+# Install wandb
+gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
+    --zone=$TPU_ZONE \
+    --project=salesforce-research-internal \
+    --tunnel-through-iap \
+    --worker=all \
+    --command='
+    cd torchprime; \
+    source venv/bin/activate; \
+    pip install wandb; \
+    wandb login $WANDB_API_KEY --relogin --host=https://salesforceairesearch.wandb.io'
+
 # Install gcsfuse and mount GCS bucket to TPU VM
 gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --zone=$TPU_ZONE \
