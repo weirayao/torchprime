@@ -61,8 +61,6 @@ from torchprime.torch_xla_models.topology import (
   is_1d_sharding,
 )
 from torchprime.torch_xla_models.model_utils import (
-  convert_to_safetensors_on_cpu,
-  convert_to_safetensors_on_cpu_,
   initialize_model_class,
   set_default_dtype,
   load_hf_model,
@@ -378,15 +376,6 @@ class Trainer:
       else:
         classes_to_checkpoint.add(cls)
     return tuple(classes_to_checkpoint)
-
-  def _consolidate_checkpoint(self, step: int):
-    save_dir = Path(self.ckpt_dir) / f"{step}"
-    logger.info(f"Consolidating checkpoint to {save_dir}")
-    logger.info("Moving model to CPU...")
-    convert_to_safetensors_on_cpu_(self.model, save_dir)
-    self.tokenizer.save_pretrained(save_dir)
-    logger.info(f"Consolidated checkpoint saved to {save_dir}")
-
 
   def train_loop(self):
     if self.config.resume_from_checkpoint is not None:
