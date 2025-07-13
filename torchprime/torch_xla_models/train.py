@@ -159,8 +159,15 @@ class Trainer:
 
     # Initialize checkpoint manager
     # Use GCS for checkpoints with proper path handling
-    self.ckpt_dir = config.checkpoint_dir
+    self.ckpt_dir = self.config.checkpoint_dir # NOTE: config.checkpoint_dir always used for loading checkpoints
     self.ckpt_mgr = CheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
+    if self.config.training_mode == "sft":
+      if self.config.sft_save_dir is None:
+        raise ValueError("SFT mode requires a non-null sft_save_dir")
+      # NOTE: config.sft_save_dir only used for saving checkpoints, for resuming from sft checkpoints, we can use the save value as config.checkpoint_dir
+      self.save_ckpt_mgr = CheckpointManager(path=self.config.sft_save_dir, save_interval=self.config.save_steps)
+    else:
+      self.save_ckpt_mgr = self.ckpt_mgr
     self.start_step = 0
 
     # Execute all initialization work queued so far before starting training.
@@ -476,7 +483,7 @@ class Trainer:
           "step": step,
         }
         try:
-          self.ckpt_mgr.save(step, state_dict, force=True)
+          self.save_ckpt_mgr.save(step, state_dict, force=True)
           logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
