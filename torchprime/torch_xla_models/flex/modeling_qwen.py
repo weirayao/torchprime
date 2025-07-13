@@ -421,7 +421,7 @@ class Qwen3ForCausalLM(nn.Module):
       model_output = self.model(input_ids=input_ids, attention_mask=attention_mask)   
       hidden_states = model_output
       logits = self.lm_head(hidden_states) # NOTE: we shift logits in generate()
-      # logits = logits.float()[..., :-1, :].contiguous() # NOTE: we don't need the logits of the last token
+      # logits = logits.float()[..., :-1, :].contiguous() # NOTE: we shift logits in inference_utils at inference time
       return logits, None
 
     # weiran: diffullama

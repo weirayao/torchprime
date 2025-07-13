@@ -216,14 +216,18 @@ def main(config: DictConfig):
     # Create directory if it doesn't exist
     save_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # dataset = dataset.add_column("completion", completions)
-    # dataset = dataset.add_column("raw_completion", raw_text)
-    # dataset.to_json(save_path.with_suffix(".jsonl"))
-    # if generation_config.return_dict_in_generate:
-    #     with open(save_path, "w") as f:
-    #         json.dump(generations, f, indent=4)
     with open(save_path, "w") as f:
         json.dump(raw_text, f, indent=4)
+    try:
+        dataset = dataset.add_column("completion", completions)
+        dataset = dataset.add_column("raw_completion", raw_text)
+        dataset.to_json(save_path.with_suffix(".jsonl"))
+        if generation_config.return_dict_in_generate:
+            with open(save_path, "w") as f:
+                json.dump(generations, f, indent=4)
+    except Exception as e:
+        logger.error(f"Failed to save dataset: {e}")
+
 
 if __name__ == "__main__":
     main()

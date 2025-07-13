@@ -223,9 +223,6 @@ def main(config: DictConfig):
     completions = []
     raw_text = []
     for _, batch in tqdm(enumerate(iterator)):
-        # generation = generate(
-        #     trainer.model, tokenizer, batch, generation_config, verbose=True
-        # )
         generation = generate_(trainer.model, batch["input_ids"], generation_config)
         if generation_config.return_dict_in_generate:
             completion = generation["completion"].detach().cpu().tolist()

@@ -1,7 +1,7 @@
 import os
 import random
 from itertools import chain
-from typing import Optional, Sequence
+from typing import Sequence
 from glob import glob
 from dotenv import load_dotenv
 load_dotenv()
