@@ -26,7 +26,8 @@ profile_duration: 100000
 output_dir: outputs
 
 # Checkpoint directory
-checkpoint_dir: checkpoints/
+checkpoint_dir: checkpoints/ # Always use this field for loading checkpoints
+sft_save_dir: null # When training_mode is 'sft', use this field for saving checkpoints
 resume_from_checkpoint: null
 save_steps: 1000
 
