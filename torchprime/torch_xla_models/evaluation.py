@@ -20,7 +20,7 @@ from torchprime.torch_xla_models.train import (
     set_default_dtype,
     Trainer,
 )
-from torchprime.torch_xla_models.inference_utils import GenerationConfig, GenerationConfig_, generate, generate_
+from torchprime.torch_xla_models.inference_utils import GenerationConfig_, generate_
 
 # Initialize XLA runtime for TPU
 xr.use_spmd()

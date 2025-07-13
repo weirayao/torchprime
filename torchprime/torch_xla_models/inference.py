@@ -14,8 +14,6 @@ from transformers.tokenization_utils_base import BatchEncoding
 from datasets.distributed import split_dataset_by_node
 from torchprime.torch_xla_models.train import Trainer
 from torchprime.torch_xla_models.inference_utils import (
-    GenerationConfig,
-    generate,
     GenerationConfig_,
     generate_,
     prepare_inputs,
@@ -138,7 +136,7 @@ if __name__ ==<|mask|><|mask|>__':
     #     trainer.model, tokenizer, batch, generation_config, verbose=True
     # )
     generation = generate_(
-        trainer.model, batch["input_ids"], generation_config, output_hidden_states=True
+        trainer.model, batch["input_ids"], generation_config
     )
     xm.wait_device_ops()
     if generation_config.return_dict_in_generate:

@@ -31,16 +31,6 @@ class GenerationConfig_:
     return_dict_in_generate: bool = False
 
 
-@dataclass
-class GenerationConfig:
-    diffusion_steps: int = 10
-    max_tokens: int = 256
-    max_new_tokens: int | None = None
-    temperature: float = 1.0
-    top_p: float | None = None
-    top_k: int | None = None
-
-
 def prepare_inputs(
     tokenizer: PreTrainedTokenizerBase,
     messages: str | list[dict],
@@ -151,40 +141,12 @@ def top_p_logits(logits, p: float = 0.9):
     return logits
 
 
-# def top_p_logits_efficient(logits, p: float = 0.9):
-#     sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-#     cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-
-#     # Remove tokens with cumulative probability above the threshold
-#     sorted_indices_to_remove = cumulative_probs > p
-#     # Shift the indices to the right to keep the first token above the threshold
-#     sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-#     sorted_indices_to_remove[..., 0] = 0
-
-#     # Find max tokens to keep across batch and truncate
-#     sorted_indices_to_keep = ~sorted_indices_to_remove
-#     max_tokens_to_keep = sorted_indices_to_keep.sum(dim=-1).max().item()
-
-#     # Truncate and apply mask
-#     truncated_logits = sorted_logits[:, :max_tokens_to_keep]
-#     truncated_mask = sorted_indices_to_keep[:, :max_tokens_to_keep]
-#     logits = truncated_logits.masked_fill(~truncated_mask, torch.finfo(logits.dtype).min)
-#     return logits
-
-
 def top_k_logits(logits, top_k: int):
     top_k = min(top_k, logits.size(-1))  # Safety check
     # Remove all tokens with a probability less than the last token of the top-k
     indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
     logits = logits.masked_fill(indices_to_remove, torch.finfo(logits.dtype).min)
     return logits
-
-
-# def top_k_logits_efficient(logits, top_k: int):
-#     top_k = min(top_k, logits.size(-1))  # Safety check
-#     # Get top-k logits directly, maintaining 2D shape
-#     top_k_logits, _ = torch.topk(logits, top_k, dim=-1)
-#     return top_k_logits
 
 
 @torch.no_grad()
@@ -258,7 +220,6 @@ def generate_(
     model: PreTrainedModel,
     input_ids: torch.LongTensor,
     generation_config: GenerationConfig_,
-    output_hidden_states: bool = False,
 ) -> dict[str, torch.Tensor | list[torch.Tensor]] | torch.Tensor:
     logger.info(f"Generating with config: {asdict(generation_config)}")
     model.eval()
@@ -309,14 +270,9 @@ def generate_(
 
         # Model forward pass timing
         forward_start_time = time.time()
-        if output_hidden_states:
-            logits, _, hidden_states_dict = model(
-                x, attention_mask=None, output_hidden_states=output_hidden_states
-            )
-        else:
-            logits, _ = model(
-                x, attention_mask=None
-            )  # NOTE: flex model doesn't use attention mask
+        logits, _ = model(
+            x, attention_mask=None
+        )  # NOTE: flex model doesn't use attention mask
         forward_time = time.time() - forward_start_time
         timing_results["model_forward_time"] += forward_time
 
@@ -441,139 +397,3 @@ def generate_(
         }
     else:
         return x
-
-
-@torch.no_grad()
-def sample(
-    model: PreTrainedModel,
-    xt: torch.Tensor,
-    x: torch.Tensor,
-    attention_mask: torch.Tensor,
-    maskable_mask: torch.Tensor,
-    temperature: float,
-    top_p: float | None = None,
-    top_k: int | None = None,
-    neg_entropy: bool = False,
-) -> torch.Tensor:
-    """
-    Sample tokens from the model output with top-p filtering and handle shifting.
-
-    Args:
-        model: The model to use for inference
-        xt: Current input tokens (with masks)
-        x: Original input tokens (for shifting)
-        attention_mask: Attention mask for the model
-        maskable_mask: Mask indicating which positions can be modified
-        temperature: Temperature for sampling
-        top_p: Top-p threshold for filtering
-        top_k: Top-k threshold for filtering
-
-    Returns:
-        Updated x0 tensor with sampled tokens
-    """
-    print(xt.shape, attention_mask.shape, maskable_mask.shape)
-    # Get model predictions
-    logits, _ = model(xt, attention_mask=attention_mask)
-    if temperature > 0:
-        logits = logits / (temperature + 1e-5)
-    if top_p is not None and top_p < 1:
-        logits = top_p_logits(logits, top_p)
-    if top_k is not None:
-        logits = top_k_logits(logits, top_k)
-
-    # Convert to probability distribution and sample
-    probs = torch.softmax(logits, dim=-1)
-    if temperature > 0:
-        try:
-            x0 = dists.Categorical(probs=probs).sample()
-            confidence = torch.gather(probs, -1, x0.unsqueeze(-1)).squeeze(-1)
-        except:
-            confidence, x0 = probs.max(dim=-1)
-    else:
-        confidence, x0 = probs.max(dim=-1)
-
-    if neg_entropy:
-        epsilon = 1e-10
-        log_probs = torch.log(probs + epsilon)
-        confidence = torch.sum(probs * log_probs, dim=-1)
-
-    logger.info(f"x0: {x0}")
-
-    # NOTE: we already cut one token in forward pass, so we don't need to cut x0 here
-    # Shift tokens and scores right by 1 position
-    x0 = torch.cat([x[:, :1], x0], dim=1)
-    # x0_scores = torch.cat([x0_scores[:, 0:1], x0_scores[:, :-1]], dim=1)
-
-    # replace output of non-[MASK] positions with xt
-    # x0: predicted tokens
-    # x0[maskable_mask]: predicted tokens in masked positions
-    x0 = xt.masked_scatter(maskable_mask, x0[maskable_mask])
-    return confidence, x0
-
-
-@torch.no_grad()
-def generate(
-    model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerBase,
-    inputs: dict[str, torch.Tensor],
-    args: GenerationConfig,
-    verbose: bool = False,
-) -> torch.Tensor:
-    # Set model to evaluation mode
-    model.eval()
-    logger.info(f"Start sampling with params: {asdict(args)}")
-    temperature = args.temperature
-    top_p = args.top_p
-    top_k = args.top_k
-    steps = args.diffusion_steps
-    device = torch_xla.device() if IS_TPU else torch.device("cuda")
-
-    x = inputs["input_ids"].to(device)
-    if "src_mask" not in inputs:
-        src_mask = (x != tokenizer.mask_token_id).to(device)
-    else:
-        src_mask = inputs["src_mask"].bool().to(device)
-
-    attention_mask = torch.ones_like(x).to(
-        device
-    )  # NOTE: this is actually not used in the model
-    mask_positions = ~src_mask
-
-    # first forward, all position except src is [M]
-    # xt: torch.Tensor = x.masked_fill(maskable_mask, tokenizer.mask_token_id)
-    xt = x.clone()  # NOTE: we already did the masking in prepare_inputs
-    if verbose:
-        logger.info(f"t={steps}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
-    confidence, x0 = sample(
-        model, xt, x, attention_mask, mask_positions, temperature, top_p, top_k
-    )
-    if verbose:
-        logger.info(f"t={steps}(out): {tokenizer.batch_decode(x0.detach().cpu())}")
-
-    for t in range(steps - 1, 0, -1):
-        # select rate% tokens to be still [MASK]
-        p_to_x0 = 1 / (t + 1)
-        if verbose:
-            logger.info(f"p_to_x0: {p_to_x0}")
-
-        masked_to_x0 = mask_positions & (
-            torch.rand_like(x0, dtype=torch.float) < p_to_x0
-        )  # a token is previously [MASK] has probability p_to_x0 to be replaced by x0
-        if verbose:
-            logger.info(f"masked_to_x0: {masked_to_x0}")
-            logger.info(f"xt before: {xt}")
-        xt.masked_scatter_(masked_to_x0, x0[masked_to_x0])
-        if verbose:
-            logger.info(f"xt after: {xt}")
-        mask_positions = mask_positions.masked_fill(masked_to_x0, False)
-        if verbose:
-            logger.info(f"maskable_mask: {mask_positions}")
-            logger.info(f"t={t}(in): {tokenizer.batch_decode(xt.detach().cpu())}")
-
-        confidence, x0 = sample(
-            model, xt, x, attention_mask, mask_positions, temperature, top_p, top_k
-        )
-        if verbose:
-            logger.info(f"t={t}(out): {tokenizer.batch_decode(x0.detach().cpu())}")
-
-    return x0

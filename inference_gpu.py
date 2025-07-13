@@ -25,8 +25,6 @@ from transformers.tokenization_utils_base import BatchEncoding
 from datasets.distributed import split_dataset_by_node
 
 from torchprime.torch_xla_models.inference_utils import (
-    GenerationConfig,
-    generate,
     GenerationConfig_,
     generate_,
     prepare_inputs,
@@ -133,7 +131,6 @@ if __name__ == "__main__":
         model=model,
         input_ids=input_ids,
         generation_config=generation_config,
-        output_hidden_states=True,
     )
     generation_time = time() - generation_time
     logger.info(f"Generation time: {generation_time:.2f} seconds")
