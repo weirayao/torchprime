@@ -6,13 +6,13 @@ cache_dir: /tmp/
 
 # For SFT, we typically use instruction-following datasets
 # Huggingface dataset name, will OVERRIDE gcs_dataset_names if provided
-# dataset_name: tatsu-lab/alpaca
-# dataset_config_name: null
+dataset_name: tatsu-lab/alpaca
+dataset_config_name: null
 
 # Alternative SFT datasets (uncomment to use):
 # OpenCoder datasets:
-dataset_name: OpenCoder-LLM/opc-sft-stage1
-dataset_config_name: filtered_infinity_instruct  # or largescale_diverse_instruct, realuser_instruct
+# dataset_name: OpenCoder-LLM/opc-sft-stage1
+# dataset_config_name: filtered_infinity_instruct  # or largescale_diverse_instruct, realuser_instruct
 
 # Other popular SFT datasets:
 # dataset_name: databricks/databricks-dolly-15k
