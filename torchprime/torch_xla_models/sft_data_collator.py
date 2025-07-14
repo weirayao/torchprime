@@ -6,7 +6,7 @@ import torch
 from typing import Dict, List, Optional, Union
 from transformers import PreTrainedTokenizerBase
 from transformers.data.data_collator import DataCollatorMixin
-from datasets import Dataset
+from datasets import Dataset, IterableDataset
 
 
 class SFTDataCollator(DataCollatorMixin):
@@ -282,8 +282,6 @@ def create_sft_iterable_dataset(
     Returns:
         IterableDataset ready for SFT training with proper distribution
     """
-    from datasets import IterableDataset
-    
     def process_example(example):
         collator = SFTDataCollator(
             tokenizer=tokenizer,
