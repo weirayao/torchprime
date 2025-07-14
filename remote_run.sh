@@ -1,4 +1,4 @@
-TPU_VM_NAME="sfr-cqin-v4-16"
+TPU_VM_NAME="sfr-cqin-v4-512"
 TPU_ZONE="us-central2-b"
 BRANCH="cqin/dev"
 # RECIPE="recipes/train_qwen3_1.7b.sh"
