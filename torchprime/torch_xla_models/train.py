@@ -44,7 +44,7 @@ from transformers.utils import check_min_version
 from transformers import PreTrainedTokenizerBase
 
 from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset, make_mixed_huggingface_datasets, make_huggingface_sft_dataset
-from torchprime.torch_xla_models.sft_data_collator import SFTDataCollator, create_sft_dataset
+from torchprime.torch_xla_models.sft_data_collator import SFTDataCollator, create_sft_dataset, create_sft_iterable_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
 from torchprime.metrics.mfu import compute_mfu
@@ -765,8 +765,8 @@ def main(config: DictConfig):
       # Dataset already processed, use as is
       data = raw_data
     else:
-      # Process raw dataset for SFT
-      data = create_sft_dataset(
+      # Process raw dataset for SFT - use IterableDataset for proper distribution
+      data = create_sft_iterable_dataset(
         dataset=raw_data,
         tokenizer=tokenizer,
         format=sft_config.get("format", "alpaca"),
@@ -774,6 +774,7 @@ def main(config: DictConfig):
         instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
         custom_format=sft_config.get("custom_format"),
         block_size=config.data.block_size,
+        seed=config.seed,
       )
   else:
     # Pre-training mode (original behavior)

@@ -252,4 +252,73 @@ def create_sft_dataset(
             "src_mask": src_mask,
         }
     
-    return dataset.map(process_example, remove_columns=dataset.column_names) 
+    return dataset.map(process_example, remove_columns=dataset.column_names)
+
+
+def create_sft_iterable_dataset(
+    dataset: Dataset,
+    tokenizer: PreTrainedTokenizerBase,
+    format: str = "alpaca",
+    include_system_prompt: bool = True,
+    instruction_response_separator: str = "\n\n### Response:\n",
+    custom_format: Optional[Dict[str, str]] = None,
+    block_size: int = 8192,
+    seed: int = 42,
+) -> IterableDataset:
+    """
+    Create an SFT IterableDataset from a raw dataset.
+    This enables proper data distribution across multiple processes.
+    
+    Args:
+        dataset: Raw dataset with instruction-response pairs
+        tokenizer: Tokenizer for processing text
+        format: Format of the data ("alpaca", "sharegpt", "custom")
+        include_system_prompt: Whether to include system prompts
+        instruction_response_separator: Separator between instruction and response
+        custom_format: Custom format configuration
+        block_size: Maximum sequence length
+        seed: Random seed for shuffling
+        
+    Returns:
+        IterableDataset ready for SFT training with proper distribution
+    """
+    from datasets import IterableDataset
+    
+    def process_example(example):
+        collator = SFTDataCollator(
+            tokenizer=tokenizer,
+            format=format,
+            include_system_prompt=include_system_prompt,
+            instruction_response_separator=instruction_response_separator,
+            custom_format=custom_format,
+        )
+        
+        # Extract instruction and response
+        instruction, response = collator._extract_instruction_response(example)
+        
+        # Create sequence
+        sequence, instruction_length = collator._create_instruction_response_sequence(
+            instruction, response
+        )
+        
+        # Truncate if too long
+        if len(sequence) > block_size:
+            sequence = sequence[:block_size]
+            # Adjust instruction length if it was truncated
+            instruction_length = min(instruction_length, len(sequence))
+        
+        # Create src_mask for this example
+        src_mask = [True] * instruction_length + [False] * (len(sequence) - instruction_length)
+        
+        return {
+            "input_ids": sequence,
+            "instruction_length": instruction_length,
+            "src_mask": src_mask,
+        }
+    
+    # Convert to IterableDataset and add shuffling
+    iterable_dataset = dataset.to_iterable_dataset()
+    iterable_dataset = iterable_dataset.map(process_example, remove_columns=dataset.column_names)
+    iterable_dataset = iterable_dataset.shuffle(seed=seed, buffer_size=10000)
+    
+    return iterable_dataset 
