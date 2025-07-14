@@ -6,7 +6,8 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     max_steps=40 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/test-flex-qwen3-1b-sft-gcs \
     resume_from_checkpoint=20 \
-    save_steps=20 \
+    sft_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/test-flex-qwen3-1b-sft-gcs_sft \
+    save_steps=100 \
     logging_steps=1 \
     ici_mesh.fsdp=8 \
     ici_mesh.tensor=1 \
