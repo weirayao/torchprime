@@ -424,15 +424,22 @@ class Trainer:
     start_step = self.start_step
 
     # Skip batches if we're resuming from a checkpoint
+    resumed_steps = 0
     if start_step > 0:
       logger.info(f"Skipping {start_step} batches to resume from checkpoint...")
       for _ in range(start_step):
         try:
           next(train_iterator)
+          resumed_steps += 1
+          if resumed_steps % 1000 == 0:
+            logger.info(f"Skipped {resumed_steps} batches")
         except StopIteration:
           epoch += 1
           train_iterator = iter(train_loader)
           next(train_iterator)
+          resumed_steps += 1
+          if resumed_steps % 1000 == 0:
+            logger.info(f"Skipped {resumed_steps} batches")
 
     for step in range(start_step, max_step):
       try:
