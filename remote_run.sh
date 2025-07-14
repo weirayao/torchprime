@@ -3,7 +3,7 @@ TPU_ZONE="us-central2-b"
 BRANCH="cqin/dev"
 # RECIPE="recipes/train_qwen3_1.7b.sh"
 # RECIPE="recipes/train_qwen3_1.7b_sft_256core_config.sh"
-RECIPE="recipes/train_qwen3_1.7b_sft_256core.sh"
+RECIPE="recipes/train_qwen3_1.7b_sft_256core_debug.sh"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do

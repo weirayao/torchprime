@@ -175,6 +175,24 @@ class SFTDataCollator(DataCollatorMixin):
             "src_mask": src_mask,
         }
         
+        # Add validation and debugging information
+        if len(features) > 0:
+            # Log some debugging info for the first batch
+            total_instruction_tokens = src_mask.sum().item()
+            total_tokens = src_mask.numel()
+            instruction_ratio = total_instruction_tokens / total_tokens if total_tokens > 0 else 0
+            
+            # Only log on first call to avoid spam
+            if not hasattr(self, '_logged_debug_info'):
+                print(f"SFT DataCollator Debug: batch_size={len(features)}, "
+                      f"max_length={max_length}, instruction_tokens={total_instruction_tokens}, "
+                      f"total_tokens={total_tokens}, instruction_ratio={instruction_ratio:.3f}")
+                self._logged_debug_info = True
+            
+            # Validate that we have instruction tokens
+            if total_instruction_tokens == 0:
+                raise ValueError("No instruction tokens found in batch - all src_mask values are False!")
+        
         return result
 
 

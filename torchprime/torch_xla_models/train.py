@@ -818,12 +818,46 @@ def main(config: DictConfig):
       logger.info(f"Dataset split successful for device {xr.process_index()}")
     except Exception as e:
       logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
+  elif isinstance(data, Dataset):
+    # For regular Dataset, we need to split it properly for distributed training
+    # This is especially important for SFT where data duplication can cause issues
+    try:
+      logger.info(f"Applying split_dataset_by_node for regular Dataset on device {xr.process_index()}/{xr.process_count()}")
+      data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+      logger.info(f"Dataset split successful for device {xr.process_index()}")
+    except Exception as e:
+      logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
+      # Fallback: manually split the dataset
+      if hasattr(data, '__len__'):
+        total_size = len(data)
+        per_device_size = total_size // xr.process_count()
+        start_idx = xr.process_index() * per_device_size
+        end_idx = start_idx + per_device_size if xr.process_index() < xr.process_count() - 1 else total_size
+        data = data.select(range(start_idx, end_idx))
+        logger.info(f"Manual dataset split: device {xr.process_index()} gets indices {start_idx}-{end_idx} (size: {len(data)})")
   trainer = Trainer(
     model=model,
     tokenizer=tokenizer,
     config=config,
     train_dataset=data,
   )
+
+  # Log dataset information for debugging
+  if is_main_process():
+    logger.info(f"Dataset type: {type(data)}")
+    if hasattr(data, '__len__'):
+      logger.info(f"Dataset size: {len(data)}")
+    if hasattr(data, 'features'):
+      logger.info(f"Dataset features: {list(data.features.keys())}")
+    # Log a few examples to verify data format
+    try:
+      sample = data[0] if hasattr(data, '__getitem__') else next(iter(data))
+      logger.info(f"Sample data keys: {list(sample.keys())}")
+      if 'src_mask' in sample:
+        logger.info(f"Sample src_mask shape: {sample['src_mask'].shape if hasattr(sample['src_mask'], 'shape') else len(sample['src_mask'])}")
+        logger.info(f"Sample src_mask sum: {sum(sample['src_mask']) if hasattr(sample['src_mask'], '__iter__') else sample['src_mask']}")
+    except Exception as e:
+      logger.warning(f"Could not log sample data: {e}")
 
   # Synchronize all processes before starting training
   xm.wait_device_ops()  # Wait for all XLA operations to complete
