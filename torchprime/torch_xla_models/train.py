@@ -732,10 +732,8 @@ class Trainer:
           model_state_dict[cleaned_key] = value
         else:
           model_state_dict[key] = value
-      # Note: consolidate_checkpoint is currently disabled and needs hf_model to be implemented
-      logger.warning("consolidate_checkpoint is disabled - hf_model not available")
-      # self.hf_model.load_state_dict(model_state_dict)
-      # self.hf_model.save_pretrained(consolidated_ckpt_dir)
+      self.hf_model.load_state_dict(model_state_dict)
+      self.hf_model.save_pretrained(consolidated_ckpt_dir)
       self.tokenizer.save_pretrained(consolidated_ckpt_dir)
       logger.info(f"Consolidated checkpoint saved to {consolidated_ckpt_dir}")
     xm.wait_device_ops()
