@@ -5,6 +5,7 @@ Adapted from https://github.com/huggingface/transformers/blob/main/src/transform
 from typing import Callable, Optional, Tuple, Union
 
 import torch
+import torch.nn.functional as F
 from omegaconf import DictConfig
 from torch import nn
 from transformers.activations import ACT2FN
@@ -424,24 +425,37 @@ class Qwen3ForCausalLM(nn.Module):
       # logits = logits.float()[..., :-1, :].contiguous() # NOTE: we shift logits in inference_utils at inference time
       return logits, None
 
+    if training_mode == "sft" and src_mask is None:
+      raise ValueError("SFT mode requires a non-null src_mask")
+
     # weiran: diffullama
     sampling_eps = 1e-3
     mask_token_id = self.mask_token_id
     loss_func = nn.CrossEntropyLoss(reduction="none")
-    # input_ids: [bs, seq_len]
+    batch_size, seq_len = input_ids.shape     # input_ids: [batch_size, seq_len]
     
     # Create maskable_mask based on training mode and src_mask
     # For SFT: src_mask is provided, maskable_mask = ~src_mask
     # For pretrain: src_mask is None, maskable_mask = all True
-    maskable_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
-    if src_mask is not None:
+    if src_mask is not None: # SFT
       maskable_mask = ~src_mask
-    
-    t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
-    sigma = t
-    dsigma = torch.reciprocal(sigma)
-    noisy_input_ids = transition(
-      input_ids, sigma[:, None], maskable_mask=maskable_mask, mask_token_id=mask_token_id
+    else: # pretrain or midtrain
+      maskable_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
+      prefix_probability = getattr(self.config, "prefix_probability", 0)
+      truncate_probability = getattr(self.config, "truncate_probability", 0)
+      # Generate random decisions for all batch items
+      apply_prefix = torch.rand(batch_size, device=input_ids.device) < prefix_probability
+      # Only apply truncation to rows that are NOT prefixed
+      apply_truncate = torch.rand(batch_size, device=input_ids.device) < truncate_probability
+      apply_truncate = apply_truncate & ~apply_prefix
+      
+      if prefix_probability > 0:
+        maskable_mask = prefix_input_ids(input_ids, maskable_mask, apply_prefix)
+      if truncate_probability > 0:
+        input_ids = truncate_input_ids(input_ids, apply_truncate, self.config.pad_token_id)
+
+    dsigma, noisy_input_ids = sample_noisy_input_ids(
+      input_ids, maskable_mask, mask_token_id, sampling_eps, self.config
     )
     loss_mask = noisy_input_ids == mask_token_id
 
@@ -469,10 +483,159 @@ class Qwen3ForCausalLM(nn.Module):
     loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
     return logits, loss
 
-def transition(x_0, sigma, maskable_mask, mask_token_id):
+
+def transition(
+  x_0, sigma, maskable_mask, mask_token_id, mask_block_size: int | torch.Tensor = 1
+):
+
+  if mask_block_size == 1:
+    # Original behavior
     # weiran: diffullama
-    # move_chance = 1 - (-sigma).exp()
-    move_chance = sigma
-    move_indices = (torch.rand(*x_0.shape, device=x_0.device) < move_chance) & maskable_mask
+    move_indices = (torch.rand(*x_0.shape, device=x_0.device) < sigma) & maskable_mask
     x_t = torch.where(move_indices, mask_token_id, x_0)
     return x_t
+
+  # Handle per-row mask_block_size
+  batch_size, seq_len = x_0.shape
+  if isinstance(mask_block_size, torch.Tensor):
+    # Find rows with block_size=1 for token-level masking
+    token_level_mask = (mask_block_size == 1)
+
+    # Apply token-level masking for block_size=1 rows
+    if token_level_mask.any():
+      move_indices = (torch.rand(batch_size, seq_len, device=x_0.device) < sigma) & maskable_mask
+      # Only apply to rows that need token-level masking
+      token_mask_expanded = token_level_mask.unsqueeze(1).expand(-1, seq_len)
+      x_t = torch.where(move_indices & token_mask_expanded, mask_token_id, x_0)
+    else:
+      x_t = x_0
+
+    # Apply block masking for other rows
+    block_level_mask = ~token_level_mask
+    if block_level_mask.any():
+      # Process each unique block size
+      for block_size in mask_block_size.unique():
+        if block_size == 1:
+          continue
+            
+        rows_with_this_size = (mask_block_size == block_size) & block_level_mask
+        if not rows_with_this_size.any():
+          continue
+        
+        # Extract rows that need this block size
+        row_indices = rows_with_this_size.nonzero(as_tuple=False).squeeze(1)
+        x_0_subset = x_0[row_indices]
+        sigma_subset = sigma[row_indices]
+        maskable_mask_subset = maskable_mask[row_indices]
+        
+        # Apply block masking to this subset
+        x_t_subset = block_masking(x_0_subset, sigma_subset, maskable_mask_subset, mask_token_id, block_size.item())
+        
+        # Update the result
+        x_t[row_indices] = x_t_subset
+    
+    return x_t
+
+  # Block masking for entire batch
+  return block_masking(x_0, sigma, maskable_mask, mask_token_id, mask_block_size)
+
+
+def block_masking(x_0, sigma, maskable_mask, mask_token_id, mask_block_size):
+    """
+    Efficient block masking that allows overlapping blocks.
+    This is much faster than the original version with overlap prevention.
+    """
+    batch_size, seq_len = x_0.shape
+
+    if seq_len < mask_block_size:
+      return x_0
+
+    # Create sliding windows to check all possible blocks at once
+    maskable_windows = maskable_mask.unfold(1, mask_block_size, 1)
+    num_windows = maskable_windows.shape[1]
+
+    # Check which windows are fully maskable: (batch_size, num_windows)
+    fully_maskable = maskable_windows.all(dim=2)
+
+    # Determine which blocks should be masked: (batch_size, num_windows)
+    effective_sigma = 1 - (1-sigma)**(1/mask_block_size) # NOTE: since we mask with blocks, we need to scale sigma by block size
+    should_mask = (torch.rand(batch_size, num_windows, device=x_0.device) < effective_sigma) & fully_maskable
+
+    # Create a mask tensor for all positions
+    final_mask = torch.zeros(batch_size, seq_len, dtype=torch.bool, device=x_0.device)
+
+    # Fully vectorized approach: create all block positions at once
+    # Shape: [num_windows, mask_block_size] - all positions for all possible blocks
+    window_starts = torch.arange(num_windows, device=x_0.device).unsqueeze(1)  # [num_windows, 1]
+    block_offsets = torch.arange(mask_block_size, device=x_0.device).unsqueeze(0)  # [1, mask_block_size]
+    all_positions = window_starts + block_offsets  # [num_windows, mask_block_size]
+
+    # Expand should_mask to match all positions: [batch_size, num_windows, mask_block_size]
+    should_mask_expanded = should_mask.unsqueeze(2).expand(-1, -1, mask_block_size)
+
+    # Check bounds: positions must be < seq_len
+    valid_positions = (all_positions < seq_len) & should_mask_expanded
+
+    # Get batch indices, window indices, and position indices for all valid positions
+    batch_indices, window_indices, offset_indices = valid_positions.nonzero(as_tuple=True)
+    position_indices = all_positions[window_indices, offset_indices]
+
+    # Apply masking in one go
+    final_mask[batch_indices, position_indices] = True
+
+    # Apply the mask
+    x_t = x_0.clone()
+    x_t[final_mask] = mask_token_id
+
+    return x_t
+
+
+def prefix_input_ids(input_ids, maskable_mask, apply_prefix):
+  """Apply prefix to input_ids based on configured probability. Return a masksable mask such that the prefix is not masked."""
+  batch_size, seq_len = input_ids.shape
+  # Generate random prefix lengths for all batch items
+  prefix_lengths = torch.randint(1, seq_len, (batch_size,), device=input_ids.device)
+  # Create position indices: [1, seq_len]
+  position_indices = torch.arange(seq_len, device=input_ids.device).unsqueeze(0) # [1, seq_len]
+  # Create prefix mask: True where position < prefix_length
+  prefix_mask = position_indices < prefix_lengths.unsqueeze(1)  # [batch_size, seq_len]
+  # Apply prefix masking: set to False where we should apply prefix masking
+  maskable_mask = maskable_mask & ~(apply_prefix.unsqueeze(1) & prefix_mask)
+  
+  return maskable_mask
+
+
+def truncate_input_ids(input_ids, apply_truncate, pad_token_id):
+  """Truncate input_ids at random position and fill with pad token. Return the input_ids with suffix truncated and filled with pad token."""
+  batch_size, seq_len = input_ids.shape
+  # Generate random truncation positions for all batch items
+  truncate_positions = torch.randint(1, seq_len, (batch_size,), device=input_ids.device)
+  # Create position indices: [1, seq_len]
+  position_indices = torch.arange(seq_len, device=input_ids.device).unsqueeze(0) # [1, seq_len]
+  # Create truncate mask: True where position >= truncate_position
+  truncate_mask = position_indices >= truncate_positions.unsqueeze(1)  # [batch_size, seq_len]
+  # Apply truncation: fill with pad token where we should truncate
+  input_ids = torch.where(apply_truncate.unsqueeze(1) & truncate_mask, pad_token_id, input_ids)
+  
+  return input_ids
+
+
+def sample_noisy_input_ids(input_ids, maskable_mask, mask_token_id, sampling_eps, config):
+  sigma = ((1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps).unsqueeze(-1)
+  dsigma = torch.reciprocal(sigma)
+  
+  # Sample mask block size
+  # TODO: think about how to choose mask block size
+  mask_block_sizes = getattr(config, "mask_block_sizes", [1, 2])
+  indices = torch.randint(0, len(mask_block_sizes), (input_ids.shape[0],), device=input_ids.device)
+  mask_block_sizes_tensor = torch.tensor(mask_block_sizes, device=input_ids.device)
+  mask_block_size = mask_block_sizes_tensor[indices]
+
+  noisy_input_ids = transition(
+    input_ids,
+    sigma,
+    maskable_mask=maskable_mask,
+    mask_token_id=mask_token_id,
+    mask_block_size=mask_block_size
+  )
+  return dsigma, noisy_input_ids

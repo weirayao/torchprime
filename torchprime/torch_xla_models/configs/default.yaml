@@ -12,7 +12,7 @@ global_batch_size: 4
 logging_steps: 10
 max_steps: 45000
 
-# Training mode: "pretrain" or "sft"
+# Training mode: "pretrain" or "midtrain" or "sft"
 training_mode: pretrain
 
 seed: 42
@@ -63,6 +63,13 @@ dcn_mesh:
 # They can be overridden on the command line or by importing one of the presets
 # in the `model/remat` directory.
 model:
+  # prefix masking probability - with this probability, randomly sample a prefix length that won't be maskable
+  prefix_probability: 0
+  # truncate probability - with this probability, truncate non-prefixed rows at random position and fill with pad token
+  truncate_probability: 0
+  # mask block size - randomly sampled from [1,2,4,8] for block masking
+  mask_block_sizes: [1, 2, 4, 8]
+
   remat:
     # The class names of model layers whose intermediate activations should be
     # recomputed during the backward pass (i.e. activation checkpointing).
