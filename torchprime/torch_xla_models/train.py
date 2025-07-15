@@ -886,13 +886,27 @@ def main(config: DictConfig):
     if data is None:
       logger.error("Dataset is None! This indicates a failure in dataset creation.")
       raise ValueError("Dataset creation failed - data is None")
+    
+    # Handle different dataset types
     if hasattr(data, '__len__'):
       logger.info(f"Dataset size: {len(data)}")
+    
     if hasattr(data, 'features'):
+      # Regular Dataset
       logger.info(f"Dataset features: {list(data.features.keys())}")
+    elif hasattr(data, '__iter__'):
+      # IterableDataset - try to get a sample to check structure
+      logger.info("IterableDataset detected - checking sample structure...")
+    
     # Log a few examples to verify data format
     try:
-      sample = data[0] if hasattr(data, '__getitem__') else next(iter(data))
+      if hasattr(data, '__getitem__'):
+        # Regular Dataset
+        sample = data[0]
+      else:
+        # IterableDataset
+        sample = next(iter(data))
+      
       logger.info(f"Sample data keys: {list(sample.keys())}")
       if 'src_mask' in sample:
         logger.info(f"Sample src_mask shape: {sample['src_mask'].shape if hasattr(sample['src_mask'], 'shape') else len(sample['src_mask'])}")
