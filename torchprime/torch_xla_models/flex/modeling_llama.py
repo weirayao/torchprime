@@ -410,8 +410,14 @@ class LlamaForCausalLM(nn.Module):
     # source mask is all-false, so all tokens in the sequence can be masked for pretraining
     src_mask = torch.zeros_like(input_ids, dtype=torch.bool, device=input_ids.device)
     t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
+    # Ensure t is at least 1-dimensional
+    if t.dim() == 0:
+      t = t.unsqueeze(0)
     sigma = t
     dsigma = torch.reciprocal(sigma)
+    # Ensure dsigma is at least 1-dimensional to avoid iteration over 0-d tensor
+    if dsigma.dim() == 0:
+      dsigma = dsigma.unsqueeze(0)
     noisy_input_ids = transition(
       input_ids, sigma[:, None], maskable_mask=~src_mask, mask_token_id=mask_token_id
     )
