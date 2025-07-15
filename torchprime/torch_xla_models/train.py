@@ -819,9 +819,15 @@ class Trainer:
       skip_total_time = timer() - skip_start_time
       logger.info(f"Successfully skipped {skipped_count} batches in {skip_total_time:.2f}s")
 
+    logger.info(f"Process {xr.process_index()}: Starting main training loop from step {start_step} to {max_step}")
+
     for step in range(start_step, max_step):
+      logger.info(f"Process {xr.process_index()}: Starting step {step}")
+      
       try:
+        logger.info(f"Process {xr.process_index()}: Getting next batch...")
         batch = next(train_iterator)
+        logger.info(f"Process {xr.process_index()}: Got batch for step {step}")
       except StopIteration:
         logger.warning(f"DataLoader exhausted at step {step}, reset iterator")
         epoch += 1
@@ -832,9 +838,13 @@ class Trainer:
       
       # Validate batch for SFT mode
       if self.config.training_mode == "sft":
+        logger.info(f"Process {xr.process_index()}: Validating SFT batch...")
         self._validate_sft_batch(batch)
+        logger.info(f"Process {xr.process_index()}: SFT batch validation passed")
       
+      logger.info(f"Process {xr.process_index()}: Starting training step...")
       loss = self.train_step(batch)
+      logger.info(f"Process {xr.process_index()}: Training step completed")
       trace_end_time = timer()
 
       if step % self.config.logging_steps == 0:
@@ -962,19 +972,25 @@ class Trainer:
     return True
 
   def train_step(self, batch):
+    logger.info(f"Process {xr.process_index()}: train_step called")
     if self.config.training_mode == "sft":
       # For SFT, src_mask should already be in the batch from data collator
+      logger.info(f"Process {xr.process_index()}: Calling _compiled_train_step for SFT")
       loss = self._compiled_train_step(batch)
     else:
       # Pre-training mode (original behavior)
+      logger.info(f"Process {xr.process_index()}: Calling _compiled_train_step for pre-training")
       loss = self._compiled_train_step(batch)
     
+    logger.info(f"Process {xr.process_index()}: train_step completed")
     return loss
 
   @torch_xla.compile(full_graph=True)
   def _compiled_train_step(self, batch):
+    logger.info(f"Process {xr.process_index()}: _compiled_train_step called")
     if self.config.training_mode == "sft":
       # For SFT, src_mask should already be in the batch from data collator
+      logger.info(f"Process {xr.process_index()}: Calling model forward for SFT")
       _logits, loss = self.model(
         input_ids=batch["input_ids"],
         attention_mask=batch["attention_mask"],
@@ -983,12 +999,18 @@ class Trainer:
       )
     else:
       # Pre-training mode (original behavior)
+      logger.info(f"Process {xr.process_index()}: Calling model forward for pre-training")
       _logits, loss = self.model(**batch)
     
+    logger.info(f"Process {xr.process_index()}: Model forward completed, starting backward")
     loss.backward()
+    logger.info(f"Process {xr.process_index()}: Backward completed, starting optimizer step")
     self.optimizer.step()
+    logger.info(f"Process {xr.process_index()}: Optimizer step completed, starting scheduler step")
     self.lr_scheduler.step()
+    logger.info(f"Process {xr.process_index()}: Scheduler step completed, zeroing gradients")
     self.model.zero_grad()
+    logger.info(f"Process {xr.process_index()}: _compiled_train_step completed")
     return loss
 
 
