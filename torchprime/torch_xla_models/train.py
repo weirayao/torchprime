@@ -274,47 +274,30 @@ class Trainer:
     
     # Choose appropriate data collator based on training mode and data format
     if self.config.training_mode == "sft":
-      # Debug: Log dataset type and structure
-      logger.info(f"Dataset type: {type(self.train_dataset)}")
-      if hasattr(self.train_dataset, 'features'):
-        logger.info(f"Dataset features: {list(self.train_dataset.features.keys())}")
-      if isinstance(self.train_dataset, IterableDataset):
-        logger.info(f"IterableDataset has _is_custom: {hasattr(self.train_dataset, '_is_custom')}")
-        if hasattr(self.train_dataset, '_is_custom'):
-          logger.info(f"_is_custom value: {self.train_dataset._is_custom}")
-      
       # Check if the dataset is already preprocessed (has src_mask)
       is_preprocessed = False
       
       if hasattr(self.train_dataset, 'features') and 'src_mask' in self.train_dataset.features:
         # Regular Dataset with features - check if it has src_mask
         is_preprocessed = True
-        logger.info("Detected preprocessed data: regular Dataset with src_mask in features")
       elif isinstance(self.train_dataset, IterableDataset):
         # IterableDataset - check if it's a custom one that's already processed
         if hasattr(self.train_dataset, '_is_custom') and self.train_dataset._is_custom:
           is_preprocessed = True
-          logger.info("Detected preprocessed data: custom IterableDataset")
         else:
           # Try to get a sample to check the structure
           try:
             sample = next(iter(self.train_dataset))
             if 'src_mask' in sample:
               is_preprocessed = True
-              logger.info("Detected preprocessed data: IterableDataset with src_mask in samples")
-            else:
-              logger.info("Detected raw data: IterableDataset without src_mask in samples")
           except Exception as e:
             logger.warning(f"Could not check IterableDataset structure: {e}")
-            logger.info("Assuming raw data for IterableDataset")
       
       if is_preprocessed:
         # Dataset is already preprocessed, use a simple collator that just handles padding
-        logger.info("Using simple collator for preprocessed SFT data")
         collate_fn = self._create_simple_sft_collator()
       else:
         # Dataset needs processing, use the full SFT data collator
-        logger.info("Using full SFT data collator for raw data")
         sft_config = self.config.data.get("sft", {})
         collate_fn = SFTDataCollator(
           tokenizer=self.tokenizer,
@@ -346,18 +329,6 @@ class Trainer:
       Simple collator for preprocessed SFT data that already has input_ids, instruction_length, and src_mask.
       Only handles padding to make sequences the same length.
       """
-      # Debug: Log the features we're processing
-      if not hasattr(simple_sft_collator, '_debug_count'):
-        simple_sft_collator._debug_count = 0
-      
-      if simple_sft_collator._debug_count < 2:
-        print(f"DEBUG Simple Collator {simple_sft_collator._debug_count}:")
-        print(f"  Number of features: {len(features)}")
-        for i, feature in enumerate(features[:2]):  # Only show first 2
-          print(f"  Feature {i} keys: {list(feature.keys())}")
-          print(f"  Feature {i} input_ids length: {len(feature['input_ids'])}")
-          print(f"  Feature {i} src_mask length: {len(feature['src_mask'])}")
-        simple_sft_collator._debug_count += 1
       
       # Find the maximum length in the batch
       max_length = max(len(feature['input_ids']) for feature in features)
@@ -390,21 +361,11 @@ class Trainer:
         batch_attention_mask.append(attention_mask)
         batch_src_mask.append(padded_src_mask)
       
-      # Debug: Check the batch tensors before returning
-      if simple_sft_collator._debug_count <= 2:
-        print(f"  Batch size: {len(batch_input_ids)}")
-        print(f"  Max length: {max_length}")
-      
       result = {
         "input_ids": torch.tensor(batch_input_ids, dtype=torch.long),
         "attention_mask": torch.tensor(batch_attention_mask, dtype=torch.long),
         "src_mask": torch.tensor(batch_src_mask, dtype=torch.bool),
       }
-      
-      # Debug: Check the result tensors
-      if simple_sft_collator._debug_count <= 2:
-        print(f"  Result input_ids shape: {result['input_ids'].shape}")
-        print(f"  Result src_mask shape: {result['src_mask'].shape}")
       
       return result
     
@@ -881,15 +842,9 @@ def main(config: DictConfig):
           )
         )
       
-      # Debug: Check if dataset was loaded properly
+      # Check if dataset was loaded properly
       if is_main_process():
-        logger.info(f"Dataset loaded: {type(raw_data)}")
-        if hasattr(raw_data, '__len__'):
-          logger.info(f"Dataset size: {len(raw_data)}")
-        if len(raw_data) > 0:
-          logger.info(f"First example keys: {list(raw_data[0].keys())}")
-          logger.info(f"First example: {raw_data[0]}")
-        else:
+        if len(raw_data) == 0:
           logger.error("Dataset is empty!")
           raise ValueError("Dataset is empty - check if dataset was downloaded properly")
     elif config.data.gcs_dataset_names:
@@ -909,28 +864,7 @@ def main(config: DictConfig):
     # Process raw dataset for SFT
     sft_config = config.data.get("sft", {})
     
-    # Debug: Log raw data structure
-    logger.info(f"Raw data type: {type(raw_data)}")
-    if hasattr(raw_data, 'features'):
-      logger.info(f"Raw data features: {list(raw_data.features.keys())}")
-    elif isinstance(raw_data, IterableDataset):
-      logger.info("Raw data is IterableDataset")
-      try:
-        sample = next(iter(raw_data))
-        logger.info(f"Raw data sample keys: {list(sample.keys())}")
-        logger.info(f"Raw data sample: {sample}")
-        
-        # Check if this is actually preprocessed data
-        if 'input_ids' in sample and 'instruction_length' in sample and 'src_mask' in sample:
-          logger.info("Raw data appears to be preprocessed SFT data")
-          logger.info(f"Sample input_ids length: {len(sample['input_ids'])}")
-          logger.info(f"Sample instruction_length: {sample['instruction_length']}")
-          logger.info(f"Sample src_mask length: {len(sample['src_mask'])}")
-          logger.info(f"Sample src_mask sum: {sum(sample['src_mask'])}")
-        else:
-          logger.info("Raw data appears to be raw text data")
-      except Exception as e:
-        logger.warning(f"Could not get sample from raw data: {e}")
+
     
     # Check if the dataset already has src_mask (from create_sft_dataset or GCS preprocessed data)
     is_preprocessed = False
@@ -938,23 +872,17 @@ def main(config: DictConfig):
     # Check for regular Dataset with features
     if hasattr(raw_data, 'features') and 'src_mask' in raw_data.features:
       is_preprocessed = True
-      logger.info("Detected preprocessed data: regular Dataset with src_mask in features")
     # Check for IterableDataset with src_mask in samples
     elif isinstance(raw_data, IterableDataset):
       try:
         sample = next(iter(raw_data))
         if 'src_mask' in sample:
           is_preprocessed = True
-          logger.info("Detected preprocessed data: IterableDataset with src_mask in samples")
-        else:
-          logger.info("Detected raw data: IterableDataset without src_mask in samples")
       except Exception as e:
         logger.warning(f"Could not check IterableDataset structure: {e}")
-        logger.info("Assuming raw data for IterableDataset")
     
     if is_preprocessed:
       # Dataset already processed, use as is
-      logger.info("Using preprocessed data as-is (skipping SFT processing)")
       data = raw_data
     else:
       # Process raw dataset for SFT - optionally use IterableDataset for proper distribution
@@ -962,7 +890,6 @@ def main(config: DictConfig):
       
       if use_iterable_dataset:
         try:
-          logger.info("Creating SFT IterableDataset...")
           data = create_sft_iterable_dataset(
             dataset=raw_data,
             tokenizer=tokenizer,
@@ -973,12 +900,10 @@ def main(config: DictConfig):
             block_size=config.data.block_size,
             seed=config.seed,
           )
-          logger.info(f"SFT IterableDataset created successfully: {type(data)}")
           if data is None:
             raise ValueError("create_sft_iterable_dataset returned None")
         except Exception as e:
           logger.warning(f"Failed to create SFT IterableDataset: {e}")
-          logger.info("Falling back to regular SFT dataset...")
           data = create_sft_dataset(
             dataset=raw_data,
             tokenizer=tokenizer,
@@ -990,7 +915,6 @@ def main(config: DictConfig):
           )
       else:
         # Use regular dataset
-        logger.info("Creating regular SFT dataset...")
         data = create_sft_dataset(
           dataset=raw_data,
           tokenizer=tokenizer,
@@ -1001,7 +925,6 @@ def main(config: DictConfig):
           block_size=config.data.block_size,
         )
     
-    logger.info(f"Final dataset type: {type(data)}")
     if data is None:
       logger.error("Dataset creation failed - data is None after all attempts")
       raise ValueError("Failed to create SFT dataset")
@@ -1043,35 +966,20 @@ def main(config: DictConfig):
   # data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # not working as expected, will only load a subset of the dataset
   if isinstance(data, IterableDataset):
     # Check if this is a custom IterableDataset that doesn't need splitting
-    logger.info(f"Checking IterableDataset for _is_custom flag...")
-    logger.info(f"Dataset type: {type(data)}")
-    logger.info(f"Has _is_custom attribute: {hasattr(data, '_is_custom')}")
-    if hasattr(data, '_is_custom'):
-      logger.info(f"_is_custom value: {data._is_custom}")
-    
     if hasattr(data, '_is_custom') and data._is_custom:
-      logger.info("Custom IterableDataset detected - skipping split_dataset_by_node")
+      # Custom IterableDataset - skip splitting
+      pass
     else:
       try:
-        logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
-        logger.info(f"Before split - data type: {type(data)}")
         split_data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
-        logger.info(f"After split - data type: {type(split_data)}")
-        if split_data is None:
-          logger.warning("split_dataset_by_node returned None for IterableDataset, keeping original")
-          # Keep the original data if split returns None
-        else:
+        if split_data is not None:
           data = split_data
-          logger.info(f"Dataset split successful for device {xr.process_index()}")
       except Exception as e:
         logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
   elif isinstance(data, Dataset):
     # For regular Dataset, we need to split it properly for distributed training
-    # This is especially important for SFT where data duplication can cause issues
     try:
-      logger.info(f"Applying split_dataset_by_node for regular Dataset on device {xr.process_index()}/{xr.process_count()}")
       data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
-      logger.info(f"Dataset split successful for device {xr.process_index()}")
     except Exception as e:
       logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
       # Fallback: manually split the dataset
@@ -1081,7 +989,6 @@ def main(config: DictConfig):
         start_idx = xr.process_index() * per_device_size
         end_idx = start_idx + per_device_size if xr.process_index() < xr.process_count() - 1 else total_size
         data = data.select(range(start_idx, end_idx))
-        logger.info(f"Manual dataset split: device {xr.process_index()} gets indices {start_idx}-{end_idx} (size: {len(data)})")
   trainer = Trainer(
     model=model,
     tokenizer=tokenizer,
@@ -1095,33 +1002,6 @@ def main(config: DictConfig):
     if data is None:
       logger.error("Dataset is None! This indicates a failure in dataset creation.")
       raise ValueError("Dataset creation failed - data is None")
-    
-    # Handle different dataset types
-    if hasattr(data, '__len__'):
-      logger.info(f"Dataset size: {len(data)}")
-    
-    if hasattr(data, 'features'):
-      # Regular Dataset
-      logger.info(f"Dataset features: {list(data.features.keys())}")
-    elif hasattr(data, '__iter__'):
-      # IterableDataset - try to get a sample to check structure
-      logger.info("IterableDataset detected - checking sample structure...")
-    
-    # Log a few examples to verify data format
-    try:
-      if hasattr(data, '__getitem__'):
-        # Regular Dataset
-        sample = data[0]
-      else:
-        # IterableDataset
-        sample = next(iter(data))
-      
-      logger.info(f"Sample data keys: {list(sample.keys())}")
-      if 'src_mask' in sample:
-        logger.info(f"Sample src_mask shape: {sample['src_mask'].shape if hasattr(sample['src_mask'], 'shape') else len(sample['src_mask'])}")
-        logger.info(f"Sample src_mask sum: {sum(sample['src_mask']) if hasattr(sample['src_mask'], '__iter__') else sample['src_mask']}")
-    except Exception as e:
-      logger.warning(f"Could not log sample data: {e}")
 
   # Synchronize all processes before starting training
   xm.wait_device_ops()  # Wait for all XLA operations to complete

@@ -468,14 +468,6 @@ class Qwen3ForCausalLM(nn.Module):
       print(f"  input_ids device: {input_ids.device}")
       self._debug_count += 1
     
-    # Debug transition function call
-    if self._debug_count <= 3:
-      print(f"  Calling transition with:")
-      print(f"    input_ids shape: {input_ids.shape}")
-      print(f"    sigma[:, None] shape: {sigma[:, None].shape}")
-      print(f"    maskable_mask shape: {maskable_mask.shape}")
-      print(f"    mask_token_id: {mask_token_id}")
-    
     noisy_input_ids = transition(
       input_ids, sigma[:, None], maskable_mask=maskable_mask, mask_token_id=mask_token_id
     )
@@ -510,9 +502,25 @@ class Qwen3ForCausalLM(nn.Module):
       print(f"  dsigma[:, None] shape: {dsigma[:, None].shape}")
       print(f"  (dsigma[:, None] * loss) shape: {(dsigma[:, None] * loss).shape}")
     
+    # Debug: Check each step of the final loss calculation
+    if self._debug_count <= 3:
+      print(f"  About to calculate loss_sum...")
+    
     # Ensure we're working with proper tensors for the final division
     loss_sum = (dsigma[:, None] * loss).sum()
+    
+    if self._debug_count <= 3:
+      print(f"  loss_sum calculated: {loss_sum}")
+      print(f"  loss_sum shape: {loss_sum.shape}")
+      print(f"  loss_sum device: {loss_sum.device}")
+      print(f"  About to divide by: {input_ids.shape[0] * input_ids.shape[1]}")
+    
     loss = loss_sum / float(input_ids.shape[0] * input_ids.shape[1])
+    
+    if self._debug_count <= 3:
+      print(f"  Final loss calculated: {loss}")
+      print(f"  Final loss shape: {loss.shape}")
+      print(f"  Final loss device: {loss.device}")
     return logits, loss
 
 @xp.trace_me("transition")
@@ -520,6 +528,18 @@ def transition(x_0, sigma, maskable_mask, mask_token_id):
     # weiran: diffullama
     # move_chance = 1 - (-sigma).exp()
     move_chance = sigma
+    
+    # Debug: Check input tensors
+    if not hasattr(transition, '_debug_count'):
+        transition._debug_count = 0
+    
+    if transition._debug_count < 3:
+        print(f"DEBUG Transition {transition._debug_count}:")
+        print(f"  x_0 shape: {x_0.shape}, dim: {x_0.dim()}")
+        print(f"  sigma shape: {sigma.shape}, dim: {sigma.dim()}")
+        print(f"  maskable_mask shape: {maskable_mask.shape}, dim: {maskable_mask.dim()}")
+        print(f"  mask_token_id: {mask_token_id}")
+        transition._debug_count += 1
     
     # Ensure all tensors have the right shapes and are on the same device
     if x_0.dim() == 0:
@@ -530,13 +550,33 @@ def transition(x_0, sigma, maskable_mask, mask_token_id):
         raise ValueError("maskable_mask cannot be 0-dimensional")
     
     # Create random tensor with the same shape as x_0
+    if transition._debug_count <= 3:
+        print(f"  Creating rand_tensor with shape: {x_0.shape}")
+    
     rand_tensor = torch.rand(x_0.shape, device=x_0.device, dtype=x_0.dtype)
+    
+    if transition._debug_count <= 3:
+        print(f"  rand_tensor created: shape={rand_tensor.shape}")
     
     # Ensure move_chance has the right shape for broadcasting
     if move_chance.shape != x_0.shape:
         # Broadcast move_chance to match x_0 shape
         move_chance = move_chance.expand_as(x_0)
+        if transition._debug_count <= 3:
+            print(f"  move_chance broadcasted to: {move_chance.shape}")
+    
+    if transition._debug_count <= 3:
+        print(f"  About to calculate move_indices...")
     
     move_indices = (rand_tensor < move_chance) & maskable_mask
+    
+    if transition._debug_count <= 3:
+        print(f"  move_indices calculated: shape={move_indices.shape}")
+        print(f"  About to calculate x_t...")
+    
     x_t = torch.where(move_indices, mask_token_id, x_0)
+    
+    if transition._debug_count <= 3:
+        print(f"  x_t calculated: shape={x_t.shape}")
+    
     return x_t

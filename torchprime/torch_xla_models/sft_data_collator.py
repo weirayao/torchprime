@@ -128,39 +128,13 @@ class SFTDataCollator(DataCollatorMixin):
         batch_instruction_lengths = []
         
         for feature in features:
-            # Debug the raw feature first
-            if not hasattr(self, '_debug_extraction_count'):
-                self._debug_extraction_count = 0
-            
-            if self._debug_extraction_count < 2:
-                print(f"DEBUG Raw Feature {self._debug_extraction_count}:")
-                print(f"  feature keys: {list(feature.keys())}")
-                for key, value in feature.items():
-                    if isinstance(value, str):
-                        print(f"  {key}: '{value[:100]}...'")
-                    else:
-                        print(f"  {key}: {type(value)} - {value}")
-            
             # Extract instruction and response
             instruction, response = self._extract_instruction_response(feature)
-            
-            if self._debug_extraction_count < 2:
-                print(f"DEBUG Extraction {self._debug_extraction_count}:")
-                print(f"  instruction: '{instruction[:100]}...'")
-                print(f"  response: '{response[:100]}...'")
-                print(f"  instruction len: {len(instruction)}")
-                print(f"  response len: {len(response)}")
-                self._debug_extraction_count += 1
             
             # Create sequence and get instruction length
             sequence, instruction_length = self._create_instruction_response_sequence(
                 instruction, response
             )
-            
-            if self._debug_extraction_count <= 2:
-                print(f"  sequence len: {len(sequence)}")
-                print(f"  instruction_length: {instruction_length}")
-                print(f"  sequence: {sequence[:10]}...")
             
             batch_input_ids.append(sequence)
             batch_instruction_lengths.append(instruction_length)
@@ -208,21 +182,9 @@ class SFTDataCollator(DataCollatorMixin):
             "src_mask": src_mask,
         }
         
-        # Add validation and debugging information
+        # Validate that we have instruction tokens
         if len(features) > 0:
-            # Log some debugging info for the first batch
             total_instruction_tokens = src_mask.sum().item()
-            total_tokens = src_mask.numel()
-            instruction_ratio = total_instruction_tokens / total_tokens if total_tokens > 0 else 0
-            
-            # Only log on first call to avoid spam
-            if not hasattr(self, '_logged_debug_info'):
-                print(f"SFT DataCollator Debug: batch_size={len(features)}, "
-                      f"max_length={max_length}, instruction_tokens={total_instruction_tokens}, "
-                      f"total_tokens={total_tokens}, instruction_ratio={instruction_ratio:.3f}")
-                self._logged_debug_info = True
-            
-            # Validate that we have instruction tokens
             if total_instruction_tokens == 0:
                 raise ValueError("No instruction tokens found in batch - all src_mask values are False!")
         
