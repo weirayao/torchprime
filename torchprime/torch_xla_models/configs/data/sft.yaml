@@ -47,4 +47,4 @@ sft:
   # Whether to use IterableDataset for better data distribution across processes
   # Default: false (recommended for multi-process training)
   # Set to true to use IterableDataset (may cause sharding issues)
-  use_iterable_dataset: false 
+  use_iterable_dataset: true 
