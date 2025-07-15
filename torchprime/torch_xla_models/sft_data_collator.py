@@ -328,6 +328,8 @@ def create_sft_iterable_dataset(
                 self.dataset = dataset
                 self.process_fn = process_fn
                 self.seed = seed
+                # Flag to indicate this is a custom dataset that doesn't need splitting
+                self._is_custom = True
             
             def __iter__(self):
                 # Simple shuffling by creating a list and shuffling it

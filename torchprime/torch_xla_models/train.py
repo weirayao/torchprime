@@ -850,12 +850,22 @@ def main(config: DictConfig):
       raise ValueError("No dataset provided")
   # data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # not working as expected, will only load a subset of the dataset
   if isinstance(data, IterableDataset):
-    try:
-      logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
-      data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
-      logger.info(f"Dataset split successful for device {xr.process_index()}")
-    except Exception as e:
-      logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
+    # Check if this is a custom IterableDataset that doesn't need splitting
+    if hasattr(data, '_is_custom') and data._is_custom:
+      logger.info("Custom IterableDataset detected - skipping split_dataset_by_node")
+    else:
+      try:
+        logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
+        logger.info(f"Before split - data type: {type(data)}")
+        data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+        logger.info(f"After split - data type: {type(data)}")
+        if data is None:
+          logger.warning("split_dataset_by_node returned None for IterableDataset, keeping original")
+          # Don't modify data if split returns None
+        else:
+          logger.info(f"Dataset split successful for device {xr.process_index()}")
+      except Exception as e:
+        logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
   elif isinstance(data, Dataset):
     # For regular Dataset, we need to split it properly for distributed training
     # This is especially important for SFT where data duplication can cause issues
