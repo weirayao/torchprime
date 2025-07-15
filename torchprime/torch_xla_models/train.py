@@ -356,7 +356,6 @@ class Trainer:
         for i, feature in enumerate(features[:2]):  # Only show first 2
           print(f"  Feature {i} keys: {list(feature.keys())}")
           print(f"  Feature {i} input_ids length: {len(feature['input_ids'])}")
-          print(f"  Feature {i} instruction_length: {feature['instruction_length']}")
           print(f"  Feature {i} src_mask length: {len(feature['src_mask'])}")
         simple_sft_collator._debug_count += 1
       
@@ -365,7 +364,6 @@ class Trainer:
       
       batch_input_ids = []
       batch_attention_mask = []
-      batch_instruction_lengths = []
       batch_src_mask = []
       
       for feature in features:
@@ -390,26 +388,23 @@ class Trainer:
         
         batch_input_ids.append(padded_input_ids)
         batch_attention_mask.append(attention_mask)
-        batch_instruction_lengths.append(instruction_length)
         batch_src_mask.append(padded_src_mask)
       
       # Debug: Check the batch tensors before returning
       if simple_sft_collator._debug_count <= 2:
-        print(f"  Batch instruction_lengths: {batch_instruction_lengths}")
-        print(f"  Batch instruction_lengths type: {type(batch_instruction_lengths)}")
-        print(f"  Batch instruction_lengths length: {len(batch_instruction_lengths)}")
+        print(f"  Batch size: {len(batch_input_ids)}")
+        print(f"  Max length: {max_length}")
       
       result = {
         "input_ids": torch.tensor(batch_input_ids, dtype=torch.long),
         "attention_mask": torch.tensor(batch_attention_mask, dtype=torch.long),
-        "instruction_lengths": torch.tensor(batch_instruction_lengths, dtype=torch.long),
         "src_mask": torch.tensor(batch_src_mask, dtype=torch.bool),
       }
       
       # Debug: Check the result tensors
       if simple_sft_collator._debug_count <= 2:
-        print(f"  Result instruction_lengths shape: {result['instruction_lengths'].shape}")
-        print(f"  Result instruction_lengths: {result['instruction_lengths']}")
+        print(f"  Result input_ids shape: {result['input_ids'].shape}")
+        print(f"  Result src_mask shape: {result['src_mask'].shape}")
       
       return result
     
