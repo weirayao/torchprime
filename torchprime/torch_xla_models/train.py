@@ -589,6 +589,22 @@ class Trainer:
   def train_step(self, batch):
     if self.config.training_mode == "sft":
       # For SFT, src_mask should already be in the batch from data collator
+      # Add debugging for the first few steps
+      if not hasattr(self, '_debug_step_count'):
+        self._debug_step_count = 0
+      
+      if self._debug_step_count < 3:  # Only debug first 3 steps
+        # Log batch information
+        print(f"DEBUG Step {self._debug_step_count}:")
+        print(f"  input_ids shape: {batch['input_ids'].shape}")
+        print(f"  attention_mask shape: {batch['attention_mask'].shape}")
+        print(f"  src_mask shape: {batch['src_mask'].shape}")
+        print(f"  src_mask sum: {batch['src_mask'].sum().item()}")
+        print(f"  src_mask ratio: {batch['src_mask'].sum().item() / batch['src_mask'].numel():.3f}")
+        print(f"  input_ids sample: {batch['input_ids'][0][:10].tolist()}")
+        print(f"  src_mask sample: {batch['src_mask'][0][:10].tolist()}")
+        self._debug_step_count += 1
+      
       _logits, loss = self.model(
         input_ids=batch["input_ids"],
         attention_mask=batch["attention_mask"],
