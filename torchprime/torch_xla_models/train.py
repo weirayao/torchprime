@@ -45,6 +45,12 @@ from transformers import PreTrainedTokenizerBase
 
 from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset, make_mixed_huggingface_datasets, make_huggingface_sft_dataset, make_huggingface_sft_iterable_dataset
 from torchprime.torch_xla_models.sft_data_collator import SFTDataCollator, create_sft_dataset, create_sft_iterable_dataset
+from torchprime.torch_xla_models.model_utils import (
+  initialize_model_class,
+  set_default_dtype,
+  load_hf_model,
+  get_model_dtype,
+)
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
 from torchprime.metrics.mfu import compute_mfu
@@ -63,6 +69,230 @@ from torchprime.utils.retry import retry
 
 check_min_version("4.39.3")
 logger = logging.getLogger(__name__)
+
+
+def _create_sft_dataset(config, tokenizer):
+    """Helper function to create SFT dataset with proper error handling."""
+    sft_config = config.data.get("sft", {})
+    
+    # Load raw dataset
+    if hasattr(config.data, 'hf_datasets') and config.data.hf_datasets:
+        # Load mixed HuggingFace datasets
+        raw_data = retry(
+            lambda: make_mixed_huggingface_datasets(
+                hf_datasets=config.data.hf_datasets,
+                split="train",
+                cache_dir=config.data.cache_dir,
+                seed=config.seed,
+            )
+        )
+    elif config.data.dataset_name:
+        # Load raw dataset from HuggingFace
+        dataset_name = config.data.dataset_name
+        gcs_prefix = "gs://sfr-text-diffusion-model-research/"
+        if dataset_name.startswith(gcs_prefix):
+            dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
+            raw_data = retry(
+                lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
+            )
+        else:
+            # Check if we should use IterableDataset directly
+            use_iterable_dataset = sft_config.get("use_iterable_dataset", True)
+            if use_iterable_dataset:
+                logger.info(f"Process {xr.process_index()}: Loading HuggingFace dataset as IterableDataset")
+                raw_data = retry(
+                    lambda: make_huggingface_sft_iterable_dataset(
+                        name=config.data.dataset_name,
+                        config_name=config.data.dataset_config_name,
+                        split="train",
+                        cache_dir=config.data.cache_dir,
+                        seed=config.seed,
+                    )
+                )
+            else:
+                logger.info(f"Process {xr.process_index()}: Loading HuggingFace dataset as regular Dataset")
+                raw_data = retry(
+                    lambda: make_huggingface_sft_dataset(
+                        name=config.data.dataset_name,
+                        config_name=config.data.dataset_config_name,
+                        split="train",
+                        cache_dir=config.data.cache_dir,
+                    )
+                )
+        
+        # Check if dataset was loaded properly
+        if is_main_process() and hasattr(raw_data, '__len__') and len(raw_data) == 0:
+            logger.error("Dataset is empty!")
+            raise ValueError("Dataset is empty - check if dataset was downloaded properly")
+    elif config.data.gcs_dataset_names:
+        # Load raw dataset from GCS
+        raw_data = retry(
+            lambda: make_gcs_dataset(
+                names=config.data.gcs_dataset_names,
+                weights=config.data.weights,
+                tokenizer=tokenizer,
+                seed=config.seed,
+                block_size=config.data.block_size,
+            )
+        )
+    else:
+        raise ValueError("No dataset provided for SFT")
+    
+    # Check if the dataset already has src_mask (from create_sft_dataset or GCS preprocessed data)
+    is_preprocessed = False
+    
+    # Check for regular Dataset with features
+    if hasattr(raw_data, 'features') and 'src_mask' in raw_data.features:
+        is_preprocessed = True
+    # Check for IterableDataset with src_mask in samples
+    elif isinstance(raw_data, IterableDataset):
+        try:
+            sample = next(iter(raw_data))
+            if 'src_mask' in sample:
+                is_preprocessed = True
+        except Exception as e:
+            logger.warning(f"Could not check IterableDataset structure: {e}")
+    
+    if is_preprocessed:
+        # Dataset already processed, use as is
+        data = raw_data
+        logger.info(f"Process {xr.process_index()}: Using preprocessed dataset")
+    else:
+        # Process raw dataset for SFT
+        use_iterable_dataset = sft_config.get("use_iterable_dataset", True)  # Default to True
+        logger.info(f"Process {xr.process_index()}: use_iterable_dataset = {use_iterable_dataset}")
+        
+        # Check if raw_data is already an IterableDataset from the new function
+        if isinstance(raw_data, IterableDataset):
+            logger.info(f"Process {xr.process_index()}: raw_data is already IterableDataset, processing directly")
+            try:
+                logger.info(f"Process {xr.process_index()}: Creating SFT IterableDataset from existing IterableDataset")
+                data = create_sft_iterable_dataset(
+                    dataset=raw_data,
+                    tokenizer=tokenizer,
+                    format=sft_config.get("format", "alpaca"),
+                    include_system_prompt=sft_config.get("include_system_prompt", True),
+                    instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+                    custom_format=sft_config.get("custom_format"),
+                    block_size=config.data.block_size,
+                    seed=config.seed,
+                )
+                if data is None:
+                    raise ValueError("create_sft_iterable_dataset returned None")
+                logger.info(f"Process {xr.process_index()}: Successfully created SFT IterableDataset")
+            except Exception as e:
+                logger.warning(f"Process {xr.process_index()}: Failed to create SFT IterableDataset: {e}")
+                logger.info(f"Process {xr.process_index()}: Falling back to regular Dataset")
+                # Convert IterableDataset to regular Dataset for fallback
+                raw_data_list = list(raw_data)
+                raw_data = datasets.Dataset.from_list(raw_data_list)
+                data = create_sft_dataset(
+                    dataset=raw_data,
+                    tokenizer=tokenizer,
+                    format=sft_config.get("format", "alpaca"),
+                    include_system_prompt=sft_config.get("include_system_prompt", True),
+                    instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+                    custom_format=sft_config.get("custom_format"),
+                    block_size=config.data.block_size,
+                )
+        elif use_iterable_dataset:
+            try:
+                logger.info(f"Process {xr.process_index()}: Creating SFT IterableDataset")
+                data = create_sft_iterable_dataset(
+                    dataset=raw_data,
+                    tokenizer=tokenizer,
+                    format=sft_config.get("format", "alpaca"),
+                    include_system_prompt=sft_config.get("include_system_prompt", True),
+                    instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+                    custom_format=sft_config.get("custom_format"),
+                    block_size=config.data.block_size,
+                    seed=config.seed,
+                )
+                if data is None:
+                    raise ValueError("create_sft_iterable_dataset returned None")
+                logger.info(f"Process {xr.process_index()}: Successfully created SFT IterableDataset")
+            except Exception as e:
+                logger.warning(f"Process {xr.process_index()}: Failed to create SFT IterableDataset: {e}")
+                logger.info(f"Process {xr.process_index()}: Falling back to regular Dataset")
+                data = create_sft_dataset(
+                    dataset=raw_data,
+                    tokenizer=tokenizer,
+                    format=sft_config.get("format", "alpaca"),
+                    include_system_prompt=sft_config.get("include_system_prompt", True),
+                    instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+                    custom_format=sft_config.get("custom_format"),
+                    block_size=config.data.block_size,
+                )
+        else:
+            # Use regular dataset
+            logger.info(f"Process {xr.process_index()}: Creating regular SFT Dataset")
+            data = create_sft_dataset(
+                dataset=raw_data,
+                tokenizer=tokenizer,
+                format=sft_config.get("format", "alpaca"),
+                include_system_prompt=sft_config.get("include_system_prompt", True),
+                instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+                custom_format=sft_config.get("custom_format"),
+                block_size=config.data.block_size,
+            )
+            logger.info(f"Process {xr.process_index()}: Successfully created regular SFT Dataset")
+    
+    if data is None:
+        logger.error(f"Process {xr.process_index()}: Dataset creation failed - data is None after all attempts")
+        raise ValueError("Failed to create SFT dataset")
+    
+    return data
+
+
+def _split_dataset_for_distributed_training(data):
+    """Helper function to split dataset for distributed training."""
+    if isinstance(data, IterableDataset):
+        # Try to split IterableDataset for proper distribution
+        try:
+            logger.info(f"Process {xr.process_index()}: Attempting to split IterableDataset")
+            split_data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+            if split_data is not None:
+                data = split_data
+                logger.info(f"Process {xr.process_index()}: Successfully split IterableDataset")
+            else:
+                logger.warning(f"Process {xr.process_index()}: split_dataset_by_node returned None, using original dataset")
+                # Keep the original dataset if splitting returns None
+                # This can happen when there are more processes than nodes
+        except Exception as e:
+            logger.warning(f"Process {xr.process_index()}: Dataset splitting failed: {e}. Using original dataset.")
+    elif isinstance(data, Dataset):
+        # For regular Dataset, we need to split it properly for distributed training
+        try:
+            logger.info(f"Process {xr.process_index()}: Attempting to split Dataset")
+            split_data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+            if split_data is not None:
+                data = split_data
+                logger.info(f"Process {xr.process_index()}: Successfully split Dataset")
+            else:
+                logger.warning(f"Process {xr.process_index()}: split_dataset_by_node returned None, using manual splitting")
+                # Fallback: manually split the dataset
+                if hasattr(data, '__len__'):
+                    total_size = len(data)
+                    per_device_size = total_size // xr.process_count()
+                    start_idx = xr.process_index() * per_device_size
+                    end_idx = start_idx + per_device_size if xr.process_index() < xr.process_count() - 1 else total_size
+                    data = data.select(range(start_idx, end_idx))
+                    logger.info(f"Process {xr.process_index()}: Manually split dataset to size {len(data)}")
+                else:
+                    logger.warning(f"Process {xr.process_index()}: Cannot manually split dataset without __len__, using original")
+        except Exception as e:
+            logger.warning(f"Process {xr.process_index()}: Dataset splitting failed: {e}. This may cause data duplication across devices.")
+            # Fallback: manually split the dataset
+            if hasattr(data, '__len__'):
+                total_size = len(data)
+                per_device_size = total_size // xr.process_count()
+                start_idx = xr.process_index() * per_device_size
+                end_idx = start_idx + per_device_size if xr.process_index() < xr.process_count() - 1 else total_size
+                data = data.select(range(start_idx, end_idx))
+                logger.info(f"Process {xr.process_index()}: Manually split dataset to size {len(data)}")
+    
+    return data
+
 
 xr.use_spmd()
 assert xr.is_spmd() is True
@@ -663,6 +893,7 @@ class Trainer:
   def _validate_sft_batch(self, batch):
     """Validate SFT batch before training step."""
     if "src_mask" not in batch:
+      logger.error("src_mask not found in batch for SFT training")
       raise ValueError("src_mask not found in batch for SFT training")
     
     src_mask = batch["src_mask"]
@@ -670,10 +901,12 @@ class Trainer:
     
     # Validate src_mask shape and content
     if src_mask.shape != input_ids.shape:
+      logger.error(f"src_mask shape {src_mask.shape} doesn't match input_ids shape {input_ids.shape}")
       raise ValueError(f"src_mask shape {src_mask.shape} doesn't match input_ids shape {input_ids.shape}")
     
     # Ensure we have at least some instruction tokens
     if src_mask.sum() == 0:
+      logger.error("src_mask has no True values - no instruction tokens found")
       raise ValueError("src_mask has no True values - no instruction tokens found")
     
     return True
@@ -681,22 +914,6 @@ class Trainer:
   def train_step(self, batch):
     if self.config.training_mode == "sft":
       # For SFT, src_mask should already be in the batch from data collator
-      # Add debugging outside the compiled function
-      if not hasattr(self, '_debug_step_count'):
-        self._debug_step_count = 0
-      
-      if self._debug_step_count < 3:  # Only debug first 3 steps
-        # Log batch information
-        logger.info(f"DEBUG Step {self._debug_step_count}:")
-        logger.info(f"  input_ids shape: {batch['input_ids'].shape}")
-        logger.info(f"  attention_mask shape: {batch['attention_mask'].shape}")
-        logger.info(f"  src_mask shape: {batch['src_mask'].shape}")
-        logger.info(f"  src_mask sum: {batch['src_mask'].sum().item()}")
-        logger.info(f"  src_mask ratio: {batch['src_mask'].sum().item() / batch['src_mask'].numel():.3f}")
-        logger.info(f"  input_ids sample: {batch['input_ids'][0][:10].tolist()}")
-        logger.info(f"  src_mask sample: {batch['src_mask'][0][:10].tolist()}")
-        self._debug_step_count += 1
-      
       _logits, loss = self._compiled_train_step(batch)
     else:
       # Pre-training mode (original behavior)
@@ -724,69 +941,7 @@ class Trainer:
     self.model.zero_grad()
     return loss
 
-def load_hf_model(model_config):
-  logger.info(f"Loading HuggingFace model from {model_config.tokenizer_name}")
-  hf_model_class_name = HF_MODEL_CLASS_MAPPING.get(model_config.model_class)
-  if hf_model_class_name is None:
-    print(f"Error: No HuggingFace model mapping found for '{model_config.model_class}'")
-    print(f"Available mappings: {list(HF_MODEL_CLASS_MAPPING.keys())}")
-    sys.exit(1)
 
-# Dynamically import the HuggingFace model class
-  try:
-    transformers_module = importlib.import_module("transformers")
-    hf_model_class = getattr(transformers_module, hf_model_class_name)
-  except (ModuleNotFoundError, AttributeError) as e:
-    print(f"Error importing HuggingFace model class '{hf_model_class_name}': {e}")
-    sys.exit(1)
-
-  hf_model = hf_model_class.from_pretrained(
-    model_config.tokenizer_name,
-    torch_dtype=torch.bfloat16,
-  )
-  return hf_model
-
-def initialize_model_class(model_config, load_from_hf=True):
-  """Import and initialize model_class specified by the config."""
-  module_name, model_class_name = model_config.model_class.rsplit(".", 1)
-  try:
-    module = importlib.import_module(module_name)
-  except ModuleNotFoundError as e:
-    print(f"Error importing relative module: {e}")
-    sys.exit(1)
-  if hasattr(module, model_class_name):
-    model_class = getattr(module, model_class_name)
-  else:
-    print(f"Error: Function '{model_class_name}' not found in module '{module_name}'")
-    sys.exit(1)
-  model = model_class(model_config)
-  # Load pretrained weights from HuggingFace model
-  if load_from_hf:
-    hf_model = load_hf_model(model_config)
-    logger.info("Loaded model from HuggingFace. Now loading state dict.")
-    model.load_state_dict(hf_model.state_dict())
-    del hf_model
-  return model
-
-
-@contextmanager
-def set_default_dtype(dtype):
-  # Get the current default dtype
-  previous_dtype = torch.get_default_dtype()
-  # Set the new default dtype
-  torch.set_default_dtype(dtype)
-  try:
-    yield
-  finally:
-    # Revert to the original default dtype
-    torch.set_default_dtype(previous_dtype)
-
-
-def get_model_dtype(module):
-  dtypes = {param.dtype for param in module.parameters()}
-  if len(dtypes) != 1:
-    raise ValueError(f"Inconsistent dtypes found: {dtypes}")
-  return dtypes.pop()
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="default")
@@ -834,174 +989,7 @@ def main(config: DictConfig):
 
   if config.training_mode == "sft":
     # SFT mode: load instruction-response dataset
-    # Get SFT configuration early to avoid UnboundLocalError
-    sft_config = config.data.get("sft", {})
-    
-    if hasattr(config.data, 'hf_datasets') and config.data.hf_datasets:
-      # Load mixed HuggingFace datasets
-      raw_data = retry(
-        lambda: make_mixed_huggingface_datasets(
-          hf_datasets=config.data.hf_datasets,
-          split="train",
-          cache_dir=config.data.cache_dir,
-          seed=config.seed,
-        )
-      )
-    elif config.data.dataset_name:
-      # Load raw dataset from HuggingFace
-      dataset_name = config.data.dataset_name
-      gcs_prefix = "gs://sfr-text-diffusion-model-research/"
-      if dataset_name.startswith(gcs_prefix):
-        dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
-        raw_data = retry(
-          lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
-        )
-      else:
-        # Check if we should use IterableDataset directly
-        use_iterable_dataset = sft_config.get("use_iterable_dataset", True)
-        if use_iterable_dataset:
-          logger.info(f"Process {xr.process_index()}: Loading HuggingFace dataset as IterableDataset")
-          raw_data = retry(
-            lambda: make_huggingface_sft_iterable_dataset(
-              name=config.data.dataset_name,
-              config_name=config.data.dataset_config_name,
-              split="train",
-              cache_dir=config.data.cache_dir,
-              seed=config.seed,
-            )
-          )
-        else:
-          logger.info(f"Process {xr.process_index()}: Loading HuggingFace dataset as regular Dataset")
-          raw_data = retry(
-            lambda: make_huggingface_sft_dataset(
-              name=config.data.dataset_name,
-              config_name=config.data.dataset_config_name,
-              split="train",
-              cache_dir=config.data.cache_dir,
-            )
-          )
-      
-      # Check if dataset was loaded properly
-      if is_main_process():
-        if len(raw_data) == 0:
-          logger.error("Dataset is empty!")
-          raise ValueError("Dataset is empty - check if dataset was downloaded properly")
-    elif config.data.gcs_dataset_names:
-      # Load raw dataset from GCS
-      raw_data = retry(
-        lambda: make_gcs_dataset(
-          names=config.data.gcs_dataset_names,
-          weights=config.data.weights,
-          tokenizer=tokenizer,
-          seed=config.seed,
-          block_size=config.data.block_size,
-        )
-      )
-    else:
-      raise ValueError("No dataset provided for SFT")
-    
-    # Check if the dataset already has src_mask (from create_sft_dataset or GCS preprocessed data)
-    is_preprocessed = False
-    
-    # Check for regular Dataset with features
-    if hasattr(raw_data, 'features') and 'src_mask' in raw_data.features:
-      is_preprocessed = True
-    # Check for IterableDataset with src_mask in samples
-    elif isinstance(raw_data, IterableDataset):
-      try:
-        sample = next(iter(raw_data))
-        if 'src_mask' in sample:
-          is_preprocessed = True
-      except Exception as e:
-        logger.warning(f"Could not check IterableDataset structure: {e}")
-    
-    if is_preprocessed:
-      # Dataset already processed, use as is
-      data = raw_data
-      logger.info(f"Process {xr.process_index()}: Using preprocessed dataset")
-    else:
-      # Process raw dataset for SFT
-      use_iterable_dataset = sft_config.get("use_iterable_dataset", True)  # Default to True
-      logger.info(f"Process {xr.process_index()}: use_iterable_dataset = {use_iterable_dataset}")
-      
-      # Check if raw_data is already an IterableDataset from the new function
-      if isinstance(raw_data, IterableDataset):
-        logger.info(f"Process {xr.process_index()}: raw_data is already IterableDataset, processing directly")
-        try:
-          logger.info(f"Process {xr.process_index()}: Creating SFT IterableDataset from existing IterableDataset")
-          data = create_sft_iterable_dataset(
-            dataset=raw_data,
-            tokenizer=tokenizer,
-            format=sft_config.get("format", "alpaca"),
-            include_system_prompt=sft_config.get("include_system_prompt", True),
-            instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-            custom_format=sft_config.get("custom_format"),
-            block_size=config.data.block_size,
-            seed=config.seed,
-          )
-          if data is None:
-            raise ValueError("create_sft_iterable_dataset returned None")
-          logger.info(f"Process {xr.process_index()}: Successfully created SFT IterableDataset")
-        except Exception as e:
-          logger.warning(f"Process {xr.process_index()}: Failed to create SFT IterableDataset: {e}")
-          logger.info(f"Process {xr.process_index()}: Falling back to regular Dataset")
-          # Convert IterableDataset to regular Dataset for fallback
-          raw_data_list = list(raw_data)
-          raw_data = datasets.Dataset.from_list(raw_data_list)
-          data = create_sft_dataset(
-            dataset=raw_data,
-            tokenizer=tokenizer,
-            format=sft_config.get("format", "alpaca"),
-            include_system_prompt=sft_config.get("include_system_prompt", True),
-            instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-            custom_format=sft_config.get("custom_format"),
-            block_size=config.data.block_size,
-          )
-      elif use_iterable_dataset:
-        try:
-          logger.info(f"Process {xr.process_index()}: Creating SFT IterableDataset")
-          data = create_sft_iterable_dataset(
-            dataset=raw_data,
-            tokenizer=tokenizer,
-            format=sft_config.get("format", "alpaca"),
-            include_system_prompt=sft_config.get("include_system_prompt", True),
-            instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-            custom_format=sft_config.get("custom_format"),
-            block_size=config.data.block_size,
-            seed=config.seed,
-          )
-          if data is None:
-            raise ValueError("create_sft_iterable_dataset returned None")
-          logger.info(f"Process {xr.process_index()}: Successfully created SFT IterableDataset")
-        except Exception as e:
-          logger.warning(f"Process {xr.process_index()}: Failed to create SFT IterableDataset: {e}")
-          logger.info(f"Process {xr.process_index()}: Falling back to regular Dataset")
-          data = create_sft_dataset(
-            dataset=raw_data,
-            tokenizer=tokenizer,
-            format=sft_config.get("format", "alpaca"),
-            include_system_prompt=sft_config.get("include_system_prompt", True),
-            instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-            custom_format=sft_config.get("custom_format"),
-            block_size=config.data.block_size,
-          )
-      else:
-        # Use regular dataset
-        logger.info(f"Process {xr.process_index()}: Creating regular SFT Dataset")
-        data = create_sft_dataset(
-          dataset=raw_data,
-          tokenizer=tokenizer,
-          format=sft_config.get("format", "alpaca"),
-          include_system_prompt=sft_config.get("include_system_prompt", True),
-          instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-          custom_format=sft_config.get("custom_format"),
-          block_size=config.data.block_size,
-        )
-        logger.info(f"Process {xr.process_index()}: Successfully created regular SFT Dataset")
-    
-    if data is None:
-      logger.error(f"Process {xr.process_index()}: Dataset creation failed - data is None after all attempts")
-      raise ValueError("Failed to create SFT dataset")
+    data = _create_sft_dataset(config, tokenizer)
   else:
     # Pre-training mode (original behavior)
     if config.data.dataset_name:
@@ -1037,51 +1025,8 @@ def main(config: DictConfig):
       )
     else:
       raise ValueError("No dataset provided")
-  # data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # not working as expected, will only load a subset of the dataset
-  if isinstance(data, IterableDataset):
-    # Try to split IterableDataset for proper distribution
-    try:
-      logger.info(f"Process {xr.process_index()}: Attempting to split IterableDataset")
-      split_data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
-      if split_data is not None:
-        data = split_data
-        logger.info(f"Process {xr.process_index()}: Successfully split IterableDataset")
-      else:
-        logger.warning(f"Process {xr.process_index()}: split_dataset_by_node returned None, using original dataset")
-        # Keep the original dataset if splitting returns None
-        # This can happen when there are more processes than nodes
-    except Exception as e:
-      logger.warning(f"Process {xr.process_index()}: Dataset splitting failed: {e}. Using original dataset.")
-  elif isinstance(data, Dataset):
-    # For regular Dataset, we need to split it properly for distributed training
-    try:
-      logger.info(f"Process {xr.process_index()}: Attempting to split Dataset")
-      split_data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
-      if split_data is not None:
-        data = split_data
-        logger.info(f"Process {xr.process_index()}: Successfully split Dataset")
-      else:
-        logger.warning(f"Process {xr.process_index()}: split_dataset_by_node returned None, using manual splitting")
-        # Fallback: manually split the dataset
-        if hasattr(data, '__len__'):
-          total_size = len(data)
-          per_device_size = total_size // xr.process_count()
-          start_idx = xr.process_index() * per_device_size
-          end_idx = start_idx + per_device_size if xr.process_index() < xr.process_count() - 1 else total_size
-          data = data.select(range(start_idx, end_idx))
-          logger.info(f"Process {xr.process_index()}: Manually split dataset to size {len(data)}")
-        else:
-          logger.warning(f"Process {xr.process_index()}: Cannot manually split dataset without __len__, using original")
-    except Exception as e:
-      logger.warning(f"Process {xr.process_index()}: Dataset splitting failed: {e}. This may cause data duplication across devices.")
-      # Fallback: manually split the dataset
-      if hasattr(data, '__len__'):
-        total_size = len(data)
-        per_device_size = total_size // xr.process_count()
-        start_idx = xr.process_index() * per_device_size
-        end_idx = start_idx + per_device_size if xr.process_index() < xr.process_count() - 1 else total_size
-        data = data.select(range(start_idx, end_idx))
-        logger.info(f"Process {xr.process_index()}: Manually split dataset to size {len(data)}")
+  # Split dataset for distributed training
+  data = _split_dataset_for_distributed_training(data)
   
   # Final check to ensure data is not None
   if data is None:
