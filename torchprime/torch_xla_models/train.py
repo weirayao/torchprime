@@ -857,12 +857,13 @@ def main(config: DictConfig):
       try:
         logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
         logger.info(f"Before split - data type: {type(data)}")
-        data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
-        logger.info(f"After split - data type: {type(data)}")
-        if data is None:
+        split_data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+        logger.info(f"After split - data type: {type(split_data)}")
+        if split_data is None:
           logger.warning("split_dataset_by_node returned None for IterableDataset, keeping original")
-          # Don't modify data if split returns None
+          # Keep the original data if split returns None
         else:
+          data = split_data
           logger.info(f"Dataset split successful for device {xr.process_index()}")
       except Exception as e:
         logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")

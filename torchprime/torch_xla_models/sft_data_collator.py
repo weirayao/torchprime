@@ -320,6 +320,9 @@ def create_sft_iterable_dataset(
         iterable_dataset = iterable_dataset.map(process_example, remove_columns=dataset.column_names)
         iterable_dataset = iterable_dataset.shuffle(seed=seed, buffer_size=10000)
         
+        # Add custom flag to prevent splitting
+        iterable_dataset._is_custom = True
+        
         return iterable_dataset
     except Exception as e:
         # Fallback: create a simple IterableDataset manually
