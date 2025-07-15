@@ -439,18 +439,6 @@ class Qwen3ForCausalLM(nn.Module):
     maskable_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
     if src_mask is not None:
       maskable_mask = ~src_mask
-      
-      # Debug logging for the first few forward passes
-      if not hasattr(self, '_debug_forward_count'):
-        self._debug_forward_count = 0
-      
-      if self._debug_forward_count < 3:
-        print(f"MODEL DEBUG Forward {self._debug_forward_count}:")
-        print(f"  src_mask sum: {src_mask.sum().item()}")
-        print(f"  maskable_mask sum: {maskable_mask.sum().item()}")
-        print(f"  total tokens: {input_ids.numel()}")
-        print(f"  maskable ratio: {maskable_mask.sum().item() / input_ids.numel():.3f}")
-        self._debug_forward_count += 1
     
     t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
     sigma = t
@@ -478,22 +466,11 @@ class Qwen3ForCausalLM(nn.Module):
     ).reshape(target_ids.shape[0],-1)
     loss = loss.masked_fill(~loss_mask, 0)
     
-    # Debug loss computation
-    if hasattr(self, '_debug_forward_count') and self._debug_forward_count <= 3:
-      print(f"  loss_mask sum: {loss_mask.sum().item()}")
-      print(f"  raw loss sum: {loss.sum().item()}")
-      print(f"  dsigma mean: {dsigma.mean().item():.6f}")
-      print(f"  final loss before division: {(dsigma[:, None] * loss).sum().item():.6f}")
-      print(f"  divisor: {input_ids.shape[0] * input_ids.shape[1]}")
-    
     # weiran: divide by the number of tokens in the sequence instead of the number of masked tokens
     # justification is dsigma already accounts for the number of masked tokens
     # this is a hack to get something like per token loss
     # https://github.com/ML-GSAI/SMDM/blob/main/pretrain/train_mdm_rl.py#L281-L283
     loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
-    
-    if hasattr(self, '_debug_forward_count') and self._debug_forward_count <= 3:
-      print(f"  final loss: {loss.item():.6f}")
     return logits, loss
 
 @xp.trace_me("transition")

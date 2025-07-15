@@ -585,7 +585,6 @@ class Trainer:
     
     return True
 
-  @torch_xla.compile(full_graph=True)
   def train_step(self, batch):
     if self.config.training_mode == "sft":
       # For SFT, src_mask should already be in the batch from data collator
@@ -605,6 +604,17 @@ class Trainer:
         print(f"  src_mask sample: {batch['src_mask'][0][:10].tolist()}")
         self._debug_step_count += 1
       
+      _logits, loss = self._compiled_train_step(batch)
+    else:
+      # Pre-training mode (original behavior)
+      _logits, loss = self._compiled_train_step(batch)
+    
+    return loss
+
+  @torch_xla.compile(full_graph=True)
+  def _compiled_train_step(self, batch):
+    if self.config.training_mode == "sft":
+      # For SFT, src_mask should already be in the batch from data collator
       _logits, loss = self.model(
         input_ids=batch["input_ids"],
         attention_mask=batch["attention_mask"],

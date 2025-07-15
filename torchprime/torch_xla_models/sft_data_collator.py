@@ -124,10 +124,27 @@ class SFTDataCollator(DataCollatorMixin):
             # Extract instruction and response
             instruction, response = self._extract_instruction_response(feature)
             
+            # Debug the first few examples
+            if not hasattr(self, '_debug_extraction_count'):
+                self._debug_extraction_count = 0
+            
+            if self._debug_extraction_count < 2:
+                print(f"DEBUG Extraction {self._debug_extraction_count}:")
+                print(f"  instruction: '{instruction[:100]}...'")
+                print(f"  response: '{response[:100]}...'")
+                print(f"  instruction len: {len(instruction)}")
+                print(f"  response len: {len(response)}")
+                self._debug_extraction_count += 1
+            
             # Create sequence and get instruction length
             sequence, instruction_length = self._create_instruction_response_sequence(
                 instruction, response
             )
+            
+            if self._debug_extraction_count <= 2:
+                print(f"  sequence len: {len(sequence)}")
+                print(f"  instruction_length: {instruction_length}")
+                print(f"  sequence: {sequence[:10]}...")
             
             batch_input_ids.append(sequence)
             batch_instruction_lengths.append(instruction_length)
