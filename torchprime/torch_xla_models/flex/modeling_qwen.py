@@ -461,7 +461,18 @@ class Qwen3ForCausalLM(nn.Module):
       print(f"  sigma shape: {sigma.shape}, dim: {sigma.dim()}")
       print(f"  dsigma shape: {dsigma.shape}, dim: {dsigma.dim()}")
       print(f"  sigma[:, None] shape: {sigma[:, None].shape}")
+      print(f"  maskable_mask shape: {maskable_mask.shape}, dim: {maskable_mask.dim()}")
+      print(f"  maskable_mask device: {maskable_mask.device}")
+      print(f"  input_ids device: {input_ids.device}")
       self._debug_count += 1
+    
+    # Debug transition function call
+    if self._debug_count <= 3:
+      print(f"  Calling transition with:")
+      print(f"    input_ids shape: {input_ids.shape}")
+      print(f"    sigma[:, None] shape: {sigma[:, None].shape}")
+      print(f"    maskable_mask shape: {maskable_mask.shape}")
+      print(f"    mask_token_id: {mask_token_id}")
     
     noisy_input_ids = transition(
       input_ids, sigma[:, None], maskable_mask=maskable_mask, mask_token_id=mask_token_id
@@ -505,6 +516,23 @@ def transition(x_0, sigma, maskable_mask, mask_token_id):
     # weiran: diffullama
     # move_chance = 1 - (-sigma).exp()
     move_chance = sigma
-    move_indices = (torch.rand(*x_0.shape, device=x_0.device) < move_chance) & maskable_mask
+    
+    # Ensure all tensors have the right shapes and are on the same device
+    if x_0.dim() == 0:
+        raise ValueError("x_0 cannot be 0-dimensional")
+    if sigma.dim() == 0:
+        raise ValueError("sigma cannot be 0-dimensional")
+    if maskable_mask.dim() == 0:
+        raise ValueError("maskable_mask cannot be 0-dimensional")
+    
+    # Create random tensor with the same shape as x_0
+    rand_tensor = torch.rand(x_0.shape, device=x_0.device, dtype=x_0.dtype)
+    
+    # Ensure move_chance has the right shape for broadcasting
+    if move_chance.shape != x_0.shape:
+        # Broadcast move_chance to match x_0 shape
+        move_chance = move_chance.expand_as(x_0)
+    
+    move_indices = (rand_tensor < move_chance) & maskable_mask
     x_t = torch.where(move_indices, mask_token_id, x_0)
     return x_t
