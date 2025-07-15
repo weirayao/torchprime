@@ -760,15 +760,27 @@ def main(config: DictConfig):
         raw_data = retry(
           lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
         )
-      else:
-        raw_data = retry(
-          lambda: make_huggingface_sft_dataset(
-            name=config.data.dataset_name,
-            config_name=config.data.dataset_config_name,
-            split="train",
-            cache_dir=config.data.cache_dir,
-          )
+          else:
+      raw_data = retry(
+        lambda: make_huggingface_sft_dataset(
+          name=config.data.dataset_name,
+          config_name=config.data.dataset_config_name,
+          split="train",
+          cache_dir=config.data.cache_dir,
         )
+      )
+      
+      # Debug: Check if dataset was loaded properly
+      if is_main_process():
+        logger.info(f"Dataset loaded: {type(raw_data)}")
+        if hasattr(raw_data, '__len__'):
+          logger.info(f"Dataset size: {len(raw_data)}")
+        if len(raw_data) > 0:
+          logger.info(f"First example keys: {list(raw_data[0].keys())}")
+          logger.info(f"First example: {raw_data[0]}")
+        else:
+          logger.error("Dataset is empty!")
+          raise ValueError("Dataset is empty - check if dataset was downloaded properly")
     elif config.data.gcs_dataset_names:
       # Load raw dataset from GCS
       raw_data = retry(
