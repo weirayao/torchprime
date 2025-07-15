@@ -314,9 +314,30 @@ def create_sft_iterable_dataset(
             "src_mask": src_mask,
         }
     
-    # Convert to IterableDataset and add shuffling
-    iterable_dataset = dataset.to_iterable_dataset()
-    iterable_dataset = iterable_dataset.map(process_example, remove_columns=dataset.column_names)
-    iterable_dataset = iterable_dataset.shuffle(seed=seed, buffer_size=10000)
-    
-    return iterable_dataset 
+    try:
+        # Convert to IterableDataset and add shuffling
+        iterable_dataset = dataset.to_iterable_dataset()
+        iterable_dataset = iterable_dataset.map(process_example, remove_columns=dataset.column_names)
+        iterable_dataset = iterable_dataset.shuffle(seed=seed, buffer_size=10000)
+        
+        return iterable_dataset
+    except Exception as e:
+        # Fallback: create a simple IterableDataset manually
+        class SimpleIterableDataset(IterableDataset):
+            def __init__(self, dataset, process_fn, seed):
+                self.dataset = dataset
+                self.process_fn = process_fn
+                self.seed = seed
+            
+            def __iter__(self):
+                # Simple shuffling by creating a list and shuffling it
+                import random
+                random.seed(self.seed)
+                indices = list(range(len(self.dataset)))
+                random.shuffle(indices)
+                
+                for idx in indices:
+                    example = self.dataset[idx]
+                    yield self.process_fn(example)
+        
+        return SimpleIterableDataset(dataset, process_example, seed) 

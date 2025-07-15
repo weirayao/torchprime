@@ -42,4 +42,9 @@ sft:
   include_system_prompt: true
   
   # Separator between instruction and response (if not using structured format)
-  instruction_response_separator: "\n\n### Response:\n" 
+  instruction_response_separator: "\n\n### Response:\n"
+  
+  # Whether to use IterableDataset for better data distribution across processes
+  # Default: true (recommended for multi-process training)
+  # Set to false to use regular Dataset (fallback if IterableDataset fails)
+  use_iterable_dataset: true 

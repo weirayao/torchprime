@@ -765,17 +765,49 @@ def main(config: DictConfig):
       # Dataset already processed, use as is
       data = raw_data
     else:
-      # Process raw dataset for SFT - use IterableDataset for proper distribution
-      data = create_sft_iterable_dataset(
-        dataset=raw_data,
-        tokenizer=tokenizer,
-        format=sft_config.get("format", "alpaca"),
-        include_system_prompt=sft_config.get("include_system_prompt", True),
-        instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-        custom_format=sft_config.get("custom_format"),
-        block_size=config.data.block_size,
-        seed=config.seed,
-      )
+      # Process raw dataset for SFT - optionally use IterableDataset for proper distribution
+      use_iterable_dataset = sft_config.get("use_iterable_dataset", True)  # Default to True
+      
+      if use_iterable_dataset:
+        try:
+          logger.info("Creating SFT IterableDataset...")
+          data = create_sft_iterable_dataset(
+            dataset=raw_data,
+            tokenizer=tokenizer,
+            format=sft_config.get("format", "alpaca"),
+            include_system_prompt=sft_config.get("include_system_prompt", True),
+            instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+            custom_format=sft_config.get("custom_format"),
+            block_size=config.data.block_size,
+            seed=config.seed,
+          )
+          logger.info(f"SFT IterableDataset created successfully: {type(data)}")
+          if data is None:
+            raise ValueError("create_sft_iterable_dataset returned None")
+        except Exception as e:
+          logger.warning(f"Failed to create SFT IterableDataset: {e}")
+          logger.info("Falling back to regular SFT dataset...")
+          data = create_sft_dataset(
+            dataset=raw_data,
+            tokenizer=tokenizer,
+            format=sft_config.get("format", "alpaca"),
+            include_system_prompt=sft_config.get("include_system_prompt", True),
+            instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+            custom_format=sft_config.get("custom_format"),
+            block_size=config.data.block_size,
+          )
+      else:
+        # Use regular dataset
+        logger.info("Creating regular SFT dataset...")
+        data = create_sft_dataset(
+          dataset=raw_data,
+          tokenizer=tokenizer,
+          format=sft_config.get("format", "alpaca"),
+          include_system_prompt=sft_config.get("include_system_prompt", True),
+          instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+          custom_format=sft_config.get("custom_format"),
+          block_size=config.data.block_size,
+        )
   else:
     # Pre-training mode (original behavior)
     if config.data.dataset_name:

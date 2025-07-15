@@ -59,6 +59,28 @@ python torchprime/torch_xla_models/train.py \
     model.attention_kernel=default
 ```
 
+### IterableDataset for Multi-Process Training
+
+For multi-process training (e.g., 256-core TPU), the SFT pipeline automatically uses `IterableDataset` for better data distribution:
+
+```yaml
+data:
+  sft:
+    use_iterable_dataset: true  # Default: true
+```
+
+**Benefits:**
+- Proper data distribution across processes
+- Prevents data duplication between cores
+- Automatic fallback to regular Dataset if IterableDataset fails
+
+**To disable (not recommended for multi-process):**
+```yaml
+data:
+  sft:
+    use_iterable_dataset: false
+```
+
 ### OpenCoder Dataset Example
 ```bash
 python torchprime/torch_xla_models/train.py \
@@ -88,6 +110,7 @@ data:
     format: alpaca  # or "sharegpt", "custom"
     include_system_prompt: true
     instruction_response_separator: "\n\n### Response:\n"
+    use_iterable_dataset: true  # Default: true, set to false to disable
     custom_format:
       instruction_field: "instruction"
       response_field: "response"
