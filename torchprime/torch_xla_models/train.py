@@ -346,6 +346,20 @@ class Trainer:
       Simple collator for preprocessed SFT data that already has input_ids, instruction_length, and src_mask.
       Only handles padding to make sequences the same length.
       """
+      # Debug: Log the features we're processing
+      if not hasattr(simple_sft_collator, '_debug_count'):
+        simple_sft_collator._debug_count = 0
+      
+      if simple_sft_collator._debug_count < 2:
+        print(f"DEBUG Simple Collator {simple_sft_collator._debug_count}:")
+        print(f"  Number of features: {len(features)}")
+        for i, feature in enumerate(features[:2]):  # Only show first 2
+          print(f"  Feature {i} keys: {list(feature.keys())}")
+          print(f"  Feature {i} input_ids length: {len(feature['input_ids'])}")
+          print(f"  Feature {i} instruction_length: {feature['instruction_length']}")
+          print(f"  Feature {i} src_mask length: {len(feature['src_mask'])}")
+        simple_sft_collator._debug_count += 1
+      
       # Find the maximum length in the batch
       max_length = max(len(feature['input_ids']) for feature in features)
       
@@ -358,6 +372,11 @@ class Trainer:
         input_ids = feature['input_ids']
         instruction_length = feature['instruction_length']
         src_mask = feature['src_mask']
+        
+        # Validate instruction_length
+        if not isinstance(instruction_length, (int, float)) or instruction_length < 0:
+          print(f"WARNING: Invalid instruction_length: {instruction_length} (type: {type(instruction_length)})")
+          instruction_length = 0
         
         # Pad input_ids
         padding_length = max_length - len(input_ids)
@@ -374,12 +393,25 @@ class Trainer:
         batch_instruction_lengths.append(instruction_length)
         batch_src_mask.append(padded_src_mask)
       
-      return {
+      # Debug: Check the batch tensors before returning
+      if simple_sft_collator._debug_count <= 2:
+        print(f"  Batch instruction_lengths: {batch_instruction_lengths}")
+        print(f"  Batch instruction_lengths type: {type(batch_instruction_lengths)}")
+        print(f"  Batch instruction_lengths length: {len(batch_instruction_lengths)}")
+      
+      result = {
         "input_ids": torch.tensor(batch_input_ids, dtype=torch.long),
         "attention_mask": torch.tensor(batch_attention_mask, dtype=torch.long),
         "instruction_lengths": torch.tensor(batch_instruction_lengths, dtype=torch.long),
         "src_mask": torch.tensor(batch_src_mask, dtype=torch.bool),
       }
+      
+      # Debug: Check the result tensors
+      if simple_sft_collator._debug_count <= 2:
+        print(f"  Result instruction_lengths shape: {result['instruction_lengths'].shape}")
+        print(f"  Result instruction_lengths: {result['instruction_lengths']}")
+      
+      return result
     
     return simple_sft_collator
 
@@ -892,6 +924,16 @@ def main(config: DictConfig):
         sample = next(iter(raw_data))
         logger.info(f"Raw data sample keys: {list(sample.keys())}")
         logger.info(f"Raw data sample: {sample}")
+        
+        # Check if this is actually preprocessed data
+        if 'input_ids' in sample and 'instruction_length' in sample and 'src_mask' in sample:
+          logger.info("Raw data appears to be preprocessed SFT data")
+          logger.info(f"Sample input_ids length: {len(sample['input_ids'])}")
+          logger.info(f"Sample instruction_length: {sample['instruction_length']}")
+          logger.info(f"Sample src_mask length: {len(sample['src_mask'])}")
+          logger.info(f"Sample src_mask sum: {sum(sample['src_mask'])}")
+        else:
+          logger.info("Raw data appears to be raw text data")
       except Exception as e:
         logger.warning(f"Could not get sample from raw data: {e}")
     
