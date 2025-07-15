@@ -306,55 +306,38 @@ def create_sft_iterable_dataset(
             "src_mask": src_mask,
         }
     
-    try:
-        # Check if dataset is already an IterableDataset
-        if isinstance(dataset, IterableDataset):
-            # Dataset is already an IterableDataset, just apply processing
-            iterable_dataset = dataset.map(process_example)
-        else:
-            # Convert regular Dataset to IterableDataset and add shuffling
-            iterable_dataset = dataset.to_iterable_dataset()
-            iterable_dataset = iterable_dataset.map(process_example, remove_columns=dataset.column_names)
+    # Always use the SimpleIterableDataset approach to avoid double-wrapping issues
+    class SimpleIterableDataset(IterableDataset):
+        def __init__(self, dataset, process_fn, seed):
+            self.dataset = dataset
+            self.process_fn = process_fn
+            self.seed = seed
+            self._is_custom = True  # Mark as custom to avoid double processing
         
-        # Use different seeds for different processes to ensure proper distribution
-        # Import here to avoid circular imports
-        import torch_xla.runtime as xr
-        process_seed = seed + xr.process_index() if hasattr(xr, 'process_index') else seed
-        iterable_dataset = iterable_dataset.shuffle(seed=process_seed, buffer_size=10000)
-        
-        return iterable_dataset
-    except Exception as e:
-        # Fallback: create a simple IterableDataset manually
-        class SimpleIterableDataset(IterableDataset):
-            def __init__(self, dataset, process_fn, seed):
-                self.dataset = dataset
-                self.process_fn = process_fn
-                self.seed = seed
+        def __iter__(self):
+            # Simple shuffling by creating a list and shuffling it
+            import random
+            import torch_xla.runtime as xr
             
-            def __iter__(self):
-                # Simple shuffling by creating a list and shuffling it
-                import random
-                import torch_xla.runtime as xr
+            # Use different seeds for different processes
+            process_seed = self.seed + xr.process_index() if hasattr(xr, 'process_index') else self.seed
+            random.seed(process_seed)
+            
+            # Handle both Dataset and IterableDataset
+            if hasattr(self.dataset, '__len__'):
+                # Regular Dataset
+                indices = list(range(len(self.dataset)))
+                random.shuffle(indices)
                 
-                # Use different seeds for different processes
-                process_seed = self.seed + xr.process_index() if hasattr(xr, 'process_index') else self.seed
-                random.seed(process_seed)
+                for idx in indices:
+                    example = self.dataset[idx]
+                    yield self.process_fn(example)
+            else:
+                # IterableDataset - convert to list for shuffling
+                examples = list(self.dataset)
+                random.shuffle(examples)
                 
-                # Handle both Dataset and IterableDataset
-                if hasattr(self.dataset, '__len__'):
-                    # Regular Dataset
-                    indices = list(range(len(self.dataset)))
-                    random.shuffle(indices)
-                    
-                    for idx in indices:
-                        example = self.dataset[idx]
-                        yield self.process_fn(example)
-                else:
-                    # IterableDataset - convert to list for shuffling
-                    examples = list(self.dataset)
-                    random.shuffle(examples)
-                    
-                    for example in examples:
-                        yield self.process_fn(example)
-        
-        return SimpleIterableDataset(dataset, process_example, seed) 
+                for example in examples:
+                    yield self.process_fn(example)
+    
+    return SimpleIterableDataset(dataset, process_example, seed) 
