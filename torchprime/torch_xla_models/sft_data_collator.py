@@ -81,6 +81,13 @@ class SFTDataCollator(DataCollatorMixin):
         Create a tokenized sequence with instruction and response,
         and return the length of the instruction part.
         """
+        # Check if both instruction and response are empty - this indicates preprocessed data
+        if not instruction.strip() and not response.strip():
+            print("WARNING: Both instruction and response are empty. This suggests the data is already preprocessed.")
+            print("The SFT data collator should not be used on preprocessed data.")
+            print("Please use a simple collator that only handles padding.")
+            raise ValueError("Cannot process empty instruction and response - data appears to be already preprocessed")
+        
         # Tokenize instruction
         instruction_tokens = self.tokenizer.encode(
             instruction, add_special_tokens=False

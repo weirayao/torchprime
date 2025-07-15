@@ -272,17 +272,24 @@ class Trainer:
       # Each process will load the global batch, then discard the unneeded parts.
       batch_size = self.global_batch_size
     
-    # Choose appropriate data collator based on training mode
+    # Choose appropriate data collator based on training mode and data format
     if self.config.training_mode == "sft":
-      # For SFT, we need to use the SFT data collator
-      sft_config = self.config.data.get("sft", {})
-      collate_fn = SFTDataCollator(
-        tokenizer=self.tokenizer,
-        format=sft_config.get("format", "alpaca"),
-        include_system_prompt=sft_config.get("include_system_prompt", True),
-        instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-        custom_format=sft_config.get("custom_format"),
-      )
+      # Check if the dataset is already preprocessed (has src_mask)
+      if hasattr(self.train_dataset, 'features') and 'src_mask' in self.train_dataset.features:
+        # Dataset is already preprocessed, use a simple collator that just handles padding
+        logger.info("Using simple collator for preprocessed SFT data")
+        collate_fn = self._create_simple_sft_collator()
+      else:
+        # Dataset needs processing, use the full SFT data collator
+        logger.info("Using full SFT data collator for raw data")
+        sft_config = self.config.data.get("sft", {})
+        collate_fn = SFTDataCollator(
+          tokenizer=self.tokenizer,
+          format=sft_config.get("format", "alpaca"),
+          include_system_prompt=sft_config.get("include_system_prompt", True),
+          instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+          custom_format=sft_config.get("custom_format"),
+        )
     else:
       # For pre-training, use default data collator
       collate_fn = default_data_collator
@@ -298,6 +305,50 @@ class Trainer:
       dataloader, self.device, input_sharding=self.input_sharding_spec
     )
     return loader
+
+  def _create_simple_sft_collator(self):
+    """Creates a simple collator that only handles padding for preprocessed SFT data."""
+    def simple_sft_collator(features):
+      """
+      Simple collator for preprocessed SFT data that already has input_ids, instruction_length, and src_mask.
+      Only handles padding to make sequences the same length.
+      """
+      # Find the maximum length in the batch
+      max_length = max(len(feature['input_ids']) for feature in features)
+      
+      batch_input_ids = []
+      batch_attention_mask = []
+      batch_instruction_lengths = []
+      batch_src_mask = []
+      
+      for feature in features:
+        input_ids = feature['input_ids']
+        instruction_length = feature['instruction_length']
+        src_mask = feature['src_mask']
+        
+        # Pad input_ids
+        padding_length = max_length - len(input_ids)
+        padded_input_ids = input_ids + [self.tokenizer.pad_token_id] * padding_length
+        
+        # Pad attention mask
+        attention_mask = [1] * len(input_ids) + [0] * padding_length
+        
+        # Pad src_mask
+        padded_src_mask = src_mask + [False] * padding_length
+        
+        batch_input_ids.append(padded_input_ids)
+        batch_attention_mask.append(attention_mask)
+        batch_instruction_lengths.append(instruction_length)
+        batch_src_mask.append(padded_src_mask)
+      
+      return {
+        "input_ids": torch.tensor(batch_input_ids, dtype=torch.long),
+        "attention_mask": torch.tensor(batch_attention_mask, dtype=torch.long),
+        "instruction_lengths": torch.tensor(batch_instruction_lengths, dtype=torch.long),
+        "src_mask": torch.tensor(batch_src_mask, dtype=torch.bool),
+      }
+    
+    return simple_sft_collator
 
   def _add_checkpoint_offload_scan_model(self, model: nn.Module):
     remat_classes = self._get_classes_by_names(
