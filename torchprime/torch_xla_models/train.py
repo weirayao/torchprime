@@ -564,6 +564,14 @@ class Trainer:
       Only handles padding to make sequences the same length.
       """
       
+      # Debug: print feature structure to understand the data format
+      if len(features) > 0:
+        first_feature = features[0]
+        logger.info(f"First feature keys: {list(first_feature.keys())}")
+        logger.info(f"First feature input_ids type: {type(first_feature['input_ids'])}, length: {len(first_feature['input_ids']) if hasattr(first_feature['input_ids'], '__len__') else 'no len'}")
+        logger.info(f"First feature instruction_length type: {type(first_feature['instruction_length'])}, value: {first_feature['instruction_length']}")
+        logger.info(f"First feature src_mask type: {type(first_feature['src_mask'])}, length: {len(first_feature['src_mask']) if hasattr(first_feature['src_mask'], '__len__') else 'no len'}")
+      
       # Find the maximum length in the batch
       max_length = max(len(feature['input_ids']) for feature in features)
       
@@ -571,15 +579,20 @@ class Trainer:
       batch_attention_mask = []
       batch_src_mask = []
       
-      for feature in features:
+      for i, feature in enumerate(features):
         input_ids = feature['input_ids']
         instruction_length = feature['instruction_length']
         src_mask = feature['src_mask']
         
         # Validate instruction_length
         if not isinstance(instruction_length, (int, float)) or instruction_length < 0:
-          print(f"WARNING: Invalid instruction_length: {instruction_length} (type: {type(instruction_length)})")
+          logger.warning(f"WARNING: Invalid instruction_length: {instruction_length} (type: {type(instruction_length)})")
           instruction_length = 0
+        
+        # Ensure input_ids is a list
+        if not isinstance(input_ids, (list, tuple)):
+          logger.error(f"ERROR: input_ids is not a list/tuple: {type(input_ids)}, value: {input_ids}")
+          raise ValueError(f"input_ids must be a list/tuple, got {type(input_ids)}")
         
         # Pad input_ids
         padding_length = max_length - len(input_ids)
@@ -593,6 +606,7 @@ class Trainer:
           padded_src_mask = list(src_mask) + [False] * padding_length
         else:
           # If src_mask is not a list, create a default mask
+          logger.warning(f"WARNING: src_mask is not a list/tuple: {type(src_mask)}, creating default mask")
           padded_src_mask = [True] * len(input_ids) + [False] * padding_length
         
         batch_input_ids.append(padded_input_ids)
@@ -600,9 +614,16 @@ class Trainer:
         batch_src_mask.append(padded_src_mask)
       
       # Convert to tensors with explicit shapes to avoid 0-d tensor issues
-      input_ids_tensor = torch.tensor(batch_input_ids, dtype=torch.long)
-      attention_mask_tensor = torch.tensor(batch_attention_mask, dtype=torch.long)
-      src_mask_tensor = torch.tensor(batch_src_mask, dtype=torch.bool)
+      try:
+        input_ids_tensor = torch.tensor(batch_input_ids, dtype=torch.long)
+        attention_mask_tensor = torch.tensor(batch_attention_mask, dtype=torch.long)
+        src_mask_tensor = torch.tensor(batch_src_mask, dtype=torch.bool)
+      except Exception as e:
+        logger.error(f"ERROR: Failed to create tensors: {e}")
+        logger.error(f"batch_input_ids shape: {[len(x) for x in batch_input_ids]}")
+        logger.error(f"batch_attention_mask shape: {[len(x) for x in batch_attention_mask]}")
+        logger.error(f"batch_src_mask shape: {[len(x) for x in batch_src_mask]}")
+        raise
       
       # Ensure all tensors have the expected shape
       batch_size = len(features)
