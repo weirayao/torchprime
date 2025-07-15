@@ -484,7 +484,8 @@ class Qwen3ForCausalLM(nn.Module):
     
     # Ensure we're working with proper tensors for the final division
     loss_sum = (dsigma[:, None] * loss).sum()
-    loss = loss_sum / float(input_ids.shape[0] * input_ids.shape[1])
+    # Create a scalar tensor for the division to avoid iteration over 0-d tensor
+    loss = loss_sum / torch.tensor(input_ids.shape[0] * input_ids.shape[1], dtype=loss_sum.dtype, device=loss_sum.device)
     return logits, loss
 
 @xp.trace_me("transition")
