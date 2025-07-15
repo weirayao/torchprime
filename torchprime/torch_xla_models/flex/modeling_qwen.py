@@ -449,6 +449,20 @@ class Qwen3ForCausalLM(nn.Module):
     # Ensure dsigma is at least 1-dimensional to avoid iteration over 0-d tensor
     if dsigma.dim() == 0:
       dsigma = dsigma.unsqueeze(0)
+    
+    # Debug: Check tensor shapes
+    if not hasattr(self, '_debug_count'):
+      self._debug_count = 0
+    
+    if self._debug_count < 3:
+      print(f"DEBUG Forward {self._debug_count}:")
+      print(f"  input_ids shape: {input_ids.shape}")
+      print(f"  t shape: {t.shape}, dim: {t.dim()}")
+      print(f"  sigma shape: {sigma.shape}, dim: {sigma.dim()}")
+      print(f"  dsigma shape: {dsigma.shape}, dim: {dsigma.dim()}")
+      print(f"  sigma[:, None] shape: {sigma[:, None].shape}")
+      self._debug_count += 1
+    
     noisy_input_ids = transition(
       input_ids, sigma[:, None], maskable_mask=maskable_mask, mask_token_id=mask_token_id
     )
@@ -476,6 +490,13 @@ class Qwen3ForCausalLM(nn.Module):
     # justification is dsigma already accounts for the number of masked tokens
     # this is a hack to get something like per token loss
     # https://github.com/ML-GSAI/SMDM/blob/main/pretrain/train_mdm_rl.py#L281-L283
+    
+    # Debug: Check loss calculation
+    if self._debug_count <= 3:
+      print(f"  loss shape: {loss.shape}")
+      print(f"  dsigma[:, None] shape: {dsigma[:, None].shape}")
+      print(f"  (dsigma[:, None] * loss) shape: {(dsigma[:, None] * loss).shape}")
+    
     loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
     return logits, loss
 
