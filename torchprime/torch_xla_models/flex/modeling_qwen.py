@@ -445,18 +445,6 @@ class Qwen3ForCausalLM(nn.Module):
     sigma = t
     dsigma = torch.reciprocal(sigma)
     
-    # Debug logging - check tensor shapes and values
-    if hasattr(self, '_debug_count'):
-      self._debug_count += 1
-    else:
-      self._debug_count = 0
-    
-    if self._debug_count < 3:  # Only log first 3 steps
-      print(f"DEBUG: input_ids.shape={input_ids.shape}, t.shape={t.shape}, sigma.shape={sigma.shape}, dsigma.shape={dsigma.shape}")
-      print(f"DEBUG: t={t}, sigma={sigma}, dsigma={dsigma}")
-      print(f"DEBUG: input_ids.shape[0]={input_ids.shape[0]}, input_ids.shape[1]={input_ids.shape[1]}")
-      print(f"DEBUG: (input_ids.shape[0] * input_ids.shape[1])={input_ids.shape[0] * input_ids.shape[1]}")
-    
 
     
     noisy_input_ids = transition(
