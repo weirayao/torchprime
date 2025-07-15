@@ -943,10 +943,10 @@ class Trainer:
   def train_step(self, batch):
     if self.config.training_mode == "sft":
       # For SFT, src_mask should already be in the batch from data collator
-      _logits, loss = self._compiled_train_step(batch)
+      loss = self._compiled_train_step(batch)
     else:
       # Pre-training mode (original behavior)
-      _logits, loss = self._compiled_train_step(batch)
+      loss = self._compiled_train_step(batch)
     
     return loss
 
