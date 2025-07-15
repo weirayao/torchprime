@@ -834,6 +834,9 @@ def main(config: DictConfig):
 
   if config.training_mode == "sft":
     # SFT mode: load instruction-response dataset
+    # Get SFT configuration early to avoid UnboundLocalError
+    sft_config = config.data.get("sft", {})
+    
     if hasattr(config.data, 'hf_datasets') and config.data.hf_datasets:
       # Load mixed HuggingFace datasets
       raw_data = retry(
@@ -896,11 +899,6 @@ def main(config: DictConfig):
       )
     else:
       raise ValueError("No dataset provided for SFT")
-    
-    # Process raw dataset for SFT
-    sft_config = config.data.get("sft", {})
-    
-
     
     # Check if the dataset already has src_mask (from create_sft_dataset or GCS preprocessed data)
     is_preprocessed = False
