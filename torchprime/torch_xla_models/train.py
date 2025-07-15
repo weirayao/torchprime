@@ -277,6 +277,9 @@ class Trainer:
       # Check if the dataset is already preprocessed (has src_mask)
       is_preprocessed = False
       
+      if self.train_dataset is None:
+        raise ValueError("train_dataset is None - dataset creation failed")
+      
       if hasattr(self.train_dataset, 'features') and 'src_mask' in self.train_dataset.features:
         # Regular Dataset with features - check if it has src_mask
         is_preprocessed = True
@@ -902,12 +905,15 @@ def main(config: DictConfig):
     if is_preprocessed:
       # Dataset already processed, use as is
       data = raw_data
+      logger.info(f"Process {xr.process_index()}: Using preprocessed dataset")
     else:
       # Process raw dataset for SFT - optionally use IterableDataset for proper distribution
       use_iterable_dataset = sft_config.get("use_iterable_dataset", True)  # Default to True
+      logger.info(f"Process {xr.process_index()}: use_iterable_dataset = {use_iterable_dataset}")
       
       if use_iterable_dataset:
         try:
+          logger.info(f"Process {xr.process_index()}: Creating SFT IterableDataset")
           data = create_sft_iterable_dataset(
             dataset=raw_data,
             tokenizer=tokenizer,
@@ -920,8 +926,10 @@ def main(config: DictConfig):
           )
           if data is None:
             raise ValueError("create_sft_iterable_dataset returned None")
+          logger.info(f"Process {xr.process_index()}: Successfully created SFT IterableDataset")
         except Exception as e:
-          logger.warning(f"Failed to create SFT IterableDataset: {e}")
+          logger.warning(f"Process {xr.process_index()}: Failed to create SFT IterableDataset: {e}")
+          logger.info(f"Process {xr.process_index()}: Falling back to regular Dataset")
           data = create_sft_dataset(
             dataset=raw_data,
             tokenizer=tokenizer,
@@ -933,6 +941,7 @@ def main(config: DictConfig):
           )
       else:
         # Use regular dataset
+        logger.info(f"Process {xr.process_index()}: Creating regular SFT Dataset")
         data = create_sft_dataset(
           dataset=raw_data,
           tokenizer=tokenizer,
@@ -942,9 +951,10 @@ def main(config: DictConfig):
           custom_format=sft_config.get("custom_format"),
           block_size=config.data.block_size,
         )
+        logger.info(f"Process {xr.process_index()}: Successfully created regular SFT Dataset")
     
     if data is None:
-      logger.error("Dataset creation failed - data is None after all attempts")
+      logger.error(f"Process {xr.process_index()}: Dataset creation failed - data is None after all attempts")
       raise ValueError("Failed to create SFT dataset")
   else:
     # Pre-training mode (original behavior)
@@ -985,17 +995,23 @@ def main(config: DictConfig):
   if isinstance(data, IterableDataset):
     # Try to split IterableDataset for proper distribution
     try:
+      logger.info(f"Process {xr.process_index()}: Attempting to split IterableDataset")
       split_data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
       if split_data is not None:
         data = split_data
+        logger.info(f"Process {xr.process_index()}: Successfully split IterableDataset")
+      else:
+        logger.warning(f"Process {xr.process_index()}: split_dataset_by_node returned None")
     except Exception as e:
-      logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
+      logger.warning(f"Process {xr.process_index()}: Dataset splitting failed: {e}. This may cause data duplication across devices.")
   elif isinstance(data, Dataset):
     # For regular Dataset, we need to split it properly for distributed training
     try:
+      logger.info(f"Process {xr.process_index()}: Attempting to split Dataset")
       data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+      logger.info(f"Process {xr.process_index()}: Successfully split Dataset")
     except Exception as e:
-      logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
+      logger.warning(f"Process {xr.process_index()}: Dataset splitting failed: {e}. This may cause data duplication across devices.")
       # Fallback: manually split the dataset
       if hasattr(data, '__len__'):
         total_size = len(data)
@@ -1003,6 +1019,12 @@ def main(config: DictConfig):
         start_idx = xr.process_index() * per_device_size
         end_idx = start_idx + per_device_size if xr.process_index() < xr.process_count() - 1 else total_size
         data = data.select(range(start_idx, end_idx))
+        logger.info(f"Process {xr.process_index()}: Manually split dataset to size {len(data)}")
+  
+  # Final check to ensure data is not None
+  if data is None:
+    logger.error(f"Process {xr.process_index()}: Dataset is None after all processing attempts!")
+    raise ValueError(f"Process {xr.process_index()}: Dataset creation failed - data is None")
   trainer = Trainer(
     model=model,
     tokenizer=tokenizer,
