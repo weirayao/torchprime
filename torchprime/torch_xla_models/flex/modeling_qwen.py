@@ -452,12 +452,10 @@ class Qwen3ForCausalLM(nn.Module):
       
       # Average over response tokens only using tensor operations
       num_response_tokens = response_mask.sum()
-      # Use torch.where to avoid Python conditionals in compiled function
-      loss = torch.where(
-        num_response_tokens > 0,
-        loss.sum() / num_response_tokens,
-        loss.sum() * 0.0  # Avoid division by zero
-      )
+      # Ensure num_response_tokens is a scalar tensor and avoid division by zero
+      loss_sum = loss.sum()
+      # Use a safer approach that doesn't rely on torch.where with scalar tensors
+      loss = loss_sum / torch.clamp(num_response_tokens, min=1.0)
     else:
       # If no src_mask, average over all tokens
       loss = loss.mean()
