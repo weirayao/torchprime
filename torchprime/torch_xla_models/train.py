@@ -832,9 +832,8 @@ class Trainer:
 
       trace_start_time = timer()
       
-      # Validate batch for SFT mode
-      if self.config.training_mode == "sft":
-        self._validate_sft_batch(batch)
+      # Skip validation for now due to XLA synchronization issues
+      # The data is already validated during creation in create_sft_iterable_dataset
       
       loss = self.train_step(batch)
       trace_end_time = timer()
@@ -930,66 +929,6 @@ class Trainer:
     metrics = metrics_logger.finalize()
     logger.info("***** train metrics *****\n%s", metrics)
     metrics.save(Path(self.config.output_dir) / "train_metrics.json")
-
-  def _validate_sft_batch(self, batch):
-    """Validate SFT batch before training step."""
-    logger.info(f"Process {xr.process_index()}: _validate_sft_batch started")
-    
-    if "src_mask" not in batch:
-      logger.error("src_mask not found in batch for SFT training")
-      raise ValueError("src_mask not found in batch for SFT training")
-    
-    logger.info(f"Process {xr.process_index()}: src_mask found in batch")
-    
-    src_mask = batch["src_mask"]
-    input_ids = batch["input_ids"]
-    
-    logger.info(f"Process {xr.process_index()}: Got src_mask and input_ids")
-    logger.info(f"Process {xr.process_index()}: src_mask type: {type(src_mask)}, shape: {src_mask.shape if hasattr(src_mask, 'shape') else 'no shape'}")
-    logger.info(f"Process {xr.process_index()}: input_ids type: {type(input_ids)}, shape: {input_ids.shape if hasattr(input_ids, 'shape') else 'no shape'}")
-    
-    # Check for 0-d tensors first (before any operations that might fail)
-    logger.info(f"Process {xr.process_index()}: Checking tensor dimensions...")
-    if input_ids.dim() == 0:
-      logger.error(f"ERROR: input_ids is a 0-d tensor with value: {input_ids.item()}")
-      raise ValueError("input_ids is a 0-d tensor")
-    if src_mask.dim() == 0:
-      logger.error(f"ERROR: src_mask is a 0-d tensor with value: {src_mask.item()}")
-      raise ValueError("src_mask is a 0-d tensor")
-    if batch['attention_mask'].dim() == 0:
-      logger.error(f"ERROR: attention_mask is a 0-d tensor with value: {batch['attention_mask'].item()}")
-      raise ValueError("attention_mask is a 0-d tensor")
-    
-    logger.info(f"Process {xr.process_index()}: Tensor dimension checks passed")
-    
-    # Validate src_mask shape and content
-    logger.info(f"Process {xr.process_index()}: Checking shape compatibility...")
-    if src_mask.shape != input_ids.shape:
-      logger.error(f"src_mask shape {src_mask.shape} doesn't match input_ids shape {input_ids.shape}")
-      raise ValueError(f"src_mask shape {src_mask.shape} doesn't match input_ids shape {input_ids.shape}")
-    
-    logger.info(f"Process {xr.process_index()}: Shape compatibility check passed")
-    
-    # Skip the problematic src_mask.sum() check for now
-    # This operation requires XLA synchronization and can hang with different tensor shapes
-    logger.info(f"Process {xr.process_index()}: Skipping src_mask content check (XLA sync issue)")
-    
-    # Alternative: Check if src_mask has any True values using a simpler approach
-    # Convert to CPU and check locally to avoid XLA sync issues
-    try:
-      logger.info(f"Process {xr.process_index()}: Attempting local src_mask check...")
-      # Get a small sample to check locally
-      sample_mask = src_mask[0, :10].cpu().numpy()  # Check first 10 tokens of first sequence
-      has_instruction = any(sample_mask)
-      logger.info(f"Process {xr.process_index()}: Sample src_mask check: {has_instruction}")
-      if not has_instruction:
-        logger.warning(f"Process {xr.process_index()}: Sample shows no instruction tokens, but continuing...")
-    except Exception as e:
-      logger.warning(f"Process {xr.process_index()}: Could not perform local src_mask check: {e}")
-    
-    logger.info(f"Process {xr.process_index()}: _validate_sft_batch completed successfully")
-    
-    return True
 
   def train_step(self, batch):
     if self.config.training_mode == "sft":
