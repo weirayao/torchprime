@@ -220,6 +220,8 @@ def create_sft_dataset(
     Returns:
         Processed dataset ready for SFT training
     """
+    print(f"create_sft_dataset: Starting with dataset type {type(dataset)}")
+    
     def process_example(example):
         collator = SFTDataCollator(
             tokenizer=tokenizer,
@@ -252,7 +254,14 @@ def create_sft_dataset(
             "src_mask": src_mask,
         }
     
-    return dataset.map(process_example, remove_columns=dataset.column_names)
+    try:
+        print(f"create_sft_dataset: Applying map function...")
+        result = dataset.map(process_example, remove_columns=dataset.column_names)
+        print(f"create_sft_dataset: Map function completed, result type: {type(result)}")
+        return result
+    except Exception as e:
+        print(f"create_sft_dataset: Error during map: {e}")
+        raise
 
 
 def create_sft_iterable_dataset(

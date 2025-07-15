@@ -808,6 +808,11 @@ def main(config: DictConfig):
           custom_format=sft_config.get("custom_format"),
           block_size=config.data.block_size,
         )
+    
+    logger.info(f"Final dataset type: {type(data)}")
+    if data is None:
+      logger.error("Dataset creation failed - data is None after all attempts")
+      raise ValueError("Failed to create SFT dataset")
   else:
     # Pre-training mode (original behavior)
     if config.data.dataset_name:
@@ -878,6 +883,9 @@ def main(config: DictConfig):
   # Log dataset information for debugging
   if is_main_process():
     logger.info(f"Dataset type: {type(data)}")
+    if data is None:
+      logger.error("Dataset is None! This indicates a failure in dataset creation.")
+      raise ValueError("Dataset creation failed - data is None")
     if hasattr(data, '__len__'):
       logger.info(f"Dataset size: {len(data)}")
     if hasattr(data, 'features'):
