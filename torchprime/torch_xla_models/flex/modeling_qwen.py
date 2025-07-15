@@ -450,12 +450,14 @@ class Qwen3ForCausalLM(nn.Module):
       response_mask = ~src_mask[..., 1:].contiguous()  # Shift to match target_ids
       loss = loss.masked_fill(~response_mask, 0)
       
-      # Average over response tokens only
+      # Average over response tokens only using tensor operations
       num_response_tokens = response_mask.sum()
-      if num_response_tokens > 0:
-        loss = loss.sum() / num_response_tokens
-      else:
-        loss = loss.sum() * 0.0  # Avoid division by zero
+      # Use torch.where to avoid Python conditionals in compiled function
+      loss = torch.where(
+        num_response_tokens > 0,
+        loss.sum() / num_response_tokens,
+        loss.sum() * 0.0  # Avoid division by zero
+      )
     else:
       # If no src_mask, average over all tokens
       loss = loss.mean()
