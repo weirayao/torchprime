@@ -941,14 +941,23 @@ class Trainer:
 
   def _validate_sft_batch(self, batch):
     """Validate SFT batch before training step."""
+    logger.info(f"Process {xr.process_index()}: _validate_sft_batch started")
+    
     if "src_mask" not in batch:
       logger.error("src_mask not found in batch for SFT training")
       raise ValueError("src_mask not found in batch for SFT training")
     
+    logger.info(f"Process {xr.process_index()}: src_mask found in batch")
+    
     src_mask = batch["src_mask"]
     input_ids = batch["input_ids"]
     
+    logger.info(f"Process {xr.process_index()}: Got src_mask and input_ids")
+    logger.info(f"Process {xr.process_index()}: src_mask type: {type(src_mask)}, shape: {src_mask.shape if hasattr(src_mask, 'shape') else 'no shape'}")
+    logger.info(f"Process {xr.process_index()}: input_ids type: {type(input_ids)}, shape: {input_ids.shape if hasattr(input_ids, 'shape') else 'no shape'}")
+    
     # Check for 0-d tensors first (before any operations that might fail)
+    logger.info(f"Process {xr.process_index()}: Checking tensor dimensions...")
     if input_ids.dim() == 0:
       logger.error(f"ERROR: input_ids is a 0-d tensor with value: {input_ids.item()}")
       raise ValueError("input_ids is a 0-d tensor")
@@ -959,15 +968,24 @@ class Trainer:
       logger.error(f"ERROR: attention_mask is a 0-d tensor with value: {batch['attention_mask'].item()}")
       raise ValueError("attention_mask is a 0-d tensor")
     
+    logger.info(f"Process {xr.process_index()}: Tensor dimension checks passed")
+    
     # Validate src_mask shape and content
+    logger.info(f"Process {xr.process_index()}: Checking shape compatibility...")
     if src_mask.shape != input_ids.shape:
       logger.error(f"src_mask shape {src_mask.shape} doesn't match input_ids shape {input_ids.shape}")
       raise ValueError(f"src_mask shape {src_mask.shape} doesn't match input_ids shape {input_ids.shape}")
     
+    logger.info(f"Process {xr.process_index()}: Shape compatibility check passed")
+    
     # Ensure we have at least some instruction tokens
+    logger.info(f"Process {xr.process_index()}: Checking src_mask content...")
     if src_mask.sum() == 0:
       logger.error("src_mask has no True values - no instruction tokens found")
       raise ValueError("src_mask has no True values - no instruction tokens found")
+    
+    logger.info(f"Process {xr.process_index()}: src_mask content check passed")
+    logger.info(f"Process {xr.process_index()}: _validate_sft_batch completed successfully")
     
     return True
 
