@@ -142,7 +142,7 @@ def _create_sft_dataset(config, tokenizer):
     is_preprocessed = False
     
     # Check for regular Dataset with features
-    if hasattr(raw_data, 'features') and 'src_mask' in raw_data.features:
+    if hasattr(raw_data, 'features') and raw_data.features is not None and 'src_mask' in raw_data.features:
         is_preprocessed = True
     # Check for IterableDataset with src_mask in samples
     elif isinstance(raw_data, IterableDataset):
@@ -510,7 +510,8 @@ class Trainer:
       if self.train_dataset is None:
         raise ValueError("train_dataset is None - dataset creation failed")
       
-      if hasattr(self.train_dataset, 'features') and 'src_mask' in self.train_dataset.features:
+      # Check for regular Dataset with features
+      if hasattr(self.train_dataset, 'features') and self.train_dataset.features is not None and 'src_mask' in self.train_dataset.features:
         # Regular Dataset with features - check if it has src_mask
         is_preprocessed = True
       elif isinstance(self.train_dataset, IterableDataset):
