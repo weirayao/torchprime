@@ -564,13 +564,9 @@ class Trainer:
       Only handles padding to make sequences the same length.
       """
       
-      # Debug: print feature structure to understand the data format
-      if len(features) > 0:
-        first_feature = features[0]
-        logger.info(f"First feature keys: {list(first_feature.keys())}")
-        logger.info(f"First feature input_ids type: {type(first_feature['input_ids'])}, length: {len(first_feature['input_ids']) if hasattr(first_feature['input_ids'], '__len__') else 'no len'}")
-        logger.info(f"First feature instruction_length type: {type(first_feature['instruction_length'])}, value: {first_feature['instruction_length']}")
-        logger.info(f"First feature src_mask type: {type(first_feature['src_mask'])}, length: {len(first_feature['src_mask']) if hasattr(first_feature['src_mask'], '__len__') else 'no len'}")
+      # Simple validation without debug prints
+      if len(features) == 0:
+        raise ValueError("Empty features list passed to collator")
       
       # Find the maximum length in the batch
       max_length = max(len(feature['input_ids']) for feature in features)
@@ -920,6 +916,17 @@ class Trainer:
     
     src_mask = batch["src_mask"]
     input_ids = batch["input_ids"]
+    
+    # Check for 0-d tensors first (before any operations that might fail)
+    if input_ids.dim() == 0:
+      logger.error(f"ERROR: input_ids is a 0-d tensor with value: {input_ids.item()}")
+      raise ValueError("input_ids is a 0-d tensor")
+    if src_mask.dim() == 0:
+      logger.error(f"ERROR: src_mask is a 0-d tensor with value: {src_mask.item()}")
+      raise ValueError("src_mask is a 0-d tensor")
+    if batch['attention_mask'].dim() == 0:
+      logger.error(f"ERROR: attention_mask is a 0-d tensor with value: {batch['attention_mask'].item()}")
+      raise ValueError("attention_mask is a 0-d tensor")
     
     # Validate src_mask shape and content
     if src_mask.shape != input_ids.shape:
