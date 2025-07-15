@@ -1,7 +1,7 @@
-TPU_VM_NAME="sfr-cqin-v4-16"
+TPU_VM_NAME="sfr-cqin-v4-128"
 TPU_ZONE="us-central2-b"
 BRANCH="cqin/dev"
-RECIPE="recipes/train_qwen3_1.7b.sh"
+RECIPE="recipes/train_qwen3_1.7b_sft.sh"
 # RECIPE="recipes/train_qwen3_1.7b_sft_256core_config.sh"
 
 # Parse command line arguments
