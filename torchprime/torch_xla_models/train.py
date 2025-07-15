@@ -97,7 +97,7 @@ def _create_sft_dataset(config, tokenizer):
             )
         else:
             # Check if we should use IterableDataset directly
-            use_iterable_dataset = sft_config.get("use_iterable_dataset", True)
+            use_iterable_dataset = sft_config.get("use_iterable_dataset", False)
             if use_iterable_dataset:
                 logger.info(f"Process {xr.process_index()}: Loading HuggingFace dataset as IterableDataset")
                 raw_data = retry(
@@ -159,7 +159,7 @@ def _create_sft_dataset(config, tokenizer):
         logger.info(f"Process {xr.process_index()}: Using preprocessed dataset")
     else:
         # Process raw dataset for SFT
-        use_iterable_dataset = sft_config.get("use_iterable_dataset", True)  # Default to True
+        use_iterable_dataset = sft_config.get("use_iterable_dataset", False)  # Default to False
         logger.info(f"Process {xr.process_index()}: use_iterable_dataset = {use_iterable_dataset}")
         
         # Check if raw_data is already an IterableDataset from the new function
