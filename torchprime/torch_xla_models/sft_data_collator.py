@@ -121,12 +121,21 @@ class SFTDataCollator(DataCollatorMixin):
         batch_instruction_lengths = []
         
         for feature in features:
-            # Extract instruction and response
-            instruction, response = self._extract_instruction_response(feature)
-            
-            # Debug the first few examples
+            # Debug the raw feature first
             if not hasattr(self, '_debug_extraction_count'):
                 self._debug_extraction_count = 0
+            
+            if self._debug_extraction_count < 2:
+                print(f"DEBUG Raw Feature {self._debug_extraction_count}:")
+                print(f"  feature keys: {list(feature.keys())}")
+                for key, value in feature.items():
+                    if isinstance(value, str):
+                        print(f"  {key}: '{value[:100]}...'")
+                    else:
+                        print(f"  {key}: {type(value)} - {value}")
+            
+            # Extract instruction and response
+            instruction, response = self._extract_instruction_response(feature)
             
             if self._debug_extraction_count < 2:
                 print(f"DEBUG Extraction {self._debug_extraction_count}:")
