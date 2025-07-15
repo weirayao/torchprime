@@ -474,7 +474,10 @@ class Qwen3ForCausalLM(nn.Module):
     # justification is dsigma already accounts for the number of masked tokens
     # this is a hack to get something like per token loss
     # https://github.com/ML-GSAI/SMDM/blob/main/pretrain/train_mdm_rl.py#L281-L283
-    loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
+    loss_sum = (dsigma[:, None] * loss).sum()
+    # Convert denominator to tensor to avoid iteration over 0-d tensor
+    denominator = torch.tensor(input_ids.shape[0] * input_ids.shape[1], dtype=loss_sum.dtype, device=loss_sum.device)
+    loss = loss_sum / denominator
     return logits, loss
 
 @xp.trace_me("transition")
