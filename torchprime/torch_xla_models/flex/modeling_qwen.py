@@ -442,15 +442,11 @@ class Qwen3ForCausalLM(nn.Module):
       src_mask_bool = src_mask.bool().to(device=input_ids.device)
       maskable_mask = ~src_mask_bool
     
-    t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
-    # Ensure t is at least 1-dimensional
-    if t.dim() == 0:
-      t = t.unsqueeze(0)
+    # Generate t with proper shape to avoid 0-d tensor issues
+    batch_size = input_ids.shape[0]
+    t = (1 - sampling_eps) * torch.rand(batch_size, device=input_ids.device) + sampling_eps
     sigma = t
     dsigma = torch.reciprocal(sigma)
-    # Ensure dsigma is at least 1-dimensional to avoid iteration over 0-d tensor
-    if dsigma.dim() == 0:
-      dsigma = dsigma.unsqueeze(0)
     
 
     
@@ -485,7 +481,11 @@ class Qwen3ForCausalLM(nn.Module):
     # Ensure we're working with proper tensors for the final division
     loss_sum = (dsigma[:, None] * loss).sum()
     # Create a scalar tensor for the division to avoid iteration over 0-d tensor
-    loss = loss_sum / torch.tensor(input_ids.shape[0] * input_ids.shape[1], dtype=loss_sum.dtype, device=loss_sum.device)
+    # Use a more explicit approach to avoid any tensor iteration issues
+    batch_size = input_ids.shape[0]
+    seq_len = input_ids.shape[1]
+    total_tokens = batch_size * seq_len
+    loss = loss_sum / total_tokens
     return logits, loss
 
 @xp.trace_me("transition")
@@ -503,6 +503,9 @@ def transition(x_0, sigma, maskable_mask, mask_token_id):
         raise ValueError("maskable_mask cannot be 0-dimensional")
     
     # Create random tensor with the same shape as x_0
+    # Ensure we're not creating any 0-d tensors
+    if x_0.numel() == 0:
+        raise ValueError("x_0 has no elements")
     rand_tensor = torch.rand(x_0.shape, device=x_0.device, dtype=x_0.dtype)
     
     # Ensure move_chance has the right shape for broadcasting
@@ -511,6 +514,9 @@ def transition(x_0, sigma, maskable_mask, mask_token_id):
         move_chance = move_chance.expand_as(x_0)
     
     move_indices = (rand_tensor < move_chance) & maskable_mask
+    # Ensure mask_token_id is a scalar tensor to avoid broadcasting issues
+    if isinstance(mask_token_id, int):
+        mask_token_id = torch.tensor(mask_token_id, device=x_0.device, dtype=x_0.dtype)
     x_t = torch.where(move_indices, mask_token_id, x_0)
     
     return x_t
