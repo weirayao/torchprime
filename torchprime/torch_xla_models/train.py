@@ -354,17 +354,35 @@ class Trainer:
         # Pad attention mask
         attention_mask = [1] * len(input_ids) + [0] * padding_length
         
-        # Pad src_mask
-        padded_src_mask = src_mask + [False] * padding_length
+        # Pad src_mask - ensure it's a list of booleans
+        if isinstance(src_mask, (list, tuple)):
+          padded_src_mask = list(src_mask) + [False] * padding_length
+        else:
+          # If src_mask is not a list, create a default mask
+          padded_src_mask = [True] * len(input_ids) + [False] * padding_length
         
         batch_input_ids.append(padded_input_ids)
         batch_attention_mask.append(attention_mask)
         batch_src_mask.append(padded_src_mask)
       
+      # Convert to tensors with explicit shapes to avoid 0-d tensor issues
+      input_ids_tensor = torch.tensor(batch_input_ids, dtype=torch.long)
+      attention_mask_tensor = torch.tensor(batch_attention_mask, dtype=torch.long)
+      src_mask_tensor = torch.tensor(batch_src_mask, dtype=torch.bool)
+      
+      # Ensure all tensors have the expected shape
+      batch_size = len(features)
+      if input_ids_tensor.shape != (batch_size, max_length):
+        raise ValueError(f"input_ids shape mismatch: expected {(batch_size, max_length)}, got {input_ids_tensor.shape}")
+      if attention_mask_tensor.shape != (batch_size, max_length):
+        raise ValueError(f"attention_mask shape mismatch: expected {(batch_size, max_length)}, got {attention_mask_tensor.shape}")
+      if src_mask_tensor.shape != (batch_size, max_length):
+        raise ValueError(f"src_mask shape mismatch: expected {(batch_size, max_length)}, got {src_mask_tensor.shape}")
+      
       result = {
-        "input_ids": torch.tensor(batch_input_ids, dtype=torch.long),
-        "attention_mask": torch.tensor(batch_attention_mask, dtype=torch.long),
-        "src_mask": torch.tensor(batch_src_mask, dtype=torch.bool),
+        "input_ids": input_ids_tensor,
+        "attention_mask": attention_mask_tensor,
+        "src_mask": src_mask_tensor,
       }
       
       return result
@@ -965,17 +983,13 @@ def main(config: DictConfig):
       raise ValueError("No dataset provided")
   # data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # not working as expected, will only load a subset of the dataset
   if isinstance(data, IterableDataset):
-    # Check if this is a custom IterableDataset that doesn't need splitting
-    if hasattr(data, '_is_custom') and data._is_custom:
-      # Custom IterableDataset - skip splitting
-      pass
-    else:
-      try:
-        split_data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
-        if split_data is not None:
-          data = split_data
-      except Exception as e:
-        logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
+    # Try to split IterableDataset for proper distribution
+    try:
+      split_data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
+      if split_data is not None:
+        data = split_data
+    except Exception as e:
+      logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
   elif isinstance(data, Dataset):
     # For regular Dataset, we need to split it properly for distributed training
     try:
@@ -1002,6 +1016,13 @@ def main(config: DictConfig):
     if data is None:
       logger.error("Dataset is None! This indicates a failure in dataset creation.")
       raise ValueError("Dataset creation failed - data is None")
+  
+  # Log process information for debugging data distribution
+  logger.info(f"Process {xr.process_index()}/{xr.process_count()}: Dataset type = {type(data)}")
+  if hasattr(data, '__len__'):
+    logger.info(f"Process {xr.process_index()}: Dataset size = {len(data)}")
+  elif isinstance(data, IterableDataset):
+    logger.info(f"Process {xr.process_index()}: Using IterableDataset")
 
   # Synchronize all processes before starting training
   xm.wait_device_ops()  # Wait for all XLA operations to complete

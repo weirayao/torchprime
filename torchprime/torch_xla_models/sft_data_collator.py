@@ -313,22 +313,14 @@ def create_sft_iterable_dataset(
         # Convert to IterableDataset and add shuffling
         iterable_dataset = dataset.to_iterable_dataset()
         iterable_dataset = iterable_dataset.map(process_example, remove_columns=dataset.column_names)
-        iterable_dataset = iterable_dataset.shuffle(seed=seed, buffer_size=10000)
         
-        # Create a wrapper class to ensure the custom flag persists
-        class CustomIterableDatasetWrapper(IterableDataset):
-            def __init__(self, dataset):
-                super().__init__()
-                self.dataset = dataset
-                self._is_custom = True
-            
-            def __iter__(self):
-                return iter(self.dataset)
-            
-            def __getattr__(self, name):
-                return getattr(self.dataset, name)
+        # Use different seeds for different processes to ensure proper distribution
+        # Import here to avoid circular imports
+        import torch_xla.runtime as xr
+        process_seed = seed + xr.process_index() if hasattr(xr, 'process_index') else seed
+        iterable_dataset = iterable_dataset.shuffle(seed=process_seed, buffer_size=10000)
         
-        return CustomIterableDatasetWrapper(iterable_dataset)
+        return iterable_dataset
     except Exception as e:
         # Fallback: create a simple IterableDataset manually
         class SimpleIterableDataset(IterableDataset):
@@ -336,13 +328,16 @@ def create_sft_iterable_dataset(
                 self.dataset = dataset
                 self.process_fn = process_fn
                 self.seed = seed
-                # Flag to indicate this is a custom dataset that doesn't need splitting
-                self._is_custom = True
             
             def __iter__(self):
                 # Simple shuffling by creating a list and shuffling it
                 import random
-                random.seed(self.seed)
+                import torch_xla.runtime as xr
+                
+                # Use different seeds for different processes
+                process_seed = self.seed + xr.process_index() if hasattr(xr, 'process_index') else self.seed
+                random.seed(process_seed)
+                
                 indices = list(range(len(self.dataset)))
                 random.shuffle(indices)
                 
