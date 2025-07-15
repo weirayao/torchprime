@@ -46,5 +46,6 @@ sft:
   
   # Whether to use IterableDataset for better data distribution across processes
   # Default: true (recommended for multi-process training)
+  # Uses native HuggingFace IterableDataset operations for efficient streaming and shuffling
   # Set to false to use regular Dataset (fallback if IterableDataset fails)
   use_iterable_dataset: true 

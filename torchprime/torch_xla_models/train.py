@@ -159,7 +159,7 @@ def _create_sft_dataset(config, tokenizer):
         logger.info(f"Process {xr.process_index()}: Using preprocessed dataset")
     else:
         # Process raw dataset for SFT
-        use_iterable_dataset = sft_config.get("use_iterable_dataset", True)  # Default to False
+        use_iterable_dataset = sft_config.get("use_iterable_dataset", True)  # Default to True
         logger.info(f"Process {xr.process_index()}: use_iterable_dataset = {use_iterable_dataset}")
         
         # Check if raw_data is already an IterableDataset from the new function
@@ -790,13 +790,34 @@ class Trainer:
     # Skip batches if we're resuming from a checkpoint
     if start_step > 0:
       logger.info(f"Skipping {start_step} batches to resume from checkpoint...")
-      for _ in range(start_step):
+      
+      # Add progress logging and timeout protection for batch skipping
+      skip_start_time = timer()
+      skipped_count = 0
+      
+      for i in range(start_step):
         try:
           next(train_iterator)
+          skipped_count += 1
+          
+          # Log progress every 100 batches
+          if skipped_count % 100 == 0:
+            elapsed_time = timer() - skip_start_time
+            logger.info(f"Skipped {skipped_count}/{start_step} batches (elapsed: {elapsed_time:.2f}s)")
+            
+            # Add timeout protection - if skipping takes too long, warn user
+            if elapsed_time > 300:  # 5 minutes timeout
+              logger.warning(f"Batch skipping is taking a long time ({elapsed_time:.2f}s for {skipped_count} batches)")
+              logger.warning("This may indicate issues with IterableDataset checkpoint resumption")
+              
         except StopIteration:
           epoch += 1
           train_iterator = iter(train_loader)
           next(train_iterator)
+          skipped_count += 1
+      
+      skip_total_time = timer() - skip_start_time
+      logger.info(f"Successfully skipped {skipped_count} batches in {skip_total_time:.2f}s")
 
     for step in range(start_step, max_step):
       try:
