@@ -274,8 +274,41 @@ class Trainer:
     
     # Choose appropriate data collator based on training mode and data format
     if self.config.training_mode == "sft":
+      # Debug: Log dataset type and structure
+      logger.info(f"Dataset type: {type(self.train_dataset)}")
+      if hasattr(self.train_dataset, 'features'):
+        logger.info(f"Dataset features: {list(self.train_dataset.features.keys())}")
+      if isinstance(self.train_dataset, IterableDataset):
+        logger.info(f"IterableDataset has _is_custom: {hasattr(self.train_dataset, '_is_custom')}")
+        if hasattr(self.train_dataset, '_is_custom'):
+          logger.info(f"_is_custom value: {self.train_dataset._is_custom}")
+      
       # Check if the dataset is already preprocessed (has src_mask)
+      is_preprocessed = False
+      
       if hasattr(self.train_dataset, 'features') and 'src_mask' in self.train_dataset.features:
+        # Regular Dataset with features - check if it has src_mask
+        is_preprocessed = True
+        logger.info("Detected preprocessed data: regular Dataset with src_mask in features")
+      elif isinstance(self.train_dataset, IterableDataset):
+        # IterableDataset - check if it's a custom one that's already processed
+        if hasattr(self.train_dataset, '_is_custom') and self.train_dataset._is_custom:
+          is_preprocessed = True
+          logger.info("Detected preprocessed data: custom IterableDataset")
+        else:
+          # Try to get a sample to check the structure
+          try:
+            sample = next(iter(self.train_dataset))
+            if 'src_mask' in sample:
+              is_preprocessed = True
+              logger.info("Detected preprocessed data: IterableDataset with src_mask in samples")
+            else:
+              logger.info("Detected raw data: IterableDataset without src_mask in samples")
+          except Exception as e:
+            logger.warning(f"Could not check IterableDataset structure: {e}")
+            logger.info("Assuming raw data for IterableDataset")
+      
+      if is_preprocessed:
         # Dataset is already preprocessed, use a simple collator that just handles padding
         logger.info("Using simple collator for preprocessed SFT data")
         collate_fn = self._create_simple_sft_collator()
@@ -849,9 +882,42 @@ def main(config: DictConfig):
     # Process raw dataset for SFT
     sft_config = config.data.get("sft", {})
     
-    # Check if the dataset already has src_mask (from create_sft_dataset)
+    # Debug: Log raw data structure
+    logger.info(f"Raw data type: {type(raw_data)}")
+    if hasattr(raw_data, 'features'):
+      logger.info(f"Raw data features: {list(raw_data.features.keys())}")
+    elif isinstance(raw_data, IterableDataset):
+      logger.info("Raw data is IterableDataset")
+      try:
+        sample = next(iter(raw_data))
+        logger.info(f"Raw data sample keys: {list(sample.keys())}")
+        logger.info(f"Raw data sample: {sample}")
+      except Exception as e:
+        logger.warning(f"Could not get sample from raw data: {e}")
+    
+    # Check if the dataset already has src_mask (from create_sft_dataset or GCS preprocessed data)
+    is_preprocessed = False
+    
+    # Check for regular Dataset with features
     if hasattr(raw_data, 'features') and 'src_mask' in raw_data.features:
+      is_preprocessed = True
+      logger.info("Detected preprocessed data: regular Dataset with src_mask in features")
+    # Check for IterableDataset with src_mask in samples
+    elif isinstance(raw_data, IterableDataset):
+      try:
+        sample = next(iter(raw_data))
+        if 'src_mask' in sample:
+          is_preprocessed = True
+          logger.info("Detected preprocessed data: IterableDataset with src_mask in samples")
+        else:
+          logger.info("Detected raw data: IterableDataset without src_mask in samples")
+      except Exception as e:
+        logger.warning(f"Could not check IterableDataset structure: {e}")
+        logger.info("Assuming raw data for IterableDataset")
+    
+    if is_preprocessed:
       # Dataset already processed, use as is
+      logger.info("Using preprocessed data as-is (skipping SFT processing)")
       data = raw_data
     else:
       # Process raw dataset for SFT - optionally use IterableDataset for proper distribution
