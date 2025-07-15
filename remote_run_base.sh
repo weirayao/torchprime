@@ -4,6 +4,12 @@ BRANCH="cqin/dev"
 RECIPE="recipes/train_qwen3_1.7b_sft.sh"
 # RECIPE="recipes/train_qwen3_1.7b_sft_256core_config.sh"
 
+# Create logs directory if it doesn't exist
+mkdir -p logs
+
+# Default log file name with timestamp
+LOG_FILE="logs/log_$(date +%Y%m%d_%H%M%S).log"
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -11,9 +17,14 @@ while [[ $# -gt 0 ]]; do
       RECIPE="$2"
       shift 2
       ;;
+    -l|--log)
+      LOG_FILE="$2"
+      shift 2
+      ;;
     -h|--help)
-      echo "Usage: $0 [-r|--recipe RECIPE_PATH]"
+      echo "Usage: $0 [-r|--recipe RECIPE_PATH] [-l|--log LOG_FILE]"
       echo "  -r, --recipe    Path to training recipe (default: recipes/train_qwen3_1.7b.sh)"
+      echo "  -l, --log       Log file name (default: logs/log_YYYYMMDD_HHMMSS.log)"
       echo "  -h, --help      Show this help message"
       exit 0
       ;;
@@ -24,6 +35,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+echo "Starting remote run at $(date)" | tee "$LOG_FILE"
+echo "Recipe: $RECIPE" | tee -a "$LOG_FILE"
+echo "Log file: $LOG_FILE" | tee -a "$LOG_FILE"
+echo "----------------------------------------" | tee -a "$LOG_FILE"
 
 gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --zone=$TPU_ZONE \
@@ -36,4 +52,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     git checkout '"$BRANCH"'; \
     git pull; \
     source venv/bin/activate; \
-    bash '"$RECIPE"'';
+    bash '"$RECIPE"'' 2>&1 | tee -a "$LOG_FILE"
+
+echo "----------------------------------------" | tee -a "$LOG_FILE"
+echo "Remote run completed at $(date)" | tee -a "$LOG_FILE"

@@ -12,6 +12,9 @@ env/
 
 # Ignore log files
 *.log
+*.txt.log
+log_*.txt
+logs/
 
 # Ignore cache directories
 __pycache__/
