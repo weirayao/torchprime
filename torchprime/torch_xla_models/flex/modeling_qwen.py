@@ -428,56 +428,38 @@ class Qwen3ForCausalLM(nn.Module):
       # logits = logits.float()[..., :-1, :].contiguous() # NOTE: we shift logits in inference_utils at inference time
       return logits, None
 
-    # weiran: diffullama
-    sampling_eps = 1e-3
-    mask_token_id = self.mask_token_id
-    loss_func = nn.CrossEntropyLoss(reduction="none")
-    # input_ids: [bs, seq_len]
-    
-    # Create maskable_mask based on training mode and src_mask
-    # For SFT: src_mask is provided, maskable_mask = ~src_mask
-    # For pretrain: src_mask is None, maskable_mask = all True
-    maskable_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
-    if src_mask is not None:
-      maskable_mask = ~src_mask
-    
-    t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
-    sigma = t
-    dsigma = torch.reciprocal(sigma)
-    
-
-    
-    noisy_input_ids = transition(
-      input_ids, sigma[:, None], maskable_mask=maskable_mask, mask_token_id=mask_token_id
-    )
-    loss_mask = noisy_input_ids == mask_token_id
-
-    hidden_states = self.model(input_ids=noisy_input_ids, attention_mask=attention_mask)
-    # hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
+    # Temporary simplified version to isolate the issue
+    # Skip all diffusion logic and use simple SFT loss
+    hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
     logits = self.lm_head(hidden_states)
     logits = logits.float()
-    # logits: [bs, seq_len, vocab_size]
-    # Shifted logits and labels
-    # logits: [bs, seq_len-1, vocab_size]
+    
+    # Shift logits and labels for next token prediction
     logits = logits[..., :-1, :].contiguous()
-    # weiran: if the shifted token is not masked in the original input, the loss is 0
-    # loss_mask: [bs, seq_len-1]
-    loss_mask = loss_mask[..., 1:].contiguous()
     target_ids = input_ids[..., 1:].contiguous()
-    # loss: [bs, seq_len-1]
+    
+    # Simple cross-entropy loss on response tokens only
+    loss_func = nn.CrossEntropyLoss(reduction="none")
     loss = loss_func(
       logits.reshape(-1, logits.shape[-1]), target_ids.reshape(-1)
-    ).reshape(target_ids.shape[0],-1)
-    loss = loss.masked_fill(~loss_mask, 0)
+    ).reshape(target_ids.shape[0], -1)
     
-    # weiran: divide by the number of tokens in the sequence instead of the number of masked tokens
-    # justification is dsigma already accounts for the number of masked tokens
-    # this is a hack to get something like per token loss
-    # https://github.com/ML-GSAI/SMDM/blob/main/pretrain/train_mdm_rl.py#L281-L283
-    loss_sum = (dsigma[:, None] * loss).sum()
-    # Convert denominator to tensor to avoid iteration over 0-d tensor
-    denominator = torch.tensor(input_ids.shape[0] * input_ids.shape[1], dtype=loss_sum.dtype, device=loss_sum.device)
-    loss = loss_sum / denominator
+    # Mask loss to only include response tokens (not instruction tokens)
+    if src_mask is not None:
+      # src_mask indicates instruction tokens, so we want response tokens
+      response_mask = ~src_mask[..., 1:].contiguous()  # Shift to match target_ids
+      loss = loss.masked_fill(~response_mask, 0)
+      
+      # Average over response tokens only
+      num_response_tokens = response_mask.sum()
+      if num_response_tokens > 0:
+        loss = loss.sum() / num_response_tokens
+      else:
+        loss = loss.sum() * 0.0  # Avoid division by zero
+    else:
+      # If no src_mask, average over all tokens
+      loss = loss.mean()
+    
     return logits, loss
 
 @xp.trace_me("transition")
