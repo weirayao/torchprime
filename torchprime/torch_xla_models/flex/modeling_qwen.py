@@ -438,7 +438,9 @@ class Qwen3ForCausalLM(nn.Module):
     # For pretrain: src_mask is None, maskable_mask = all True
     maskable_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
     if src_mask is not None:
-      maskable_mask = ~src_mask
+      # Ensure src_mask is boolean and on the same device
+      src_mask_bool = src_mask.bool().to(device=input_ids.device)
+      maskable_mask = ~src_mask_bool
     
     t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
     # Ensure t is at least 1-dimensional
