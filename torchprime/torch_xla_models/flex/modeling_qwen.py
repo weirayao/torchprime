@@ -510,7 +510,9 @@ class Qwen3ForCausalLM(nn.Module):
       print(f"  dsigma[:, None] shape: {dsigma[:, None].shape}")
       print(f"  (dsigma[:, None] * loss) shape: {(dsigma[:, None] * loss).shape}")
     
-    loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
+    # Ensure we're working with proper tensors for the final division
+    loss_sum = (dsigma[:, None] * loss).sum()
+    loss = loss_sum / float(input_ids.shape[0] * input_ids.shape[1])
     return logits, loss
 
 @xp.trace_me("transition")
