@@ -183,6 +183,42 @@ def make_huggingface_sft_dataset(
   return data
 
 
+def make_huggingface_sft_iterable_dataset(
+  name: str,
+  config_name: str,
+  split: str,
+  cache_dir: str,
+  seed: int = 42,
+) -> IterableDataset:
+  """
+  Load a HuggingFace dataset as IterableDataset for SFT training.
+  This is more memory efficient for large datasets and better for multi-process training.
+  
+  Args:
+    name: Dataset name
+    config_name: Dataset config name
+    split: Dataset split
+    cache_dir: Cache directory
+    seed: Random seed for shuffling
+    
+  Returns:
+    IterableDataset ready for SFT processing
+  """
+  # Downloading and loading a dataset from the hub as IterableDataset
+  data = load_dataset(
+    name,
+    config_name,
+    cache_dir=cache_dir,
+    streaming=True,  # Creates IterableDataset directly
+    split=split,
+  )
+  
+  # Add shuffling for better distribution across processes
+  data = data.shuffle(seed=seed, buffer_size=10000)
+  
+  return data
+
+
 def make_mixed_huggingface_datasets(
   hf_datasets: list[dict],
   split: str,

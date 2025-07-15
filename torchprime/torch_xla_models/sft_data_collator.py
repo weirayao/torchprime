@@ -251,7 +251,7 @@ def create_sft_dataset(
 
 
 def create_sft_iterable_dataset(
-    dataset: Dataset,
+    dataset: Dataset | IterableDataset,
     tokenizer: PreTrainedTokenizerBase,
     format: str = "alpaca",
     include_system_prompt: bool = True,
@@ -265,7 +265,7 @@ def create_sft_iterable_dataset(
     This enables proper data distribution across multiple processes.
     
     Args:
-        dataset: Raw dataset with instruction-response pairs
+        dataset: Raw dataset with instruction-response pairs (Dataset or IterableDataset)
         tokenizer: Tokenizer for processing text
         format: Format of the data ("alpaca", "sharegpt", "custom")
         include_system_prompt: Whether to include system prompts
@@ -310,9 +310,14 @@ def create_sft_iterable_dataset(
         }
     
     try:
-        # Convert to IterableDataset and add shuffling
-        iterable_dataset = dataset.to_iterable_dataset()
-        iterable_dataset = iterable_dataset.map(process_example, remove_columns=dataset.column_names)
+        # Check if dataset is already an IterableDataset
+        if isinstance(dataset, IterableDataset):
+            # Dataset is already an IterableDataset, just apply processing
+            iterable_dataset = dataset.map(process_example)
+        else:
+            # Convert regular Dataset to IterableDataset and add shuffling
+            iterable_dataset = dataset.to_iterable_dataset()
+            iterable_dataset = iterable_dataset.map(process_example, remove_columns=dataset.column_names)
         
         # Use different seeds for different processes to ensure proper distribution
         # Import here to avoid circular imports
@@ -338,11 +343,21 @@ def create_sft_iterable_dataset(
                 process_seed = self.seed + xr.process_index() if hasattr(xr, 'process_index') else self.seed
                 random.seed(process_seed)
                 
-                indices = list(range(len(self.dataset)))
-                random.shuffle(indices)
-                
-                for idx in indices:
-                    example = self.dataset[idx]
-                    yield self.process_fn(example)
+                # Handle both Dataset and IterableDataset
+                if hasattr(self.dataset, '__len__'):
+                    # Regular Dataset
+                    indices = list(range(len(self.dataset)))
+                    random.shuffle(indices)
+                    
+                    for idx in indices:
+                        example = self.dataset[idx]
+                        yield self.process_fn(example)
+                else:
+                    # IterableDataset - convert to list for shuffling
+                    examples = list(self.dataset)
+                    random.shuffle(examples)
+                    
+                    for example in examples:
+                        yield self.process_fn(example)
         
         return SimpleIterableDataset(dataset, process_example, seed) 
