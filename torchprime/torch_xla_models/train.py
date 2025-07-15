@@ -851,6 +851,12 @@ def main(config: DictConfig):
   # data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # not working as expected, will only load a subset of the dataset
   if isinstance(data, IterableDataset):
     # Check if this is a custom IterableDataset that doesn't need splitting
+    logger.info(f"Checking IterableDataset for _is_custom flag...")
+    logger.info(f"Dataset type: {type(data)}")
+    logger.info(f"Has _is_custom attribute: {hasattr(data, '_is_custom')}")
+    if hasattr(data, '_is_custom'):
+      logger.info(f"_is_custom value: {data._is_custom}")
+    
     if hasattr(data, '_is_custom') and data._is_custom:
       logger.info("Custom IterableDataset detected - skipping split_dataset_by_node")
     else:
