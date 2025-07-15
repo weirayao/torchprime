@@ -52,7 +52,7 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     git checkout '"$BRANCH"'; \
     git pull; \
     source venv/bin/activate; \
-    bash '"$RECIPE"'' 2>&1 | tee -a "$LOG_FILE"
+    HYDRA_FULL_ERROR=1 bash '"$RECIPE"'' 2>&1 | tee -a "$LOG_FILE"
 
 echo "----------------------------------------" | tee -a "$LOG_FILE"
 echo "Remote run completed at $(date)" | tee -a "$LOG_FILE"
