@@ -130,6 +130,7 @@ def make_huggingface_dataset(
   cache_dir: str,
   tokenizer: PreTrainedTokenizerBase,
   block_size: int,
+  preserve_sft_format: bool = False,
 ) -> Dataset:
   # Downloading and loading a dataset from the hub.
   data = load_dataset(
@@ -142,21 +143,26 @@ def make_huggingface_dataset(
 
   # Check if this is an SFT dataset (has instruction/output fields)
   if "instruction" in data.features and "output" in data.features:
-    # For SFT datasets, create text field from instruction + response
-    def create_sft_text(example):
-      instruction = example.get("instruction", "")
-      output = example.get("output", "")
-      system = example.get("system", "")
+    if preserve_sft_format:
+      # For SFT training, preserve the instruction/response structure
+      # The SFT data collator will handle the processing
+      return data
+    else:
+      # For pre-training, create text field from instruction + response
+      def create_sft_text(example):
+        instruction = example.get("instruction", "")
+        output = example.get("output", "")
+        system = example.get("system", "")
+        
+        # Combine system + instruction + separator + output
+        if system and system.strip():
+          text = f"{system}\n\n{instruction}\n\n### Response:\n{output}"
+        else:
+          text = f"{instruction}\n\n### Response:\n{output}"
+        
+        return {"text": text}
       
-      # Combine system + instruction + separator + output
-      if system and system.strip():
-        text = f"{system}\n\n{instruction}\n\n### Response:\n{output}"
-      else:
-        text = f"{instruction}\n\n### Response:\n{output}"
-      
-      return {"text": text}
-    
-    data = data.map(create_sft_text, remove_columns=list(data.features))
+      data = data.map(create_sft_text, remove_columns=list(data.features))
   elif "text" not in data.features:
     raise ValueError(f"Dataset {name} does not have 'text' field and is not a recognized SFT format")
 
@@ -169,73 +175,6 @@ def make_huggingface_dataset(
 
   # Taken from run_clm.py. It's important to group texts evenly to avoid recompilations in TPU.
   data = data.map(lambda examples: group_texts(examples, block_size), batched=True)
-  return data
-
-
-def make_huggingface_sft_dataset(
-  name: str,
-  config_name: str,
-  split: str,
-  cache_dir: str,
-) -> Dataset:
-  """
-  Load a HuggingFace dataset for SFT training without tokenization.
-  The SFT data collator will handle tokenization later.
-  
-  Args:
-    name: Dataset name
-    config_name: Dataset config name
-    split: Dataset split
-    cache_dir: Cache directory
-    
-  Returns:
-    Raw dataset ready for SFT processing
-  """
-  # Downloading and loading a dataset from the hub.
-  data = load_dataset(
-    name,
-    config_name,
-    cache_dir=cache_dir,
-  )
-  assert isinstance(data, DatasetDict)
-  data = data[split]
-  
-  return data
-
-
-def make_huggingface_sft_iterable_dataset(
-  name: str,
-  config_name: str,
-  split: str,
-  cache_dir: str,
-  seed: int = 42,
-) -> IterableDataset:
-  """
-  Load a HuggingFace dataset as IterableDataset for SFT training.
-  This is more memory efficient for large datasets and better for multi-process training.
-  
-  Args:
-    name: Dataset name
-    config_name: Dataset config name
-    split: Dataset split
-    cache_dir: Cache directory
-    seed: Random seed for shuffling
-    
-  Returns:
-    IterableDataset ready for SFT processing
-  """
-  # Downloading and loading a dataset from the hub as IterableDataset
-  data = load_dataset(
-    name,
-    config_name,
-    cache_dir=cache_dir,
-    streaming=True,  # Creates IterableDataset directly
-    split=split,
-  )
-  
-  # Add shuffling for better distribution across processes
-  data = data.shuffle(seed=seed, buffer_size=10000)
-  
   return data
 
 

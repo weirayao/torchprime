@@ -635,6 +635,7 @@ def main(config: DictConfig):
             cache_dir=config.data.cache_dir,
             tokenizer=tokenizer,
             block_size=config.data.block_size,
+            preserve_sft_format=True,  # Preserve SFT structure for SFT training
           )
         )
     elif config.data.gcs_dataset_names:
