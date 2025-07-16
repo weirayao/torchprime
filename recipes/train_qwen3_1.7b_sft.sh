@@ -5,7 +5,6 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     global_batch_size=16 \
     max_steps=10 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/test-flex-qwen3-1b-sft-gcs \
-    # resume_from_checkpoint=20 \
     sft_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/test-flex-qwen3-1b-sft-gcs_sft \
     save_steps=100 \
     logging_steps=1 \
@@ -20,3 +19,4 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     model.attention_kernel=default
 # fsdp * tensor * data * expert == num_devices
 # global_batch_size mod num_devices == 0 
+# resume_from_checkpoint=20 \
