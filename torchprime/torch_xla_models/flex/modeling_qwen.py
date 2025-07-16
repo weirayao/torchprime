@@ -420,27 +420,6 @@ class Qwen3ForCausalLM(nn.Module):
     src_mask: torch.BoolTensor | None = None,
     training_mode: str = "pretrain",
   ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:
-    # Add detailed logging for debugging NaN issues
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    # Log input validation
-    logger.info(f"Qwen3ForCausalLM forward - training_mode: {training_mode}")
-    logger.info(f"  input_ids shape: {input_ids.shape}, dtype: {input_ids.dtype}")
-    logger.info(f"  input_ids min/max: {input_ids.min()}/{input_ids.max()}")
-    logger.info(f"  attention_mask shape: {attention_mask.shape if attention_mask is not None else 'None'}")
-    logger.info(f"  src_mask shape: {src_mask.shape if src_mask is not None else 'None'}")
-    if src_mask is not None:
-      logger.info(f"  src_mask sum: {src_mask.sum()}")
-      logger.info(f"  src_mask any NaN: {torch.isnan(src_mask).any()}")
-    
-    # Check for NaN in inputs
-    if torch.isnan(input_ids).any():
-      logger.error("NaN detected in input_ids!")
-    if attention_mask is not None and torch.isnan(attention_mask).any():
-      logger.error("NaN detected in attention_mask!")
-    if src_mask is not None and torch.isnan(src_mask).any():
-      logger.error("NaN detected in src_mask!")
     if not self.training:
       # haolin: during inference the masking is done when preprocessing the input, we don't need src_mask and noising
       model_output = self.model(input_ids=input_ids, attention_mask=attention_mask)   
@@ -462,48 +441,19 @@ class Qwen3ForCausalLM(nn.Module):
     if src_mask is not None:
       maskable_mask = ~src_mask
     
-    logger.info(f"  maskable_mask shape: {maskable_mask.shape}")
-    logger.info(f"  maskable_mask sum: {maskable_mask.sum()}")
-    logger.info(f"  maskable_mask any NaN: {torch.isnan(maskable_mask).any()}")
-    
     t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
     sigma = t
     dsigma = torch.reciprocal(sigma)
-    
-    logger.info(f"  t min/max: {t.min()}/{t.max()}")
-    logger.info(f"  sigma min/max: {sigma.min()}/{sigma.max()}")
-    logger.info(f"  dsigma min/max: {dsigma.min()}/{dsigma.max()}")
-    
-    # Check for NaN in sigma/dsigma
-    if torch.isnan(sigma).any():
-      logger.error("NaN detected in sigma!")
-    if torch.isnan(dsigma).any():
-      logger.error("NaN detected in dsigma!")
     
     noisy_input_ids = transition(
       input_ids, sigma[:, None], maskable_mask=maskable_mask, mask_token_id=mask_token_id
     )
     loss_mask = noisy_input_ids == mask_token_id
-    
-    logger.info(f"  noisy_input_ids shape: {noisy_input_ids.shape}")
-    logger.info(f"  noisy_input_ids min/max: {noisy_input_ids.min()}/{noisy_input_ids.max()}")
-    logger.info(f"  loss_mask sum: {loss_mask.sum()}")
-    logger.info(f"  loss_mask any NaN: {torch.isnan(loss_mask).any()}")
 
     hidden_states = self.model(input_ids=noisy_input_ids, attention_mask=attention_mask)
     # hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
-    
-    logger.info(f"  hidden_states shape: {hidden_states.shape}")
-    logger.info(f"  hidden_states min/max: {hidden_states.min()}/{hidden_states.max()}")
-    logger.info(f"  hidden_states any NaN: {torch.isnan(hidden_states).any()}")
-    
     logits = self.lm_head(hidden_states)
     logits = logits.float()
-    
-    logger.info(f"  logits shape: {logits.shape}")
-    logger.info(f"  logits min/max: {logits.min()}/{logits.max()}")
-    logger.info(f"  logits any NaN: {torch.isnan(logits).any()}")
-    
     # logits: [bs, seq_len, vocab_size]
     # Shifted logits and labels
     # logits: [bs, seq_len-1, vocab_size]
@@ -512,35 +462,16 @@ class Qwen3ForCausalLM(nn.Module):
     # loss_mask: [bs, seq_len-1]
     loss_mask = loss_mask[..., 1:].contiguous()
     target_ids = input_ids[..., 1:].contiguous()
-    
-    logger.info(f"  shifted logits shape: {logits.shape}")
-    logger.info(f"  shifted loss_mask shape: {loss_mask.shape}")
-    logger.info(f"  shifted target_ids shape: {target_ids.shape}")
-    logger.info(f"  shifted loss_mask sum: {loss_mask.sum()}")
-    
     # loss: [bs, seq_len-1]
     loss = loss_func(
       logits.reshape(-1, logits.shape[-1]), target_ids.reshape(-1)
     ).reshape(target_ids.shape[0],-1)
-    
-    logger.info(f"  raw loss shape: {loss.shape}")
-    logger.info(f"  raw loss min/max: {loss.min()}/{loss.max()}")
-    logger.info(f"  raw loss any NaN: {torch.isnan(loss).any()}")
-    
     loss = loss.masked_fill(~loss_mask, 0)
-    
-    logger.info(f"  masked loss min/max: {loss.min()}/{loss.max()}")
-    logger.info(f"  masked loss any NaN: {torch.isnan(loss).any()}")
-    
     # weiran: divide by the number of tokens in the sequence instead of the number of masked tokens
     # justification is dsigma already accounts for the number of masked tokens
     # this is a hack to get something like per token loss
     # https://github.com/ML-GSAI/SMDM/blob/main/pretrain/train_mdm_rl.py#L281-L283
     loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
-    
-    logger.info(f"  final loss: {loss}")
-    logger.info(f"  final loss any NaN: {torch.isnan(loss)}")
-    
     return logits, loss
 
 @xp.trace_me("transition")
@@ -548,26 +479,6 @@ def transition(x_0, sigma, maskable_mask, mask_token_id):
     # weiran: diffullama
     # move_chance = 1 - (-sigma).exp()
     move_chance = sigma
-    
-    # Add logging for debugging
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    logger.info(f"  transition - x_0 shape: {x_0.shape}")
-    logger.info(f"  transition - sigma shape: {sigma.shape}")
-    logger.info(f"  transition - maskable_mask shape: {maskable_mask.shape}")
-    logger.info(f"  transition - move_chance min/max: {move_chance.min()}/{move_chance.max()}")
-    logger.info(f"  transition - move_chance any NaN: {torch.isnan(move_chance).any()}")
-    
     move_indices = (torch.rand(*x_0.shape, device=x_0.device) < move_chance) & maskable_mask
-    
-    logger.info(f"  transition - move_indices sum: {move_indices.sum()}")
-    logger.info(f"  transition - move_indices any NaN: {torch.isnan(move_indices).any()}")
-    
     x_t = torch.where(move_indices, mask_token_id, x_0)
-    
-    logger.info(f"  transition - x_t shape: {x_t.shape}")
-    logger.info(f"  transition - x_t min/max: {x_t.min()}/{x_t.max()}")
-    logger.info(f"  transition - x_t any NaN: {torch.isnan(x_t).any()}")
-    
     return x_t

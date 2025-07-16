@@ -477,6 +477,24 @@ class Trainer:
       loss = self.train_step(batch)
       trace_end_time = timer()
 
+      # Add detailed loss logging for debugging NaN issues
+      if step < 5:  # Only log first few steps to avoid spam
+        loss_value = loss.detach().item()
+        logger.info(f"Step {step} loss details:")
+        logger.info(f"  Loss value: {loss_value}")
+        logger.info(f"  Loss is NaN: {math.isnan(loss_value)}")
+        logger.info(f"  Loss is inf: {math.isinf(loss_value)}")
+        if math.isnan(loss_value) or math.isinf(loss_value):
+          logger.error(f"Invalid loss detected at step {step}!")
+          # Log batch info for debugging
+          logger.info(f"  Batch keys: {list(batch.keys())}")
+          if "input_ids" in batch:
+            logger.info(f"  input_ids shape: {batch['input_ids'].shape}")
+            logger.info(f"  input_ids min/max: {batch['input_ids'].min().item()}/{batch['input_ids'].max().item()}")
+          if "src_mask" in batch:
+            logger.info(f"  src_mask shape: {batch['src_mask'].shape}")
+            logger.info(f"  src_mask sum: {batch['src_mask'].sum().item()}")
+
       if step % self.config.logging_steps == 0:
 
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
