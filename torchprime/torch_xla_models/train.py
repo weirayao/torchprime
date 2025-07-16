@@ -286,25 +286,23 @@ class Trainer:
     logger.info(f"Batch size per process: {batch_size}")
     logger.info(f"Training mode: {self.config.training_mode}")
     
-    # Choose appropriate data collator based on training mode
-    if self.config.training_mode == "sft":
-      # For SFT, we need to use the SFT data collator
-      sft_config = self.config.data.get("sft", {})
-      logger.info(f"SFT config: {sft_config}")
-      collate_fn = SFTDataCollator(
-        tokenizer=self.tokenizer,
-        format=sft_config.get("format", "alpaca"),
-        include_system_prompt=sft_config.get("include_system_prompt", True),
-        instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-        custom_format=sft_config.get("custom_format"),
-        min_response_tokens=sft_config.get("min_response_tokens", 3),
-        filter_short_responses=sft_config.get("filter_short_responses", True),
-      )
-      logger.info(f"Using SFTDataCollator with format: {sft_config.get('format', 'alpaca')}")
-    else:
-      # For pre-training, use default data collator
-      collate_fn = default_data_collator
-      logger.info("Using default_data_collator")
+          # Choose appropriate data collator based on training mode
+      if self.config.training_mode == "sft":
+        # For SFT, we need to use the SFT data collator
+        sft_config = self.config.data
+        logger.info(f"SFT config: {sft_config}")
+        collate_fn = SFTDataCollator(
+          tokenizer=self.tokenizer,
+          format=sft_config.get("format", "alpaca"),
+          include_system_prompt=sft_config.get("include_system_prompt", True),
+          instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+          custom_format=sft_config.get("custom_format"),
+        )
+        logger.info(f"Using SFTDataCollator with format: {sft_config.get('format', 'alpaca')}")
+      else:
+        # For pre-training, use default data collator
+        collate_fn = default_data_collator
+        logger.info("Using default_data_collator")
     
     dataloader = DataLoader(
       self.train_dataset,
@@ -465,85 +463,24 @@ class Trainer:
       
       # Validate batch for SFT mode
       if self.config.training_mode == "sft":        
-      
-        # Add debugging for batch contents before loss computation
-        if step < 3:  # Only debug first few steps to avoid spam
-          logger.info(f"=== Step {step} Batch Debug ===")
-          logger.info(f"Batch keys: {list(batch.keys())}")
-          
-          if "input_ids" in batch:
-            input_ids = batch["input_ids"]
-            logger.info(f"input_ids shape: {input_ids.shape}")
-            logger.info(f"input_ids dtype: {input_ids.dtype}")
-            logger.info(f"input_ids min/max: {input_ids.min().item()}/{input_ids.max().item()}")
-            logger.info(f"input_ids sample (first 10 tokens): {input_ids[0, :10].tolist()}")
-          
-          if "attention_mask" in batch:
-            attention_mask = batch["attention_mask"]
-            logger.info(f"attention_mask shape: {attention_mask.shape}")
-            logger.info(f"attention_mask dtype: {attention_mask.dtype}")
-            logger.info(f"attention_mask sum: {attention_mask.sum().item()}")
-            logger.info(f"attention_mask sample (first 10): {attention_mask[0, :10].tolist()}")
-          
+        # Minimal batch validation - only log basic info to avoid XLA compilation issues
+        if step == 0 and is_main_process():
+          logger.info(f"SFT training - batch keys: {list(batch.keys())}")
           if "src_mask" in batch:
             src_mask = batch["src_mask"]
             logger.info(f"src_mask shape: {src_mask.shape}")
-            logger.info(f"src_mask dtype: {src_mask.dtype}")
-            logger.info(f"src_mask sum (instruction tokens): {src_mask.sum().item()}")
+            logger.info(f"instruction tokens: {src_mask.sum().item()}")
             logger.info(f"response tokens: {(~src_mask).sum().item()}")
-            logger.info(f"src_mask sample (first 10): {src_mask[0, :10].tolist()}")
-          
-          if "instruction_lengths" in batch:
-            instruction_lengths = batch["instruction_lengths"]
-            logger.info(f"instruction_lengths: {instruction_lengths.tolist()}")
-          
-          logger.info("=== End Batch Debug ===")
       
       loss = self.train_step(batch)
       trace_end_time = timer()
 
-      # Add detailed loss logging for debugging NaN issues
-      if step < 5:  # Only log first few steps to avoid spam
+      # Simple loss validation to avoid XLA compilation issues
+      if step == 0:
         loss_value = loss.detach().item()
-        logger.info(f"Step {step} loss details:")
-        logger.info(f"  Loss value: {loss_value}")
-        logger.info(f"  Loss is NaN: {math.isnan(loss_value)}")
-        logger.info(f"  Loss is inf: {math.isinf(loss_value)}")
         if math.isnan(loss_value) or math.isinf(loss_value):
-          logger.error(f"Invalid loss detected at step {step}!")
-          # Log batch info for debugging
-          logger.info(f"  Batch keys: {list(batch.keys())}")
-          if "input_ids" in batch:
-            logger.info(f"  input_ids shape: {batch['input_ids'].shape}")
-            logger.info(f"  input_ids min/max: {batch['input_ids'].min().item()}/{batch['input_ids'].max().item()}")
-          if "src_mask" in batch:
-            logger.info(f"  src_mask shape: {batch['src_mask'].shape}")
-            logger.info(f"  src_mask sum: {batch['src_mask'].sum().item()}")
-            logger.info(f"  response tokens: {(~batch['src_mask']).sum().item()}")
-          if "attention_mask" in batch:
-            logger.info(f"  attention_mask shape: {batch['attention_mask'].shape}")
-            logger.info(f"  attention_mask sum: {batch['attention_mask'].sum().item()}")
-          # Stop training on NaN loss
+          logger.error(f"Invalid loss detected at step {step}: {loss_value}")
           raise ValueError(f"Training stopped due to NaN/Inf loss at step {step}")
-        
-        # Add XLA-compatible debugging for batch validation
-        if "input_ids" in batch and "src_mask" in batch:
-          # Check for potential issues using torch operations
-          input_ids = batch["input_ids"]
-          src_mask = batch["src_mask"]
-          
-          # Check if we have enough response tokens for masking
-          response_tokens = (~src_mask).sum()
-          instruction_tokens = src_mask.sum()
-          
-          logger.info(f"Step {step} batch validation:")
-          logger.info(f"  Instruction tokens: {instruction_tokens.item()}")
-          logger.info(f"  Response tokens: {response_tokens.item()}")
-          logger.info(f"  Total tokens: {input_ids.numel()}")
-          
-          # Warn if no response tokens (this would cause NaN loss)
-          if response_tokens == 0:
-            logger.warning(f"Step {step}: No response tokens found - this will cause NaN loss!")
 
       if step % self.config.logging_steps == 0:
 

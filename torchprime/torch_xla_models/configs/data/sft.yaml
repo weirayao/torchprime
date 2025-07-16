@@ -25,35 +25,7 @@ dataset_config_name: null
 gcs_dataset_names: null
 weights: null
 
-# SFT-specific configuration
-sft:
-  # Format of the instruction data: "alpaca", "sharegpt", "custom"
-  # This determines how instruction_lengths are extracted from the data
-  format: alpaca
-  
-  # For custom format, specify the field names
-  custom_format:
-    instruction_field: "instruction"
-    response_field: "response"
-    # Optional: field that contains system prompt
-    system_field: "system"
-  
-  # Whether to include system prompts in the instruction part
-  include_system_prompt: true
-  
-  # Separator between instruction and response (if not using structured format)
-  instruction_response_separator: "\n\n### Response:\n"
-  
-  # Whether to use IterableDataset for better data distribution across processes
-  # Default: true (recommended for multi-process training)
-  # Uses native HuggingFace IterableDataset operations for efficient streaming and shuffling
-  # Set to false to use regular Dataset (fallback if IterableDataset fails)
-  use_iterable_dataset: true
-  
-  # Minimum number of response tokens required for each example
-  # Examples with fewer response tokens will be filtered out to prevent NaN loss
-  min_response_tokens: 1
-  
-  # Whether to filter out examples with short responses
-  # Set to false to disable filtering entirely (for debugging)
-  filter_short_responses: true 
+# SFT (Supervised Fine-Tuning) data configuration
+format: "alpaca"
+include_system_prompt: true
+instruction_response_separator: "\n\n### Response:\n" 

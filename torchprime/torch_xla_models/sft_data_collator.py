@@ -22,8 +22,6 @@ class SFTDataCollator(DataCollatorMixin):
         include_system_prompt: bool = True,
         instruction_response_separator: str = "\n\n### Response:\n",
         custom_format: Optional[Dict[str, str]] = None,
-        min_response_tokens: int = 3,  # Minimum response tokens required
-        filter_short_responses: bool = True,  # Whether to filter short responses
         **kwargs
     ):
         self.tokenizer = tokenizer
@@ -31,8 +29,6 @@ class SFTDataCollator(DataCollatorMixin):
         self.include_system_prompt = include_system_prompt
         self.instruction_response_separator = instruction_response_separator
         self.custom_format = custom_format or {}
-        self.min_response_tokens = min_response_tokens
-        self.filter_short_responses = filter_short_responses
         
         # Get separator token IDs
         self.separator_token_ids = self.tokenizer.encode(
@@ -98,11 +94,6 @@ class SFTDataCollator(DataCollatorMixin):
             response, add_special_tokens=False
         )
         
-        # Validate that we have response tokens - but be more lenient
-        if len(response_tokens) == 0:
-            # Instead of raising an error, use a minimal response token
-            response_tokens = [self.tokenizer.eos_token_id] if self.tokenizer.eos_token_id else [1]
-        
         # Combine instruction + separator + response
         full_sequence = full_instruction_tokens + response_tokens
         
@@ -125,52 +116,23 @@ class SFTDataCollator(DataCollatorMixin):
             - attention_mask: Attention masks
             - instruction_lengths: Length of instruction part for each sequence
         """
-        # Add logging for debugging (reduced frequency)
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        # Minimal logging - only for first batch
-        if hasattr(self, '_batch_count'):
-            self._batch_count += 1
-        else:
-            self._batch_count = 0
-            
-        # Only log the first batch
-        if self._batch_count == 1:
-            logger.info(f"SFTDataCollator processing {len(features)} features")
-            logger.info(f"First feature keys: {list(features[0].keys()) if features else 'No features'}")
-        
         # Check if data is already pre-processed (has input_ids and src_mask)
         if features and 'input_ids' in features[0] and 'src_mask' in features[0]:
-            if self._batch_count == 1:
-                logger.info("Data is pre-processed, using existing tokenization")
             return self._collate_preprocessed_features(features)
         else:
-            if self._batch_count == 1:
-                logger.info("Data is raw text, processing with instruction/response extraction")
             return self._collate_raw_features(features)
     
     def _collate_preprocessed_features(self, features: List[Dict]) -> Dict[str, torch.Tensor]:
         """Collate features that are already pre-processed with input_ids and src_mask."""
-        import logging
-        logger = logging.getLogger(__name__)
-        
         batch_input_ids = []
         batch_attention_mask = []
         batch_src_masks = []
         batch_instruction_lengths = []
         
-        for i, feature in enumerate(features):
+        for feature in features:
             input_ids = feature['input_ids']
             src_mask = feature['src_mask']
             instruction_length = feature.get('instruction_length', sum(src_mask))
-            
-            # Only log for first batch, first feature
-            if self._batch_count == 1 and i == 0:
-                logger.info(f"Pre-processed feature {i}:")
-                logger.info(f"  input_ids length: {len(input_ids)}")
-                logger.info(f"  instruction_length: {instruction_length}")
-                logger.info(f"  src_mask sum: {sum(src_mask)}")
             
             batch_input_ids.append(input_ids)
             batch_instruction_lengths.append(instruction_length)
@@ -193,12 +155,6 @@ class SFTDataCollator(DataCollatorMixin):
             padded_input_ids.append(input_ids + [self.tokenizer.pad_token_id] * padding_length)
             padded_attention_mask.append(attention_mask + [0] * padding_length)
             padded_src_masks.append(src_mask + [False] * padding_length)  # Pad src_mask with False
-            
-            # Ensure we have at least one valid token in each sequence
-            if len(input_ids) == 0:
-                padded_input_ids[-1][0] = self.tokenizer.eos_token_id or 1
-                padded_attention_mask[-1][0] = 1
-                padded_src_masks[-1][0] = True
         
         # Convert to tensors
         result = {
@@ -212,67 +168,20 @@ class SFTDataCollator(DataCollatorMixin):
     
     def _collate_raw_features(self, features: List[Dict]) -> Dict[str, torch.Tensor]:
         """Collate features that contain raw text instruction/response pairs."""
-        import logging
-        logger = logging.getLogger(__name__)
-        
         batch_input_ids = []
         batch_attention_mask = []
         batch_instruction_lengths = []
         
-        # Filter out invalid examples
-        valid_features = []
-        for i, feature in enumerate(features):
-            try:
-                # Extract instruction and response
-                instruction, response = self._extract_instruction_response(feature)
-                
-                # Create sequence and get instruction length
-                sequence, instruction_length = self._create_instruction_response_sequence(
-                    instruction, response
-                )
-                
-                # Validate we have response tokens
-                response_length = len(sequence) - instruction_length
-                if response_length == 0:
-                    logger.warning(f"Skipping example {i}: no response tokens after tokenization")
-                    continue
-                
-                # Ensure minimum response length for effective masking
-                min_response_tokens = self.min_response_tokens  # Use configurable parameter
-                if self.filter_short_responses and response_length < min_response_tokens:
-                    logger.warning(f"Skipping example {i}: response too short ({response_length} tokens < {min_response_tokens})")
-                    continue
-                
-                valid_features.append((sequence, instruction_length))
-                
-            except Exception as e:
-                logger.warning(f"Skipping example {i} due to error: {e}")
-                continue
-        
-        # If no valid features, create a dummy example to prevent errors
-        if not valid_features:
-            logger.warning("No valid features found, creating dummy example")
-            dummy_sequence = [self.tokenizer.eos_token_id] * 10
-            valid_features = [(dummy_sequence, 5)]
-        
-        # If we have fewer valid features than requested, duplicate some to maintain batch size
-        original_batch_size = len(features)
-        if len(valid_features) < original_batch_size:
-            logger.warning(f"Only {len(valid_features)} valid features out of {original_batch_size} requested")
+        # Process all features
+        for feature in features:
+            # Extract instruction and response
+            instruction, response = self._extract_instruction_response(feature)
             
-            # Duplicate valid features to maintain batch size
-            while len(valid_features) < original_batch_size and valid_features:
-                valid_features.extend(valid_features[:original_batch_size - len(valid_features)])
+            # Create sequence and get instruction length
+            sequence, instruction_length = self._create_instruction_response_sequence(
+                instruction, response
+            )
             
-            # If still not enough, add dummy examples
-            while len(valid_features) < original_batch_size:
-                dummy_sequence = [self.tokenizer.eos_token_id] * 10
-                valid_features.append((dummy_sequence, 5))
-            
-            logger.info(f"Adjusted batch size to {len(valid_features)} examples")
-        
-        # Process valid features
-        for sequence, instruction_length in valid_features:
             batch_input_ids.append(sequence)
             batch_instruction_lengths.append(instruction_length)
             
@@ -291,11 +200,6 @@ class SFTDataCollator(DataCollatorMixin):
             padding_length = max_length - len(input_ids)
             padded_input_ids.append(input_ids + [self.tokenizer.pad_token_id] * padding_length)
             padded_attention_mask.append(attention_mask + [0] * padding_length)
-            
-            # Ensure we have at least one valid token in each sequence
-            if len(input_ids) == 0:
-                padded_input_ids[-1][0] = self.tokenizer.eos_token_id or 1
-                padded_attention_mask[-1][0] = 1
         
         # Create src_mask for SFT training
         src_mask = torch.zeros(len(padded_input_ids), max_length, dtype=torch.bool)
@@ -305,33 +209,12 @@ class SFTDataCollator(DataCollatorMixin):
             if valid_length > 0:
                 src_mask[i, :valid_length] = True
         
-        # Ensure we don't have completely empty sequences
-        # If any sequence has zero instruction length, give it at least 1 token
-        for i, length in enumerate(batch_instruction_lengths):
-            if length == 0:
-                src_mask[i, 0] = True
-                batch_instruction_lengths[i] = 1
-        
         result = {
             "input_ids": torch.tensor(padded_input_ids, dtype=torch.long),
             "attention_mask": torch.tensor(padded_attention_mask, dtype=torch.long),
             "instruction_lengths": torch.tensor(batch_instruction_lengths, dtype=torch.long),
             "src_mask": src_mask,
         }
-        
-        # Final validation: ensure we have response tokens in the batch
-        total_response_tokens = (~src_mask).sum().item()
-        if total_response_tokens == 0:
-            logger.warning("No response tokens in final batch - adding minimal response tokens")
-            # Add minimal response tokens to prevent NaN loss
-            for i in range(len(batch_input_ids)):
-                if src_mask[i].all():  # If all tokens are instruction
-                    # Add a response token at the end
-                    if batch_input_ids[i].shape[0] > 0:
-                        src_mask[i, -1] = False  # Mark last token as response
-                        total_response_tokens += 1
-        
-        logger.info(f"Final batch: {len(batch_input_ids)} examples, {total_response_tokens} response tokens")
         
         return result
 
