@@ -298,6 +298,7 @@ class Trainer:
         instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
         custom_format=sft_config.get("custom_format"),
         min_response_tokens=sft_config.get("min_response_tokens", 3),
+        filter_short_responses=sft_config.get("filter_short_responses", True),
       )
       logger.info(f"Using SFTDataCollator with format: {sft_config.get('format', 'alpaca')}")
     else:

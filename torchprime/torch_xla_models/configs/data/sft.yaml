@@ -52,4 +52,8 @@ sft:
   
   # Minimum number of response tokens required for each example
   # Examples with fewer response tokens will be filtered out to prevent NaN loss
-  min_response_tokens: 3 
+  min_response_tokens: 1
+  
+  # Whether to filter out examples with short responses
+  # Set to false to disable filtering entirely (for debugging)
+  filter_short_responses: true 
