@@ -140,6 +140,26 @@ def make_huggingface_dataset(
   assert isinstance(data, DatasetDict)
   data = data[split]
 
+  # Check if this is an SFT dataset (has instruction/output fields)
+  if "instruction" in data.features and "output" in data.features:
+    # For SFT datasets, create text field from instruction + response
+    def create_sft_text(example):
+      instruction = example.get("instruction", "")
+      output = example.get("output", "")
+      system = example.get("system", "")
+      
+      # Combine system + instruction + separator + output
+      if system and system.strip():
+        text = f"{system}\n\n{instruction}\n\n### Response:\n{output}"
+      else:
+        text = f"{instruction}\n\n### Response:\n{output}"
+      
+      return {"text": text}
+    
+    data = data.map(create_sft_text, remove_columns=list(data.features))
+  elif "text" not in data.features:
+    raise ValueError(f"Dataset {name} does not have 'text' field and is not a recognized SFT format")
+
   column_names = list(data.features)
   data = data.map(
     lambda samples: tokenizer(samples["text"]),
