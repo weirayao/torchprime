@@ -116,19 +116,29 @@ class SFTDataCollator(DataCollatorMixin):
             - attention_mask: Attention masks
             - instruction_lengths: Length of instruction part for each sequence
         """
-        # Add logging for debugging
+        # Add logging for debugging (reduced frequency)
         import logging
         logger = logging.getLogger(__name__)
         
-        logger.info(f"SFTDataCollator processing {len(features)} features")
-        logger.info(f"First feature keys: {list(features[0].keys()) if features else 'No features'}")
+        # Minimal logging - only for first batch
+        if hasattr(self, '_batch_count'):
+            self._batch_count += 1
+        else:
+            self._batch_count = 0
+            
+        # Only log the first batch
+        if self._batch_count == 1:
+            logger.info(f"SFTDataCollator processing {len(features)} features")
+            logger.info(f"First feature keys: {list(features[0].keys()) if features else 'No features'}")
         
         # Check if data is already pre-processed (has input_ids and src_mask)
         if features and 'input_ids' in features[0] and 'src_mask' in features[0]:
-            logger.info("Data is pre-processed, using existing tokenization")
+            if self._batch_count == 1:
+                logger.info("Data is pre-processed, using existing tokenization")
             return self._collate_preprocessed_features(features)
         else:
-            logger.info("Data is raw text, processing with instruction/response extraction")
+            if self._batch_count == 1:
+                logger.info("Data is raw text, processing with instruction/response extraction")
             return self._collate_raw_features(features)
     
     def _collate_preprocessed_features(self, features: List[Dict]) -> Dict[str, torch.Tensor]:
@@ -146,13 +156,12 @@ class SFTDataCollator(DataCollatorMixin):
             src_mask = feature['src_mask']
             instruction_length = feature.get('instruction_length', sum(src_mask))
             
-            if i < 2:
+            # Only log for first batch, first feature
+            if self._batch_count == 1 and i == 0:
                 logger.info(f"Pre-processed feature {i}:")
                 logger.info(f"  input_ids length: {len(input_ids)}")
                 logger.info(f"  instruction_length: {instruction_length}")
                 logger.info(f"  src_mask sum: {sum(src_mask)}")
-                logger.info(f"  First 10 input_ids: {input_ids[:10]}")
-                logger.info(f"  First 10 src_mask: {src_mask[:10]}")
             
             batch_input_ids.append(input_ids)
             batch_instruction_lengths.append(instruction_length)
@@ -205,22 +214,20 @@ class SFTDataCollator(DataCollatorMixin):
             # Extract instruction and response
             instruction, response = self._extract_instruction_response(feature)
             
-            # Log the first few examples
-            if i < 2:
+            # Log only for first batch, first feature
+            if self._batch_count == 1 and i == 0:
                 logger.info(f"Raw feature {i}:")
-                logger.info(f"  Raw feature: {feature}")
-                logger.info(f"  Extracted instruction: '{instruction[:100]}...'")
-                logger.info(f"  Extracted response: '{response[:100]}...'")
+                logger.info(f"  Extracted instruction: '{instruction[:50]}...'")
+                logger.info(f"  Extracted response: '{response[:50]}...'")
             
             # Create sequence and get instruction length
             sequence, instruction_length = self._create_instruction_response_sequence(
                 instruction, response
             )
             
-            if i < 2:
+            if self._batch_count == 1 and i == 0:
                 logger.info(f"  Sequence length: {len(sequence)}")
                 logger.info(f"  Instruction length: {instruction_length}")
-                logger.info(f"  First 10 tokens: {sequence[:10]}")
             
             batch_input_ids.append(sequence)
             batch_instruction_lengths.append(instruction_length)

@@ -240,53 +240,40 @@ class Trainer:
     if self.train_dataset is None:
       raise ValueError("Trainer: training requires a train_dataset.")
 
-    # Add detailed dataset logging
-    logger.info(f"Dataset type: {type(self.train_dataset)}")
-    if hasattr(self.train_dataset, '__len__'):
-      logger.info(f"Dataset length: {len(self.train_dataset)}")
-    else:
-      logger.info("Dataset is IterableDataset (no length)")
-    
-    # Log a few sample examples to verify data format
+    # Minimal dataset logging
     if is_main_process():
-      logger.info("=== DATASET SAMPLE EXAMPLES ===")
-      try:
-        if hasattr(self.train_dataset, '__getitem__'):
-          # Regular dataset
-          for i in range(min(3, len(self.train_dataset))):
-            sample = self.train_dataset[i]
-            logger.info(f"Sample {i}: {sample}")
-        else:
-          # IterableDataset
-          iterator = iter(self.train_dataset)
-          for i in range(3):
-            sample = next(iterator)
-            logger.info(f"Sample {i}: {sample}")
-      except Exception as e:
-        logger.error(f"Error sampling dataset: {e}")
-      logger.info("=== END DATASET SAMPLES ===")
+      logger.info(f"Dataset type: {type(self.train_dataset)}")
+      if hasattr(self.train_dataset, '__len__'):
+        logger.info(f"Dataset length: {len(self.train_dataset)}")
+      else:
+        logger.info("Dataset is IterableDataset (no length)")
 
     num_replicas = xr.process_count()
     logger.info(f"Num replicas: {num_replicas}")
-    if isinstance(self.train_dataset, IterableDataset):
-      # For IterableDataset, don't use DistributedSampler as it doesn't have len()
-      sampler = None
-      logger.info("Using IterableDataset without DistributedSampler")
-    else:
-      # For regular Dataset, use DistributedSampler
-      if self.minibatch:
-        sampler = torch.utils.data.DistributedSampler(
-          self.train_dataset,
-          num_replicas=num_replicas,
-          rank=xr.process_index(),
-        )
-      else:
-        # Without minibatch, every process loads the global batch the same way.
-        sampler = torch.utils.data.DistributedSampler(
-          self.train_dataset,
-          num_replicas=1,
-          rank=0,
-        )
+    # Temporarily disable distributed sampler to debug data loading issue
+    sampler = None
+    logger.info("Temporarily disabled DistributedSampler for debugging")
+    
+    # Original code (commented out):
+    # if isinstance(self.train_dataset, IterableDataset):
+    #   # For IterableDataset, don't use DistributedSampler as it doesn't have len()
+    #   sampler = None
+    #   logger.info("Using IterableDataset without DistributedSampler")
+    # else:
+    #   # For regular Dataset, use DistributedSampler
+    #   if self.minibatch:
+    #     sampler = torch.utils.data.DistributedSampler(
+    #       self.train_dataset,
+    #       num_replicas=num_replicas,
+    #       rank=xr.process_index(),
+    #     )
+    #   else:
+    #     # Without minibatch, every process loads the global batch the same way.
+    #     sampler = torch.utils.data.DistributedSampler(
+    #       self.train_dataset,
+    #       num_replicas=1,
+    #       rank=0,
+    #     )
       
     assert self.global_batch_size is not None
     if self.minibatch:
@@ -466,21 +453,11 @@ class Trainer:
         train_iterator = iter(train_loader)
         batch = next(train_iterator)
 
-      # Add detailed batch logging for first few steps
-      if step < 3 and is_main_process():
-        logger.info(f"=== STEP {step} BATCH INFO ===")
-        logger.info(f"Batch keys: {list(batch.keys())}")
-        for key, value in batch.items():
-          if isinstance(value, torch.Tensor):
-            logger.info(f"  {key}: shape={value.shape}, dtype={value.dtype}, min={value.min().item():.4f}, max={value.max().item():.4f}")
-            if key == "input_ids":
-              # Decode a few tokens to see what the model is actually seeing
-              sample_tokens = value[0, :20].tolist()  # First 20 tokens of first example
-              sample_text = self.tokenizer.decode(sample_tokens, skip_special_tokens=False)
-              logger.info(f"  {key} sample text (first 20 tokens): '{sample_text}'")
-          else:
-            logger.info(f"  {key}: {type(value)} = {value}")
-        logger.info("=== END BATCH INFO ===")
+      # Minimal batch logging for first step only
+      if step == 0 and is_main_process():
+        logger.info(f"First batch keys: {list(batch.keys())}")
+        if "input_ids" in batch:
+          logger.info(f"Input shape: {batch['input_ids'].shape}")
 
       trace_start_time = timer()
       
@@ -708,29 +685,13 @@ def main(config: DictConfig):
     else:
       raise ValueError("No dataset provided for SFT")
     
-    # Log raw dataset info
-    logger.info(f"Raw dataset type: {type(raw_data)}")
-    if hasattr(raw_data, 'features'):
-      logger.info(f"Raw dataset features: {list(raw_data.features)}")
-    if hasattr(raw_data, '__len__'):
-      logger.info(f"Raw dataset length: {len(raw_data)}")
-    
-    # Log a few raw examples
+    # Minimal raw dataset logging
     if is_main_process():
-      logger.info("=== RAW DATASET SAMPLES ===")
-      try:
-        if hasattr(raw_data, '__getitem__'):
-          for i in range(min(3, len(raw_data))):
-            sample = raw_data[i]
-            logger.info(f"Raw sample {i}: {sample}")
-        else:
-          iterator = iter(raw_data)
-          for i in range(3):
-            sample = next(iterator)
-            logger.info(f"Raw sample {i}: {sample}")
-      except Exception as e:
-        logger.error(f"Error sampling raw dataset: {e}")
-      logger.info("=== END RAW SAMPLES ===")
+      logger.info(f"Raw dataset type: {type(raw_data)}")
+      if hasattr(raw_data, 'features'):
+        logger.info(f"Raw dataset features: {list(raw_data.features)}")
+      if hasattr(raw_data, '__len__'):
+        logger.info(f"Raw dataset length: {len(raw_data)}")
     
     # For SFT training, use raw dataset directly - the SFT data collator will handle tokenization
     logger.info("Using raw dataset for SFT - data collator will handle tokenization")
