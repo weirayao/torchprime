@@ -6,7 +6,7 @@ import torch
 from typing import Dict, List, Optional, Union
 from transformers import PreTrainedTokenizerBase
 from transformers.data.data_collator import DataCollatorMixin
-from datasets import Dataset
+from datasets import Dataset, IterableDataset
 
 
 class SFTDataCollator(DataCollatorMixin):
@@ -81,6 +81,10 @@ class SFTDataCollator(DataCollatorMixin):
         Create a tokenized sequence with instruction and response,
         and return the length of the instruction part.
         """
+        # Check if both instruction and response are empty - this indicates preprocessed data
+        if not instruction.strip() and not response.strip():
+            raise ValueError("Cannot process empty instruction and response - data appears to be already preprocessed. Please use a simple collator that only handles padding.")
+        
         # Tokenize instruction
         instruction_tokens = self.tokenizer.encode(
             instruction, add_special_tokens=False
@@ -175,6 +179,12 @@ class SFTDataCollator(DataCollatorMixin):
             "src_mask": src_mask,
         }
         
+        # Validate that we have instruction tokens
+        if len(features) > 0:
+            total_instruction_tokens = src_mask.sum().item()
+            if total_instruction_tokens == 0:
+                raise ValueError("No instruction tokens found in batch - all src_mask values are False")
+        
         return result
 
 
@@ -234,4 +244,86 @@ def create_sft_dataset(
             "src_mask": src_mask,
         }
     
-    return dataset.map(process_example, remove_columns=dataset.column_names) 
+    return dataset.map(process_example, remove_columns=dataset.column_names)
+
+
+def create_sft_iterable_dataset(
+    dataset: Dataset | IterableDataset,
+    tokenizer: PreTrainedTokenizerBase,
+    format: str = "alpaca",
+    include_system_prompt: bool = True,
+    instruction_response_separator: str = "\n\n### Response:\n",
+    custom_format: Optional[Dict[str, str]] = None,
+    block_size: int = 8192,
+    seed: int = 42,
+) -> IterableDataset:
+    """
+    Create an SFT IterableDataset from a raw dataset.
+    This enables proper data distribution across multiple processes.
+    
+    Args:
+        dataset: Raw dataset with instruction-response pairs (Dataset or IterableDataset)
+        tokenizer: Tokenizer for processing text
+        format: Format of the data ("alpaca", "sharegpt", "custom")
+        include_system_prompt: Whether to include system prompts
+        instruction_response_separator: Separator between instruction and response
+        custom_format: Custom format configuration
+        block_size: Maximum sequence length
+        seed: Random seed for shuffling
+        
+    Returns:
+        IterableDataset ready for SFT training with proper distribution
+    """
+    def process_example(example):
+        collator = SFTDataCollator(
+            tokenizer=tokenizer,
+            format=format,
+            include_system_prompt=include_system_prompt,
+            instruction_response_separator=instruction_response_separator,
+            custom_format=custom_format,
+        )
+        
+        # Extract instruction and response
+        instruction, response = collator._extract_instruction_response(example)
+        
+        # Create sequence
+        sequence, instruction_length = collator._create_instruction_response_sequence(
+            instruction, response
+        )
+        
+        # Truncate if too long
+        if len(sequence) > block_size:
+            sequence = sequence[:block_size]
+            # Adjust instruction length if it was truncated
+            instruction_length = min(instruction_length, len(sequence))
+        
+        # Create src_mask for this example
+        src_mask = [True] * instruction_length + [False] * (len(sequence) - instruction_length)
+        
+        return {
+            "input_ids": sequence,
+            "instruction_length": instruction_length,
+            "src_mask": src_mask,
+        }
+    
+    # Use native HuggingFace IterableDataset operations like pre-training
+    # Import here to avoid circular imports
+    import torch_xla.runtime as xr
+    
+    # Check if dataset is already an IterableDataset
+    if isinstance(dataset, IterableDataset):
+        # Use native .map() operation on IterableDataset (like pre-training)
+        iterable_dataset = dataset.map(process_example)
+    else:
+        # Convert regular Dataset to IterableDataset and add processing
+        iterable_dataset = dataset.to_iterable_dataset()
+        iterable_dataset = iterable_dataset.map(process_example, remove_columns=dataset.column_names)
+    
+    # Use different seeds for different processes to ensure proper distribution
+    process_seed = seed + xr.process_index() if hasattr(xr, 'process_index') else seed
+    iterable_dataset = iterable_dataset.shuffle(seed=process_seed, buffer_size=10000)
+    
+    # Mark as custom to indicate it's been processed
+    iterable_dataset._is_custom = True
+    
+    return iterable_dataset 
