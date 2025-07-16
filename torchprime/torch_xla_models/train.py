@@ -464,38 +464,38 @@ class Trainer:
       # Validate batch for SFT mode
       if self.config.training_mode == "sft":        
       
-      # Add debugging for batch contents before loss computation
-      if step < 3:  # Only debug first few steps to avoid spam
-        logger.info(f"=== Step {step} Batch Debug ===")
-        logger.info(f"Batch keys: {list(batch.keys())}")
-        
-        if "input_ids" in batch:
-          input_ids = batch["input_ids"]
-          logger.info(f"input_ids shape: {input_ids.shape}")
-          logger.info(f"input_ids dtype: {input_ids.dtype}")
-          logger.info(f"input_ids min/max: {input_ids.min().item()}/{input_ids.max().item()}")
-          logger.info(f"input_ids sample (first 10 tokens): {input_ids[0, :10].tolist()}")
-        
-        if "attention_mask" in batch:
-          attention_mask = batch["attention_mask"]
-          logger.info(f"attention_mask shape: {attention_mask.shape}")
-          logger.info(f"attention_mask dtype: {attention_mask.dtype}")
-          logger.info(f"attention_mask sum: {attention_mask.sum().item()}")
-          logger.info(f"attention_mask sample (first 10): {attention_mask[0, :10].tolist()}")
-        
-        if "src_mask" in batch:
-          src_mask = batch["src_mask"]
-          logger.info(f"src_mask shape: {src_mask.shape}")
-          logger.info(f"src_mask dtype: {src_mask.dtype}")
-          logger.info(f"src_mask sum (instruction tokens): {src_mask.sum().item()}")
-          logger.info(f"response tokens: {(~src_mask).sum().item()}")
-          logger.info(f"src_mask sample (first 10): {src_mask[0, :10].tolist()}")
-        
-        if "instruction_lengths" in batch:
-          instruction_lengths = batch["instruction_lengths"]
-          logger.info(f"instruction_lengths: {instruction_lengths.tolist()}")
-        
-        logger.info("=== End Batch Debug ===")
+        # Add debugging for batch contents before loss computation
+        if step < 3:  # Only debug first few steps to avoid spam
+          logger.info(f"=== Step {step} Batch Debug ===")
+          logger.info(f"Batch keys: {list(batch.keys())}")
+          
+          if "input_ids" in batch:
+            input_ids = batch["input_ids"]
+            logger.info(f"input_ids shape: {input_ids.shape}")
+            logger.info(f"input_ids dtype: {input_ids.dtype}")
+            logger.info(f"input_ids min/max: {input_ids.min().item()}/{input_ids.max().item()}")
+            logger.info(f"input_ids sample (first 10 tokens): {input_ids[0, :10].tolist()}")
+          
+          if "attention_mask" in batch:
+            attention_mask = batch["attention_mask"]
+            logger.info(f"attention_mask shape: {attention_mask.shape}")
+            logger.info(f"attention_mask dtype: {attention_mask.dtype}")
+            logger.info(f"attention_mask sum: {attention_mask.sum().item()}")
+            logger.info(f"attention_mask sample (first 10): {attention_mask[0, :10].tolist()}")
+          
+          if "src_mask" in batch:
+            src_mask = batch["src_mask"]
+            logger.info(f"src_mask shape: {src_mask.shape}")
+            logger.info(f"src_mask dtype: {src_mask.dtype}")
+            logger.info(f"src_mask sum (instruction tokens): {src_mask.sum().item()}")
+            logger.info(f"response tokens: {(~src_mask).sum().item()}")
+            logger.info(f"src_mask sample (first 10): {src_mask[0, :10].tolist()}")
+          
+          if "instruction_lengths" in batch:
+            instruction_lengths = batch["instruction_lengths"]
+            logger.info(f"instruction_lengths: {instruction_lengths.tolist()}")
+          
+          logger.info("=== End Batch Debug ===")
       
       loss = self.train_step(batch)
       trace_end_time = timer()
