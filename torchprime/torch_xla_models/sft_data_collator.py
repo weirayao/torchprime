@@ -217,8 +217,11 @@ class SFTDataCollator(DataCollatorMixin):
             # Log only for first batch, first feature
             if self._batch_count == 1 and i == 0:
                 logger.info(f"Raw feature {i}:")
-                logger.info(f"  Extracted instruction: '{instruction[:50]}...'")
-                logger.info(f"  Extracted response: '{response[:50]}...'")
+                logger.info(f"  Raw feature: {feature}")
+                logger.info(f"  Extracted instruction: '{instruction}'")
+                logger.info(f"  Extracted response: '{response}'")
+                logger.info(f"  Instruction length (chars): {len(instruction)}")
+                logger.info(f"  Response length (chars): {len(response)}")
             
             # Create sequence and get instruction length
             sequence, instruction_length = self._create_instruction_response_sequence(
@@ -227,7 +230,9 @@ class SFTDataCollator(DataCollatorMixin):
             
             if self._batch_count == 1 and i == 0:
                 logger.info(f"  Sequence length: {len(sequence)}")
-                logger.info(f"  Instruction length: {instruction_length}")
+                logger.info(f"  Instruction length (tokens): {instruction_length}")
+                logger.info(f"  First 20 tokens: {sequence[:20]}")
+                logger.info(f"  Separator token IDs: {self.separator_token_ids}")
             
             batch_input_ids.append(sequence)
             batch_instruction_lengths.append(instruction_length)
