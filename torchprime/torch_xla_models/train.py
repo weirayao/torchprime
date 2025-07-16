@@ -732,28 +732,9 @@ def main(config: DictConfig):
         logger.error(f"Error sampling raw dataset: {e}")
       logger.info("=== END RAW SAMPLES ===")
     
-    # Process raw dataset for SFT
-    sft_config = config.data.get("sft", {})
-    logger.info(f"SFT config: {sft_config}")
-    
-    # Check if the dataset already has src_mask (from create_sft_dataset)
-    if hasattr(raw_data, 'features') and 'src_mask' in raw_data.features:
-      # Dataset already processed, use as is
-      logger.info("Dataset already has src_mask, using as is")
-      data = raw_data
-    else:
-      # Process raw dataset for SFT
-      logger.info("Processing raw dataset for SFT...")
-      data = create_sft_dataset(
-        dataset=raw_data,
-        tokenizer=tokenizer,
-        format=sft_config.get("format", "alpaca"),
-        include_system_prompt=sft_config.get("include_system_prompt", True),
-        instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-        custom_format=sft_config.get("custom_format"),
-        block_size=config.data.block_size,
-      )
-      logger.info("SFT dataset processing complete")
+    # For SFT training, use raw dataset directly - the SFT data collator will handle tokenization
+    logger.info("Using raw dataset for SFT - data collator will handle tokenization")
+    data = raw_data
     
     logger.info("=== END SFT DATASET LOADING ===")
   else:

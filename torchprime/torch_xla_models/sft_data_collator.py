@@ -123,6 +123,80 @@ class SFTDataCollator(DataCollatorMixin):
         logger.info(f"SFTDataCollator processing {len(features)} features")
         logger.info(f"First feature keys: {list(features[0].keys()) if features else 'No features'}")
         
+        # Check if data is already pre-processed (has input_ids and src_mask)
+        if features and 'input_ids' in features[0] and 'src_mask' in features[0]:
+            logger.info("Data is pre-processed, using existing tokenization")
+            return self._collate_preprocessed_features(features)
+        else:
+            logger.info("Data is raw text, processing with instruction/response extraction")
+            return self._collate_raw_features(features)
+    
+    def _collate_preprocessed_features(self, features: List[Dict]) -> Dict[str, torch.Tensor]:
+        """Collate features that are already pre-processed with input_ids and src_mask."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        batch_input_ids = []
+        batch_attention_mask = []
+        batch_src_masks = []
+        batch_instruction_lengths = []
+        
+        for i, feature in enumerate(features):
+            input_ids = feature['input_ids']
+            src_mask = feature['src_mask']
+            instruction_length = feature.get('instruction_length', sum(src_mask))
+            
+            if i < 2:
+                logger.info(f"Pre-processed feature {i}:")
+                logger.info(f"  input_ids length: {len(input_ids)}")
+                logger.info(f"  instruction_length: {instruction_length}")
+                logger.info(f"  src_mask sum: {sum(src_mask)}")
+                logger.info(f"  First 10 input_ids: {input_ids[:10]}")
+                logger.info(f"  First 10 src_mask: {src_mask[:10]}")
+            
+            batch_input_ids.append(input_ids)
+            batch_instruction_lengths.append(instruction_length)
+            batch_src_masks.append(src_mask)
+            
+            # Create attention mask (all tokens are attended to)
+            attention_mask = [1] * len(input_ids)
+            batch_attention_mask.append(attention_mask)
+        
+        # Pad sequences to the same length
+        max_length = max(len(seq) for seq in batch_input_ids)
+        
+        padded_input_ids = []
+        padded_attention_mask = []
+        padded_src_masks = []
+        
+        for input_ids, attention_mask, src_mask in zip(batch_input_ids, batch_attention_mask, batch_src_masks):
+            # Pad with tokenizer's pad token
+            padding_length = max_length - len(input_ids)
+            padded_input_ids.append(input_ids + [self.tokenizer.pad_token_id] * padding_length)
+            padded_attention_mask.append(attention_mask + [0] * padding_length)
+            padded_src_masks.append(src_mask + [False] * padding_length)  # Pad src_mask with False
+            
+            # Ensure we have at least one valid token in each sequence
+            if len(input_ids) == 0:
+                padded_input_ids[-1][0] = self.tokenizer.eos_token_id or 1
+                padded_attention_mask[-1][0] = 1
+                padded_src_masks[-1][0] = True
+        
+        # Convert to tensors
+        result = {
+            "input_ids": torch.tensor(padded_input_ids, dtype=torch.long),
+            "attention_mask": torch.tensor(padded_attention_mask, dtype=torch.long),
+            "instruction_lengths": torch.tensor(batch_instruction_lengths, dtype=torch.long),
+            "src_mask": torch.tensor(padded_src_masks, dtype=torch.bool),
+        }
+        
+        return result
+    
+    def _collate_raw_features(self, features: List[Dict]) -> Dict[str, torch.Tensor]:
+        """Collate features that contain raw text instruction/response pairs."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         batch_input_ids = []
         batch_attention_mask = []
         batch_instruction_lengths = []
@@ -133,7 +207,7 @@ class SFTDataCollator(DataCollatorMixin):
             
             # Log the first few examples
             if i < 2:
-                logger.info(f"Feature {i}:")
+                logger.info(f"Raw feature {i}:")
                 logger.info(f"  Raw feature: {feature}")
                 logger.info(f"  Extracted instruction: '{instruction[:100]}...'")
                 logger.info(f"  Extracted response: '{response[:100]}...'")
