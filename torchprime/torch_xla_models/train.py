@@ -44,7 +44,7 @@ from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
 from transformers import PreTrainedTokenizerBase
 
-from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset
+from torchprime.data.dataset import make_huggingface_dataset, make_huggingface_sft_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset
 from torchprime.torch_xla_models.sft_data_collator import SFTDataCollator, create_sft_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
@@ -270,17 +270,44 @@ class Trainer:
       # Each process will load the global batch, then discard the unneeded parts.
       batch_size = self.global_batch_size
     
-    # Choose appropriate data collator based on training mode
+    # Choose appropriate data collator based on training mode and data format
     if self.config.training_mode == "sft":
-      # For SFT, we need to use the SFT data collator
-      sft_config = self.config.data.get("sft", {})
-      collate_fn = SFTDataCollator(
-        tokenizer=self.tokenizer,
-        format=sft_config.get("format", "alpaca"),
-        include_system_prompt=sft_config.get("include_system_prompt", True),
-        instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-        custom_format=sft_config.get("custom_format"),
-      )
+      # Check if the dataset is already preprocessed (has src_mask)
+      is_preprocessed = False
+      
+      if self.train_dataset is None:
+        raise ValueError("train_dataset is None - dataset creation failed")
+      
+      # Check for regular Dataset with features
+      if hasattr(self.train_dataset, 'features') and self.train_dataset.features is not None and 'src_mask' in self.train_dataset.features:
+        # Regular Dataset with features - check if it has src_mask
+        is_preprocessed = True
+      elif isinstance(self.train_dataset, IterableDataset):
+        # IterableDataset - check if it's a custom one that's already processed
+        if hasattr(self.train_dataset, '_is_custom') and self.train_dataset._is_custom:
+          is_preprocessed = True
+        else:
+          # Try to get a sample to check the structure
+          try:
+            sample = next(iter(self.train_dataset))
+            if 'src_mask' in sample:
+              is_preprocessed = True
+          except Exception as e:
+            logger.warning(f"Could not check IterableDataset structure: {e}")
+      
+      if is_preprocessed:
+        # Dataset is already preprocessed, use a simple collator that just handles padding
+        collate_fn = self._create_simple_sft_collator()
+      else:
+        # Dataset needs processing, use the full SFT data collator
+        sft_config = self.config.data.get("sft", {})
+        collate_fn = SFTDataCollator(
+          tokenizer=self.tokenizer,
+          format=sft_config.get("format", "alpaca"),
+          include_system_prompt=sft_config.get("include_system_prompt", True),
+          instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+          custom_format=sft_config.get("custom_format"),
+        )
     else:
       # For pre-training, use default data collator
       collate_fn = default_data_collator
@@ -296,6 +323,90 @@ class Trainer:
       dataloader, self.device, input_sharding=self.input_sharding_spec
     )
     return loader
+
+  def _create_simple_sft_collator(self):
+    """Creates a simple collator that only handles padding for preprocessed SFT data."""
+    def simple_sft_collator(features):
+      """
+      Simple collator for preprocessed SFT data that already has input_ids, instruction_length, and src_mask.
+      Only handles padding to make sequences the same length.
+      """
+      
+      # Simple validation without debug prints
+      if len(features) == 0:
+        raise ValueError("Empty features list passed to collator")
+      
+      # Find the maximum length in the batch
+      max_length = max(len(feature['input_ids']) for feature in features)
+      
+      batch_input_ids = []
+      batch_attention_mask = []
+      batch_src_mask = []
+      
+      for i, feature in enumerate(features):
+        input_ids = feature['input_ids']
+        instruction_length = feature['instruction_length']
+        src_mask = feature['src_mask']
+        
+        # Validate instruction_length
+        if not isinstance(instruction_length, (int, float)) or instruction_length < 0:
+          logger.warning(f"WARNING: Invalid instruction_length: {instruction_length} (type: {type(instruction_length)})")
+          instruction_length = 0
+        
+        # Ensure input_ids is a list
+        if not isinstance(input_ids, (list, tuple)):
+          logger.error(f"ERROR: input_ids is not a list/tuple: {type(input_ids)}, value: {input_ids}")
+          raise ValueError(f"input_ids must be a list/tuple, got {type(input_ids)}")
+        
+        # Pad input_ids
+        padding_length = max_length - len(input_ids)
+        padded_input_ids = input_ids + [self.tokenizer.pad_token_id] * padding_length
+        
+        # Pad attention mask
+        attention_mask = [1] * len(input_ids) + [0] * padding_length
+        
+        # Pad src_mask - ensure it's a list of booleans
+        if isinstance(src_mask, (list, tuple)):
+          padded_src_mask = list(src_mask) + [False] * padding_length
+        else:
+          # If src_mask is not a list, create a default mask
+          logger.warning(f"WARNING: src_mask is not a list/tuple: {type(src_mask)}, creating default mask")
+          padded_src_mask = [True] * len(input_ids) + [False] * padding_length
+        
+        batch_input_ids.append(padded_input_ids)
+        batch_attention_mask.append(attention_mask)
+        batch_src_mask.append(padded_src_mask)
+      
+      # Convert to tensors with explicit shapes to avoid 0-d tensor issues
+      try:
+        input_ids_tensor = torch.tensor(batch_input_ids, dtype=torch.long)
+        attention_mask_tensor = torch.tensor(batch_attention_mask, dtype=torch.long)
+        src_mask_tensor = torch.tensor(batch_src_mask, dtype=torch.bool)
+      except Exception as e:
+        logger.error(f"ERROR: Failed to create tensors: {e}")
+        logger.error(f"batch_input_ids shape: {[len(x) for x in batch_input_ids]}")
+        logger.error(f"batch_attention_mask shape: {[len(x) for x in batch_attention_mask]}")
+        logger.error(f"batch_src_mask shape: {[len(x) for x in batch_src_mask]}")
+        raise
+      
+      # Ensure all tensors have the expected shape
+      batch_size = len(features)
+      if input_ids_tensor.shape != (batch_size, max_length):
+        raise ValueError(f"input_ids shape mismatch: expected {(batch_size, max_length)}, got {input_ids_tensor.shape}")
+      if attention_mask_tensor.shape != (batch_size, max_length):
+        raise ValueError(f"attention_mask shape mismatch: expected {(batch_size, max_length)}, got {attention_mask_tensor.shape}")
+      if src_mask_tensor.shape != (batch_size, max_length):
+        raise ValueError(f"src_mask shape mismatch: expected {(batch_size, max_length)}, got {src_mask_tensor.shape}")
+      
+      result = {
+        "input_ids": input_ids_tensor,
+        "attention_mask": attention_mask_tensor,
+        "src_mask": src_mask_tensor,
+      }
+      
+      return result
+    
+    return simple_sft_collator
 
   def _add_checkpoint_offload_scan_model(self, model: nn.Module):
     remat_classes = self._get_classes_by_names(
@@ -628,13 +739,11 @@ def main(config: DictConfig):
         )
       else:
         raw_data = retry(
-          lambda: make_huggingface_dataset(
+          lambda: make_huggingface_sft_dataset(
             name=config.data.dataset_name,
             config_name=config.data.dataset_config_name,
             split="train",
             cache_dir=config.data.cache_dir,
-            tokenizer=tokenizer,
-            block_size=config.data.block_size,
           )
         )
     elif config.data.gcs_dataset_names:
