@@ -116,18 +116,37 @@ class SFTDataCollator(DataCollatorMixin):
             - attention_mask: Attention masks
             - instruction_lengths: Length of instruction part for each sequence
         """
+        # Add logging for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"SFTDataCollator processing {len(features)} features")
+        logger.info(f"First feature keys: {list(features[0].keys()) if features else 'No features'}")
+        
         batch_input_ids = []
         batch_attention_mask = []
         batch_instruction_lengths = []
         
-        for feature in features:
+        for i, feature in enumerate(features):
             # Extract instruction and response
             instruction, response = self._extract_instruction_response(feature)
+            
+            # Log the first few examples
+            if i < 2:
+                logger.info(f"Feature {i}:")
+                logger.info(f"  Raw feature: {feature}")
+                logger.info(f"  Extracted instruction: '{instruction[:100]}...'")
+                logger.info(f"  Extracted response: '{response[:100]}...'")
             
             # Create sequence and get instruction length
             sequence, instruction_length = self._create_instruction_response_sequence(
                 instruction, response
             )
+            
+            if i < 2:
+                logger.info(f"  Sequence length: {len(sequence)}")
+                logger.info(f"  Instruction length: {instruction_length}")
+                logger.info(f"  First 10 tokens: {sequence[:10]}")
             
             batch_input_ids.append(sequence)
             batch_instruction_lengths.append(instruction_length)

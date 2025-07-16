@@ -240,6 +240,32 @@ class Trainer:
     if self.train_dataset is None:
       raise ValueError("Trainer: training requires a train_dataset.")
 
+    # Add detailed dataset logging
+    logger.info(f"Dataset type: {type(self.train_dataset)}")
+    if hasattr(self.train_dataset, '__len__'):
+      logger.info(f"Dataset length: {len(self.train_dataset)}")
+    else:
+      logger.info("Dataset is IterableDataset (no length)")
+    
+    # Log a few sample examples to verify data format
+    if is_main_process():
+      logger.info("=== DATASET SAMPLE EXAMPLES ===")
+      try:
+        if hasattr(self.train_dataset, '__getitem__'):
+          # Regular dataset
+          for i in range(min(3, len(self.train_dataset))):
+            sample = self.train_dataset[i]
+            logger.info(f"Sample {i}: {sample}")
+        else:
+          # IterableDataset
+          iterator = iter(self.train_dataset)
+          for i in range(3):
+            sample = next(iterator)
+            logger.info(f"Sample {i}: {sample}")
+      except Exception as e:
+        logger.error(f"Error sampling dataset: {e}")
+      logger.info("=== END DATASET SAMPLES ===")
+
     num_replicas = xr.process_count()
     logger.info(f"Num replicas: {num_replicas}")
     if isinstance(self.train_dataset, IterableDataset):
@@ -270,10 +296,14 @@ class Trainer:
       # Each process will load the global batch, then discard the unneeded parts.
       batch_size = self.global_batch_size
     
+    logger.info(f"Batch size per process: {batch_size}")
+    logger.info(f"Training mode: {self.config.training_mode}")
+    
     # Choose appropriate data collator based on training mode
     if self.config.training_mode == "sft":
       # For SFT, we need to use the SFT data collator
       sft_config = self.config.data.get("sft", {})
+      logger.info(f"SFT config: {sft_config}")
       collate_fn = SFTDataCollator(
         tokenizer=self.tokenizer,
         format=sft_config.get("format", "alpaca"),
@@ -281,9 +311,11 @@ class Trainer:
         instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
         custom_format=sft_config.get("custom_format"),
       )
+      logger.info(f"Using SFTDataCollator with format: {sft_config.get('format', 'alpaca')}")
     else:
       # For pre-training, use default data collator
       collate_fn = default_data_collator
+      logger.info("Using default_data_collator")
     
     dataloader = DataLoader(
       self.train_dataset,
@@ -433,6 +465,22 @@ class Trainer:
         epoch += 1
         train_iterator = iter(train_loader)
         batch = next(train_iterator)
+
+      # Add detailed batch logging for first few steps
+      if step < 3 and is_main_process():
+        logger.info(f"=== STEP {step} BATCH INFO ===")
+        logger.info(f"Batch keys: {list(batch.keys())}")
+        for key, value in batch.items():
+          if isinstance(value, torch.Tensor):
+            logger.info(f"  {key}: shape={value.shape}, dtype={value.dtype}, min={value.min().item():.4f}, max={value.max().item():.4f}")
+            if key == "input_ids":
+              # Decode a few tokens to see what the model is actually seeing
+              sample_tokens = value[0, :20].tolist()  # First 20 tokens of first example
+              sample_text = self.tokenizer.decode(sample_tokens, skip_special_tokens=False)
+              logger.info(f"  {key} sample text (first 20 tokens): '{sample_text}'")
+          else:
+            logger.info(f"  {key}: {type(value)} = {value}")
+        logger.info("=== END BATCH INFO ===")
 
       trace_start_time = timer()
       
@@ -617,16 +665,23 @@ def main(config: DictConfig):
 
   if config.training_mode == "sft":
     # SFT mode: load instruction-response dataset
+    logger.info("=== SFT DATASET LOADING ===")
+    logger.info(f"Dataset name: {config.data.dataset_name}")
+    logger.info(f"Dataset config name: {config.data.dataset_config_name}")
+    logger.info(f"Cache dir: {config.data.cache_dir}")
+    
     if config.data.dataset_name:
       # Load raw dataset from HuggingFace
       dataset_name = config.data.dataset_name
       gcs_prefix = "gs://sfr-text-diffusion-model-research/"
       if dataset_name.startswith(gcs_prefix):
         dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
+        logger.info(f"Loading GCS dataset from: {dataset_name}")
         raw_data = retry(
           lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
         )
       else:
+        logger.info(f"Loading HuggingFace dataset: {dataset_name}")
         raw_data = retry(
           lambda: make_huggingface_dataset(
             name=config.data.dataset_name,
@@ -640,6 +695,7 @@ def main(config: DictConfig):
         )
     elif config.data.gcs_dataset_names:
       # Load raw dataset from GCS
+      logger.info(f"Loading GCS datasets: {config.data.gcs_dataset_names}")
       raw_data = retry(
         lambda: make_gcs_dataset(
           names=config.data.gcs_dataset_names,
@@ -652,15 +708,42 @@ def main(config: DictConfig):
     else:
       raise ValueError("No dataset provided for SFT")
     
+    # Log raw dataset info
+    logger.info(f"Raw dataset type: {type(raw_data)}")
+    if hasattr(raw_data, 'features'):
+      logger.info(f"Raw dataset features: {list(raw_data.features)}")
+    if hasattr(raw_data, '__len__'):
+      logger.info(f"Raw dataset length: {len(raw_data)}")
+    
+    # Log a few raw examples
+    if is_main_process():
+      logger.info("=== RAW DATASET SAMPLES ===")
+      try:
+        if hasattr(raw_data, '__getitem__'):
+          for i in range(min(3, len(raw_data))):
+            sample = raw_data[i]
+            logger.info(f"Raw sample {i}: {sample}")
+        else:
+          iterator = iter(raw_data)
+          for i in range(3):
+            sample = next(iterator)
+            logger.info(f"Raw sample {i}: {sample}")
+      except Exception as e:
+        logger.error(f"Error sampling raw dataset: {e}")
+      logger.info("=== END RAW SAMPLES ===")
+    
     # Process raw dataset for SFT
     sft_config = config.data.get("sft", {})
+    logger.info(f"SFT config: {sft_config}")
     
     # Check if the dataset already has src_mask (from create_sft_dataset)
     if hasattr(raw_data, 'features') and 'src_mask' in raw_data.features:
       # Dataset already processed, use as is
+      logger.info("Dataset already has src_mask, using as is")
       data = raw_data
     else:
       # Process raw dataset for SFT
+      logger.info("Processing raw dataset for SFT...")
       data = create_sft_dataset(
         dataset=raw_data,
         tokenizer=tokenizer,
@@ -670,6 +753,9 @@ def main(config: DictConfig):
         custom_format=sft_config.get("custom_format"),
         block_size=config.data.block_size,
       )
+      logger.info("SFT dataset processing complete")
+    
+    logger.info("=== END SFT DATASET LOADING ===")
   else:
     # Pre-training mode (original behavior)
     if config.data.dataset_name:

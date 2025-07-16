@@ -3,7 +3,7 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     model=flex-qwen-1b \
     training_mode=sft \
     global_batch_size=16 \
-    max_steps=40 \
+    max_steps=25 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/test-flex-qwen3-1b-sft-gcs \
     resume_from_checkpoint=20 \
     sft_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/test-flex-qwen3-1b-sft-gcs_sft \

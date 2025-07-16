@@ -132,6 +132,12 @@ def make_huggingface_dataset(
   block_size: int,
   preserve_sft_format: bool = False,
 ) -> Dataset:
+  import logging
+  logger = logging.getLogger(__name__)
+  
+  logger.info(f"Loading HuggingFace dataset: {name} (config: {config_name}, split: {split})")
+  logger.info(f"Preserve SFT format: {preserve_sft_format}")
+  
   # Downloading and loading a dataset from the hub.
   data = load_dataset(
     name,
@@ -140,15 +146,21 @@ def make_huggingface_dataset(
   )
   assert isinstance(data, DatasetDict)
   data = data[split]
+  
+  logger.info(f"Dataset loaded successfully. Features: {list(data.features)}")
+  logger.info(f"Dataset length: {len(data)}")
 
   # Check if this is an SFT dataset (has instruction/output fields)
   if "instruction" in data.features and "output" in data.features:
+    logger.info("Dataset has instruction/output fields - SFT format detected")
     if preserve_sft_format:
       # For SFT training, preserve the instruction/response structure
       # The SFT data collator will handle the processing
+      logger.info("Preserving SFT format - returning raw dataset")
       return data
     else:
       # For pre-training, create text field from instruction + response
+      logger.info("Converting SFT format to text for pre-training")
       def create_sft_text(example):
         instruction = example.get("instruction", "")
         output = example.get("output", "")
@@ -164,9 +176,14 @@ def make_huggingface_dataset(
       
       data = data.map(create_sft_text, remove_columns=list(data.features))
   elif "text" not in data.features:
+    logger.error(f"Dataset {name} does not have 'text' field and is not a recognized SFT format")
+    logger.error(f"Available features: {list(data.features)}")
     raise ValueError(f"Dataset {name} does not have 'text' field and is not a recognized SFT format")
+  else:
+    logger.info("Dataset has text field - using for pre-training")
 
   column_names = list(data.features)
+  logger.info(f"Tokenizing dataset with columns: {column_names}")
   data = data.map(
     lambda samples: tokenizer(samples["text"]),
     batched=True,
@@ -174,7 +191,10 @@ def make_huggingface_dataset(
   )
 
   # Taken from run_clm.py. It's important to group texts evenly to avoid recompilations in TPU.
+  logger.info(f"Grouping texts with block_size: {block_size}")
   data = data.map(lambda examples: group_texts(examples, block_size), batched=True)
+  
+  logger.info(f"Dataset processing complete. Final length: {len(data)}")
   return data
 
 
