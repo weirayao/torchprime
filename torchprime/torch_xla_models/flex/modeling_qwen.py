@@ -434,13 +434,6 @@ class Qwen3ForCausalLM(nn.Module):
     loss_func = nn.CrossEntropyLoss(reduction="none")
     # input_ids: [bs, seq_len]
     
-    # Add safety checks for input validation
-    if input_ids.numel() == 0:
-      raise ValueError("input_ids is empty")
-    
-    if input_ids.shape[1] == 0:
-      raise ValueError("input_ids has zero sequence length")
-    
     # Create maskable_mask based on training mode and src_mask
     # For SFT: src_mask is provided, maskable_mask = ~src_mask
     # For pretrain: src_mask is None, maskable_mask = all True
@@ -448,31 +441,15 @@ class Qwen3ForCausalLM(nn.Module):
     if src_mask is not None:
       maskable_mask = ~src_mask
     
-    # Ensure we have at least some maskable tokens
-    if not maskable_mask.any():
-      raise ValueError("No maskable tokens found - all tokens are protected by src_mask")
-    
     t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
     sigma = t
     
-    # Add safety check for sigma values
-    if torch.any(sigma <= 0):
-      raise ValueError(f"Invalid sigma values detected: {sigma}")
-    
     dsigma = torch.reciprocal(sigma)
-    
-    # Add safety check for dsigma values
-    if torch.any(torch.isinf(dsigma)) or torch.any(torch.isnan(dsigma)):
-      raise ValueError(f"Invalid dsigma values detected: {dsigma}")
     
     noisy_input_ids = transition(
       input_ids, sigma[:, None], maskable_mask=maskable_mask, mask_token_id=mask_token_id
     )
     loss_mask = noisy_input_ids == mask_token_id
-
-    # Ensure we have at least some masked tokens for loss computation
-    if not loss_mask.any():
-      raise ValueError("No masked tokens found after transition - loss computation will fail")
 
     hidden_states = self.model(input_ids=noisy_input_ids, attention_mask=attention_mask)
     # hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
@@ -492,13 +469,6 @@ class Qwen3ForCausalLM(nn.Module):
     ).reshape(target_ids.shape[0],-1)
     loss = loss.masked_fill(~loss_mask, 0)
     
-    # Add safety check for loss values before final computation
-    if torch.any(torch.isnan(loss)):
-      raise ValueError("NaN detected in loss computation before final reduction")
-    
-    if torch.any(torch.isinf(loss)):
-      raise ValueError("Inf detected in loss computation before final reduction")
-    
     # weiran: divide by the number of tokens in the sequence instead of the number of masked tokens
     # justification is dsigma already accounts for the number of masked tokens
     # this is a hack to get something like per token loss
@@ -511,19 +481,10 @@ def transition(x_0, sigma, maskable_mask, mask_token_id):
     # weiran: diffullama
     # move_chance = 1 - (-sigma).exp()
     move_chance = sigma
-    
-    # Add safety checks
-    if torch.any(move_chance < 0) or torch.any(move_chance > 1):
-      raise ValueError(f"Invalid move_chance values: {move_chance}")
-    
-    if not maskable_mask.any():
-      raise ValueError("No maskable tokens in maskable_mask")
+
     
     move_indices = (torch.rand(*x_0.shape, device=x_0.device) < move_chance) & maskable_mask
     x_t = torch.where(move_indices, mask_token_id, x_0)
-    
-    # Ensure we actually masked some tokens
-    if not (x_t == mask_token_id).any():
-      raise ValueError("No tokens were masked in transition function")
+  
     
     return x_t

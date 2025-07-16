@@ -500,6 +500,25 @@ class Trainer:
             logger.info(f"  attention_mask sum: {batch['attention_mask'].sum().item()}")
           # Stop training on NaN loss
           raise ValueError(f"Training stopped due to NaN/Inf loss at step {step}")
+        
+        # Add XLA-compatible debugging for batch validation
+        if "input_ids" in batch and "src_mask" in batch:
+          # Check for potential issues using torch operations
+          input_ids = batch["input_ids"]
+          src_mask = batch["src_mask"]
+          
+          # Check if we have enough response tokens for masking
+          response_tokens = (~src_mask).sum()
+          instruction_tokens = src_mask.sum()
+          
+          logger.info(f"Step {step} batch validation:")
+          logger.info(f"  Instruction tokens: {instruction_tokens.item()}")
+          logger.info(f"  Response tokens: {response_tokens.item()}")
+          logger.info(f"  Total tokens: {input_ids.numel()}")
+          
+          # Warn if no response tokens (this would cause NaN loss)
+          if response_tokens == 0:
+            logger.warning(f"Step {step}: No response tokens found - this will cause NaN loss!")
 
       if step % self.config.logging_steps == 0:
 
