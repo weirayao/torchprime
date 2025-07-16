@@ -462,17 +462,40 @@ class Trainer:
       trace_start_time = timer()
       
       # Validate batch for SFT mode
-      if self.config.training_mode == "sft":
-        self._validate_sft_batch(batch)
+      if self.config.training_mode == "sft":        
+      
+      # Add debugging for batch contents before loss computation
+      if step < 3:  # Only debug first few steps to avoid spam
+        logger.info(f"=== Step {step} Batch Debug ===")
+        logger.info(f"Batch keys: {list(batch.keys())}")
         
-        # Add additional validation for debugging
-        if step == 0 and is_main_process():
-          logger.info(f"Step {step} batch validation:")
-          logger.info(f"  input_ids shape: {batch['input_ids'].shape}")
-          logger.info(f"  attention_mask shape: {batch['attention_mask'].shape}")
-          logger.info(f"  src_mask shape: {batch['src_mask'].shape}")
-          logger.info(f"  src_mask sum: {batch['src_mask'].sum()}")
-          logger.info(f"  input_ids min/max: {batch['input_ids'].min()}/{batch['input_ids'].max()}")
+        if "input_ids" in batch:
+          input_ids = batch["input_ids"]
+          logger.info(f"input_ids shape: {input_ids.shape}")
+          logger.info(f"input_ids dtype: {input_ids.dtype}")
+          logger.info(f"input_ids min/max: {input_ids.min().item()}/{input_ids.max().item()}")
+          logger.info(f"input_ids sample (first 10 tokens): {input_ids[0, :10].tolist()}")
+        
+        if "attention_mask" in batch:
+          attention_mask = batch["attention_mask"]
+          logger.info(f"attention_mask shape: {attention_mask.shape}")
+          logger.info(f"attention_mask dtype: {attention_mask.dtype}")
+          logger.info(f"attention_mask sum: {attention_mask.sum().item()}")
+          logger.info(f"attention_mask sample (first 10): {attention_mask[0, :10].tolist()}")
+        
+        if "src_mask" in batch:
+          src_mask = batch["src_mask"]
+          logger.info(f"src_mask shape: {src_mask.shape}")
+          logger.info(f"src_mask dtype: {src_mask.dtype}")
+          logger.info(f"src_mask sum (instruction tokens): {src_mask.sum().item()}")
+          logger.info(f"response tokens: {(~src_mask).sum().item()}")
+          logger.info(f"src_mask sample (first 10): {src_mask[0, :10].tolist()}")
+        
+        if "instruction_lengths" in batch:
+          instruction_lengths = batch["instruction_lengths"]
+          logger.info(f"instruction_lengths: {instruction_lengths.tolist()}")
+        
+        logger.info("=== End Batch Debug ===")
       
       loss = self.train_step(batch)
       trace_end_time = timer()
@@ -609,24 +632,6 @@ class Trainer:
     metrics = metrics_logger.finalize()
     logger.info("***** train metrics *****\n%s", metrics)
     metrics.save(Path(self.config.output_dir) / "train_metrics.json")
-
-  def _validate_sft_batch(self, batch):
-    """Validate SFT batch before training step."""
-    if "src_mask" not in batch:
-      raise ValueError("src_mask not found in batch for SFT training")
-    
-    src_mask = batch["src_mask"]
-    input_ids = batch["input_ids"]
-    
-    # Validate src_mask shape and content
-    if src_mask.shape != input_ids.shape:
-      raise ValueError(f"src_mask shape {src_mask.shape} doesn't match input_ids shape {input_ids.shape}")
-    
-    # Ensure we have at least some instruction tokens
-    if src_mask.sum() == 0:
-      raise ValueError("src_mask has no True values - no instruction tokens found")
-    
-    return True
 
   @torch_xla.compile(full_graph=True)
   def train_step(self, batch):

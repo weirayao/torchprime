@@ -443,7 +443,6 @@ class Qwen3ForCausalLM(nn.Module):
     
     t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
     sigma = t
-    
     dsigma = torch.reciprocal(sigma)
     
     noisy_input_ids = transition(
@@ -481,10 +480,8 @@ def transition(x_0, sigma, maskable_mask, mask_token_id):
     # weiran: diffullama
     # move_chance = 1 - (-sigma).exp()
     move_chance = sigma
-
     
     move_indices = (torch.rand(*x_0.shape, device=x_0.device) < move_chance) & maskable_mask
     x_t = torch.where(move_indices, mask_token_id, x_0)
-  
     
     return x_t
