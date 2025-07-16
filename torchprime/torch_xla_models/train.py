@@ -297,6 +297,7 @@ class Trainer:
         include_system_prompt=sft_config.get("include_system_prompt", True),
         instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
         custom_format=sft_config.get("custom_format"),
+        min_response_tokens=sft_config.get("min_response_tokens", 3),
       )
       logger.info(f"Using SFTDataCollator with format: {sft_config.get('format', 'alpaca')}")
     else:

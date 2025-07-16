@@ -22,6 +22,7 @@ class SFTDataCollator(DataCollatorMixin):
         include_system_prompt: bool = True,
         instruction_response_separator: str = "\n\n### Response:\n",
         custom_format: Optional[Dict[str, str]] = None,
+        min_response_tokens: int = 3,  # Minimum response tokens required
         **kwargs
     ):
         self.tokenizer = tokenizer
@@ -29,6 +30,7 @@ class SFTDataCollator(DataCollatorMixin):
         self.include_system_prompt = include_system_prompt
         self.instruction_response_separator = instruction_response_separator
         self.custom_format = custom_format or {}
+        self.min_response_tokens = min_response_tokens
         
         # Get separator token IDs
         self.separator_token_ids = self.tokenizer.encode(
@@ -93,6 +95,10 @@ class SFTDataCollator(DataCollatorMixin):
         response_tokens = self.tokenizer.encode(
             response, add_special_tokens=False
         )
+        
+        # Validate that we have response tokens
+        if len(response_tokens) == 0:
+            raise ValueError(f"No response tokens found for response: '{response}'")
         
         # Combine instruction + separator + response
         full_sequence = full_instruction_tokens + response_tokens
@@ -210,15 +216,49 @@ class SFTDataCollator(DataCollatorMixin):
         batch_attention_mask = []
         batch_instruction_lengths = []
         
+        # Filter out invalid examples
+        valid_features = []
         for i, feature in enumerate(features):
-            # Extract instruction and response
-            instruction, response = self._extract_instruction_response(feature)
-            
-            # Create sequence and get instruction length
-            sequence, instruction_length = self._create_instruction_response_sequence(
-                instruction, response
-            )
-            
+            try:
+                # Extract instruction and response
+                instruction, response = self._extract_instruction_response(feature)
+                
+                # Validate response is not empty
+                if not response.strip():
+                    logger.warning(f"Skipping example {i}: empty response")
+                    continue
+                
+                # Create sequence and get instruction length
+                sequence, instruction_length = self._create_instruction_response_sequence(
+                    instruction, response
+                )
+                
+                # Validate we have response tokens
+                response_length = len(sequence) - instruction_length
+                if response_length == 0:
+                    logger.warning(f"Skipping example {i}: no response tokens after tokenization")
+                    continue
+                
+                # Ensure minimum response length for effective masking
+                min_response_tokens = self.min_response_tokens  # Use configurable parameter
+                if response_length < min_response_tokens:
+                    logger.warning(f"Skipping example {i}: response too short ({response_length} tokens < {min_response_tokens})")
+                    continue
+                
+                valid_features.append((sequence, instruction_length))
+                
+            except Exception as e:
+                logger.warning(f"Skipping example {i} due to error: {e}")
+                continue
+        
+        # If no valid features, create a dummy example to prevent errors
+        if not valid_features:
+            logger.warning("No valid features found, creating dummy example")
+            dummy_sequence = [self.tokenizer.eos_token_id] * 10
+            valid_features = [(dummy_sequence, 5)]
+        
+        # Process valid features
+        for sequence, instruction_length in valid_features:
             batch_input_ids.append(sequence)
             batch_instruction_lengths.append(instruction_length)
             
@@ -264,6 +304,15 @@ class SFTDataCollator(DataCollatorMixin):
             "instruction_lengths": torch.tensor(batch_instruction_lengths, dtype=torch.long),
             "src_mask": src_mask,
         }
+        
+        # Final validation: ensure we have response tokens in the batch
+        total_response_tokens = (~src_mask).sum().item()
+        if total_response_tokens == 0:
+            logger.error("No response tokens in final batch - this will cause NaN loss!")
+            logger.error("This indicates all examples were filtered out or have no response tokens")
+            raise ValueError("No response tokens in batch - cannot proceed with SFT training")
+        
+        logger.info(f"Final batch: {len(batch_input_ids)} examples, {total_response_tokens} response tokens")
         
         return result
 

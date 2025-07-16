@@ -48,4 +48,8 @@ sft:
   # Default: true (recommended for multi-process training)
   # Uses native HuggingFace IterableDataset operations for efficient streaming and shuffling
   # Set to false to use regular Dataset (fallback if IterableDataset fails)
-  use_iterable_dataset: true 
+  use_iterable_dataset: true
+  
+  # Minimum number of response tokens required for each example
+  # Examples with fewer response tokens will be filtered out to prevent NaN loss
+  min_response_tokens: 3 
