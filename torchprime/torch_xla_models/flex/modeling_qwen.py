@@ -434,6 +434,12 @@ class Qwen3ForCausalLM(nn.Module):
     loss_func = nn.CrossEntropyLoss(reduction="none")
     # input_ids: [bs, seq_len]
     
+    logger.info(f"Forward - input_ids shape: {input_ids.shape}, dtype: {input_ids.dtype}")
+    logger.info(f"Forward - input_ids min/max: {input_ids.min()}/{input_ids.max()}")
+    logger.info(f"Forward - src_mask: {src_mask is not None}")
+    if src_mask is not None:
+      logger.info(f"Forward - src_mask shape: {src_mask.shape}, sum: {src_mask.sum()}")
+    
     # Create maskable_mask based on training mode and src_mask
     # For SFT: src_mask is provided, maskable_mask = ~src_mask
     # For pretrain: src_mask is None, maskable_mask = all True
@@ -441,19 +447,37 @@ class Qwen3ForCausalLM(nn.Module):
     if src_mask is not None:
       maskable_mask = ~src_mask
     
+    logger.info(f"Forward - maskable_mask sum: {maskable_mask.sum()}")
+    
     t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
     sigma = t
     dsigma = torch.reciprocal(sigma)
+    
+    logger.info(f"Forward - t shape: {t.shape}, min/max: {t.min()}/{t.max()}")
+    logger.info(f"Forward - sigma shape: {sigma.shape}, min/max: {sigma.min()}/{sigma.max()}")
+    logger.info(f"Forward - dsigma shape: {dsigma.shape}, min/max: {dsigma.min()}/{dsigma.max()}")
     
     noisy_input_ids = transition(
       input_ids, sigma[:, None], maskable_mask=maskable_mask, mask_token_id=mask_token_id
     )
     loss_mask = noisy_input_ids == mask_token_id
+    
+    logger.info(f"Forward - noisy_input_ids shape: {noisy_input_ids.shape}")
+    logger.info(f"Forward - noisy_input_ids min/max: {noisy_input_ids.min()}/{noisy_input_ids.max()}")
+    logger.info(f"Forward - loss_mask sum: {loss_mask.sum()}")
 
     hidden_states = self.model(input_ids=noisy_input_ids, attention_mask=attention_mask)
     # hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
     logits = self.lm_head(hidden_states)
     logits = logits.float()
+    
+    logger.info(f"Forward - hidden_states shape: {hidden_states.shape}")
+    logger.info(f"Forward - hidden_states min/max: {hidden_states.min()}/{hidden_states.max()}")
+    logger.info(f"Forward - logits shape: {logits.shape}")
+    logger.info(f"Forward - logits min/max: {logits.min()}/{logits.max()}")
+    logger.info(f"Forward - logits has NaN: {torch.isnan(logits).any()}")
+    logger.info(f"Forward - logits has Inf: {torch.isinf(logits).any()}")
+    
     # logits: [bs, seq_len, vocab_size]
     # Shifted logits and labels
     # logits: [bs, seq_len-1, vocab_size]
@@ -462,11 +486,29 @@ class Qwen3ForCausalLM(nn.Module):
     # loss_mask: [bs, seq_len-1]
     loss_mask = loss_mask[..., 1:].contiguous()
     target_ids = input_ids[..., 1:].contiguous()
+    
+    logger.info(f"Forward - shifted logits shape: {logits.shape}")
+    logger.info(f"Forward - shifted logits min/max: {logits.min()}/{logits.max()}")
+    logger.info(f"Forward - target_ids shape: {target_ids.shape}")
+    logger.info(f"Forward - target_ids min/max: {target_ids.min()}/{target_ids.max()}")
+    logger.info(f"Forward - loss_mask shape: {loss_mask.shape}, sum: {loss_mask.sum()}")
+    
     # loss: [bs, seq_len-1]
     loss = loss_func(
       logits.reshape(-1, logits.shape[-1]), target_ids.reshape(-1)
     ).reshape(target_ids.shape[0],-1)
+    
+    logger.info(f"Forward - raw loss shape: {loss.shape}")
+    logger.info(f"Forward - raw loss min/max: {loss.min()}/{loss.max()}")
+    logger.info(f"Forward - raw loss has NaN: {torch.isnan(loss).any()}")
+    logger.info(f"Forward - raw loss has Inf: {torch.isinf(loss).any()}")
+    
     loss = loss.masked_fill(~loss_mask, 0)
+    
+    logger.info(f"Forward - masked loss shape: {loss.shape}")
+    logger.info(f"Forward - masked loss min/max: {loss.min()}/{loss.max()}")
+    logger.info(f"Forward - masked loss has NaN: {torch.isnan(loss).any()}")
+    logger.info(f"Forward - masked loss has Inf: {torch.isinf(loss).any()}")
     
     # weiran: divide by the number of tokens in the sequence instead of the number of masked tokens
     # justification is dsigma already accounts for the number of masked tokens
@@ -474,23 +516,30 @@ class Qwen3ForCausalLM(nn.Module):
     # https://github.com/ML-GSAI/SMDM/blob/main/pretrain/train_mdm_rl.py#L281-L283
     # loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
 
-    # Calculate loss only on masked tokens to prevent NaN
-    # Count the number of masked tokens for proper normalization
-    num_masked_tokens = loss_mask.sum()
+    dsigma_expanded = dsigma[:, None]
+    logger.info(f"Forward - dsigma_expanded shape: {dsigma_expanded.shape}")
+    logger.info(f"Forward - dsigma_expanded min/max: {dsigma_expanded.min()}/{dsigma_expanded.max()}")
     
-    # Avoid division by zero using tensor operations instead of conditional logic
-    # Use a small epsilon to prevent division by zero
-    epsilon = 1e-8
-    normalized_loss = (dsigma[:, None] * loss).sum() / (num_masked_tokens + epsilon)
+    weighted_loss = dsigma_expanded * loss
+    logger.info(f"Forward - weighted_loss shape: {weighted_loss.shape}")
+    logger.info(f"Forward - weighted_loss min/max: {weighted_loss.min()}/{weighted_loss.max()}")
+    logger.info(f"Forward - weighted_loss has NaN: {torch.isnan(weighted_loss).any()}")
+    logger.info(f"Forward - weighted_loss has Inf: {torch.isinf(weighted_loss).any()}")
     
-    # If no tokens are masked, use a small positive loss instead
-    # This uses tensor operations that can be compiled
-    loss = torch.where(
-        num_masked_tokens > 0,
-        normalized_loss,
-        torch.tensor(0.1, device=input_ids.device, dtype=torch.float)
-    )
-    return logits, loss
+    loss_sum = weighted_loss.sum()
+    logger.info(f"Forward - loss_sum: {loss_sum}")
+    logger.info(f"Forward - loss_sum has NaN: {torch.isnan(loss_sum)}")
+    logger.info(f"Forward - loss_sum has Inf: {torch.isinf(loss_sum)}")
+    
+    denominator = input_ids.shape[0] * input_ids.shape[1]
+    logger.info(f"Forward - denominator: {denominator}")
+    
+    final_loss = loss_sum / denominator
+    logger.info(f"Forward - final_loss: {final_loss}")
+    logger.info(f"Forward - final_loss has NaN: {torch.isnan(final_loss)}")
+    logger.info(f"Forward - final_loss has Inf: {torch.isinf(final_loss)}")
+
+    return logits, final_loss
 
 @xp.trace_me("transition")
 def transition(x_0, sigma, maskable_mask, mask_token_id):
