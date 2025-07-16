@@ -587,17 +587,21 @@ class Trainer:
 
   @torch_xla.compile(full_graph=True)
   def train_step(self, batch):
-    if self.config.training_mode == "sft":
-      # For SFT, src_mask should already be in the batch from data collator
-      _logits, loss = self.model(
-        input_ids=batch["input_ids"],
-        attention_mask=batch["attention_mask"],
-        src_mask=batch["src_mask"],
-        training_mode="sft"
-      )
-    else:
-      # Pre-training mode (original behavior)
-      _logits, loss = self.model(**batch)
+    # Temporarily disable SFT mode to test if the issue is with SFT handling
+    # if self.config.training_mode == "sft":
+    #   # For SFT, src_mask should already be in the batch from data collator
+    #   _logits, loss = self.model(
+    #     input_ids=batch["input_ids"],
+    #     attention_mask=batch["attention_mask"],
+    #     src_mask=batch["src_mask"],
+    #     training_mode="sft"
+    #   )
+    # else:
+    #   # Pre-training mode (original behavior)
+    #   _logits, loss = self.model(**batch)
+    
+    # Use pre-training mode for now to test
+    _logits, loss = self.model(**batch)
     
     loss.backward()
     self.optimizer.step()
