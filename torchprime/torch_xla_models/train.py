@@ -494,6 +494,12 @@ class Trainer:
           if "src_mask" in batch:
             logger.info(f"  src_mask shape: {batch['src_mask'].shape}")
             logger.info(f"  src_mask sum: {batch['src_mask'].sum().item()}")
+            logger.info(f"  response tokens: {(~batch['src_mask']).sum().item()}")
+          if "attention_mask" in batch:
+            logger.info(f"  attention_mask shape: {batch['attention_mask'].shape}")
+            logger.info(f"  attention_mask sum: {batch['attention_mask'].sum().item()}")
+          # Stop training on NaN loss
+          raise ValueError(f"Training stopped due to NaN/Inf loss at step {step}")
 
       if step % self.config.logging_steps == 0:
 
