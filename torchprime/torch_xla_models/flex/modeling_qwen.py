@@ -478,13 +478,18 @@ class Qwen3ForCausalLM(nn.Module):
     # Count the number of masked tokens for proper normalization
     num_masked_tokens = loss_mask.sum()
     
-    # Avoid division by zero - if no tokens are masked, return zero loss
-    if num_masked_tokens == 0:
-        # Return a small positive loss instead of zero to avoid training issues
-        loss = torch.tensor(0.1, device=input_ids.device, dtype=torch.float)
-    else:
-        # Normalize by the number of masked tokens
-        loss = (dsigma[:, None] * loss).sum() / num_masked_tokens
+    # Avoid division by zero using tensor operations instead of conditional logic
+    # Use a small epsilon to prevent division by zero
+    epsilon = 1e-8
+    normalized_loss = (dsigma[:, None] * loss).sum() / (num_masked_tokens + epsilon)
+    
+    # If no tokens are masked, use a small positive loss instead
+    # This uses tensor operations that can be compiled
+    loss = torch.where(
+        num_masked_tokens > 0,
+        normalized_loss,
+        torch.tensor(0.1, device=input_ids.device, dtype=torch.float)
+    )
     return logits, loss
 
 @xp.trace_me("transition")
