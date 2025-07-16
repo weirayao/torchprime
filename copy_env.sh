@@ -1,4 +1,4 @@
-TPU_VM_NAME="sfr-cqin-v4-32-1"
+TPU_VM_NAME="sfr-cqin-v4-32-0"
 TPU_ZONE="us-central2-b"
 
 # Copy .env file to TPU VM
