@@ -268,12 +268,32 @@ class SFTDataCollator(DataCollatorMixin):
                 src_mask[i, 0] = True
                 batch_instruction_lengths[i] = 1
         
+        # Add validation to ensure src_mask is properly formed
+        if self._batch_count == 1:
+            logger.info(f"src_mask shape: {src_mask.shape}")
+            logger.info(f"src_mask sum per sequence: {src_mask.sum(dim=1)}")
+            logger.info(f"instruction_lengths: {batch_instruction_lengths}")
+        
         result = {
             "input_ids": torch.tensor(padded_input_ids, dtype=torch.long),
             "attention_mask": torch.tensor(padded_attention_mask, dtype=torch.long),
             "instruction_lengths": torch.tensor(batch_instruction_lengths, dtype=torch.long),
             "src_mask": src_mask,
         }
+        
+        # Add validation to ensure all tensors have consistent shapes
+        if self._batch_count == 1:
+            logger.info(f"Final tensor shapes:")
+            logger.info(f"  input_ids: {result['input_ids'].shape}")
+            logger.info(f"  attention_mask: {result['attention_mask'].shape}")
+            logger.info(f"  src_mask: {result['src_mask'].shape}")
+            logger.info(f"  instruction_lengths: {result['instruction_lengths'].shape}")
+            
+            # Check for potential issues
+            if result['input_ids'].shape != result['attention_mask'].shape:
+                logger.error(f"Shape mismatch: input_ids {result['input_ids'].shape} vs attention_mask {result['attention_mask'].shape}")
+            if result['input_ids'].shape != result['src_mask'].shape:
+                logger.error(f"Shape mismatch: input_ids {result['input_ids'].shape} vs src_mask {result['src_mask'].shape}")
         
         return result
 

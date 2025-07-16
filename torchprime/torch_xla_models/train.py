@@ -464,6 +464,15 @@ class Trainer:
       # Validate batch for SFT mode
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
+        
+        # Add additional validation for debugging
+        if step == 0 and is_main_process():
+          logger.info(f"Step {step} batch validation:")
+          logger.info(f"  input_ids shape: {batch['input_ids'].shape}")
+          logger.info(f"  attention_mask shape: {batch['attention_mask'].shape}")
+          logger.info(f"  src_mask shape: {batch['src_mask'].shape}")
+          logger.info(f"  src_mask sum: {batch['src_mask'].sum()}")
+          logger.info(f"  input_ids min/max: {batch['input_ids'].min()}/{batch['input_ids'].max()}")
       
       loss = self.train_step(batch)
       trace_end_time = timer()
