@@ -286,23 +286,23 @@ class Trainer:
     logger.info(f"Batch size per process: {batch_size}")
     logger.info(f"Training mode: {self.config.training_mode}")
     
-          # Choose appropriate data collator based on training mode
-      if self.config.training_mode == "sft":
-        # For SFT, we need to use the SFT data collator
-        sft_config = self.config.data
-        logger.info(f"SFT config: {sft_config}")
-        collate_fn = SFTDataCollator(
-          tokenizer=self.tokenizer,
-          format=sft_config.get("format", "alpaca"),
-          include_system_prompt=sft_config.get("include_system_prompt", True),
-          instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-          custom_format=sft_config.get("custom_format"),
-        )
-        logger.info(f"Using SFTDataCollator with format: {sft_config.get('format', 'alpaca')}")
-      else:
-        # For pre-training, use default data collator
-        collate_fn = default_data_collator
-        logger.info("Using default_data_collator")
+    # Choose appropriate data collator based on training mode
+    if self.config.training_mode == "sft":
+      # For SFT, we need to use the SFT data collator
+      sft_config = self.config.data
+      logger.info(f"SFT config: {sft_config}")
+      collate_fn = SFTDataCollator(
+        tokenizer=self.tokenizer,
+        format=sft_config.get("format", "alpaca"),
+        include_system_prompt=sft_config.get("include_system_prompt", True),
+        instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
+        custom_format=sft_config.get("custom_format"),
+      )
+      logger.info(f"Using SFTDataCollator with format: {sft_config.get('format', 'alpaca')}")
+    else:
+      # For pre-training, use default data collator
+      collate_fn = default_data_collator
+      logger.info("Using default_data_collator")
     
     dataloader = DataLoader(
       self.train_dataset,
