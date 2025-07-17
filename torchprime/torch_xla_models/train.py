@@ -681,11 +681,13 @@ def main(config: DictConfig):
         checkpoint_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_dir.split(gcs_prefix)[1])
         dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
         if config.resume_from_checkpoint is None:
+          logger.info(f"Training from scratch, loading all data files from {dataset_name}")
           raw_data = retry(
             lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_dir)
           )
           # No additional steps to skip when starting fresh
         else:
+          logger.info(f"Resuming from checkpoint {config.resume_from_checkpoint}, will recompute the data files to skip")
           # Calculate which files to skip based on checkpoint step and batch size
           samples_per_file = 5000
           total_samples_processed = config.resume_from_checkpoint * config.global_batch_size

@@ -63,9 +63,10 @@ def make_gcs_pretokenized_dataset(
   """
   random.seed(seed)
   if data_files is None:
+    logger.info(f"data_files is None, searching for all parquet files in {path}")
     data_files = glob(f"{path}/**/*.parquet", recursive=True)
     random.shuffle(data_files)
-  print(f"dataset path: {data_files}")
+  logger.info(f"data_files: {data_files}")
 
   data = load_dataset(
     "parquet",
@@ -74,6 +75,7 @@ def make_gcs_pretokenized_dataset(
     split="train",
   )
   if checkpoint_dir is not None:
+    logger.info(f"Saving data_files.json to {checkpoint_dir}")
     os.makedirs(checkpoint_dir, exist_ok=True)
     with open(f"{checkpoint_dir}/data_files.json", "w") as f:
       json.dump(data_files, f, indent=4)
