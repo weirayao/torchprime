@@ -451,9 +451,11 @@ class Qwen3ForCausalLM(nn.Module):
 
       if prefix_probability > 0:
         maskable_mask = prefix_input_ids(input_ids, maskable_mask, apply_prefix)
+        logger.info(f"maskable mask: {maskable_mask}, first row: {maskable_mask[0]}, second row: {maskable_mask[1]}")
       if truncate_probability > 0:
         input_ids = truncate_input_ids(input_ids, apply_truncate, self.config.pad_token_id)
         maskable_mask = maskable_mask & (input_ids != self.config.pad_token_id) # NOTE: necessary?
+        logger.info(f"input ids: {input_ids}, first row: {input_ids[0]}, second row: {input_ids[1]}, maskable mask: {maskable_mask}, first row: {maskable_mask[0]}, second row: {maskable_mask[1]}")
 
     dsigma, noisy_input_ids = sample_noisy_input_ids(
       input_ids, maskable_mask, mask_token_id, sampling_eps, self.config
@@ -602,7 +604,6 @@ def prefix_input_ids(input_ids, maskable_mask, apply_prefix):
   prefix_mask = position_indices < prefix_lengths.unsqueeze(1)  # [batch_size, seq_len]
   # Apply prefix masking: set to False where we should apply prefix masking
   maskable_mask = maskable_mask & ~(apply_prefix.unsqueeze(1) & prefix_mask)
-  logger.info(f"Prefix mask: {prefix_mask}, maskable mask: {maskable_mask}, first row: {maskable_mask[0]}")
   return maskable_mask
 
 
@@ -617,7 +618,6 @@ def truncate_input_ids(input_ids, apply_truncate, pad_token_id):
   truncate_mask = position_indices >= truncate_positions.unsqueeze(1)  # [batch_size, seq_len]
   # Apply truncation: fill with pad token where we should truncate
   input_ids = torch.where(apply_truncate.unsqueeze(1) & truncate_mask, pad_token_id, input_ids)
-  logger.info(f"Truncate mask: {truncate_mask}, input ids: {input_ids}, first row: {input_ids[0]}")
   return input_ids
 
 
