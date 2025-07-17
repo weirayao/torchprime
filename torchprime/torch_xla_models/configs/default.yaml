@@ -67,7 +67,7 @@ model:
   prefix_probability: 0
   # truncate probability - with this probability, truncate non-prefixed rows at random position and fill with pad token
   truncate_probability: 0
-  # mask block size - randomly sampled from [1,2,4,8] for block masking
+  # block masking probability - with this probability, randomly sample a block size and mask with it
   block_masking_probability: 0
 
   remat:

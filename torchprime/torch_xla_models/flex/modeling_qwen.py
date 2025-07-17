@@ -602,7 +602,7 @@ def prefix_input_ids(input_ids, maskable_mask, apply_prefix):
   prefix_mask = position_indices < prefix_lengths.unsqueeze(1)  # [batch_size, seq_len]
   # Apply prefix masking: set to False where we should apply prefix masking
   maskable_mask = maskable_mask & ~(apply_prefix.unsqueeze(1) & prefix_mask)
-  
+  logger.info(f"Prefix mask: {prefix_mask}, maskable mask: {maskable_mask}, first row: {maskable_mask[0]}")
   return maskable_mask
 
 
@@ -617,7 +617,7 @@ def truncate_input_ids(input_ids, apply_truncate, pad_token_id):
   truncate_mask = position_indices >= truncate_positions.unsqueeze(1)  # [batch_size, seq_len]
   # Apply truncation: fill with pad token where we should truncate
   input_ids = torch.where(apply_truncate.unsqueeze(1) & truncate_mask, pad_token_id, input_ids)
-  
+  logger.info(f"Truncate mask: {truncate_mask}, input ids: {input_ids}, first row: {input_ids[0]}")
   return input_ids
 
 
@@ -641,4 +641,6 @@ def sample_noisy_input_ids(input_ids, maskable_mask, mask_token_id, sampling_eps
     mask_token_id=mask_token_id,
     mask_block_size=mask_block_size
   )
+  if mask_block_size > 1:
+    logger.info(f"Mask block size: {mask_block_size}, noisy input ids: {noisy_input_ids}, first row: {noisy_input_ids[0]}")
   return dsigma, noisy_input_ids
