@@ -482,7 +482,7 @@ class Qwen3ForCausalLM(nn.Module):
     # this is a hack to get something like per token loss
     # https://github.com/ML-GSAI/SMDM/blob/main/pretrain/train_mdm_rl.py#L281-L283
     loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
-    return logits, loss, noisy_input_ids
+    return logits, loss
 
 
 def transition(
