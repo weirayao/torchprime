@@ -2,6 +2,7 @@ import os
 import json
 import os
 import random
+import logging
 from itertools import chain
 from typing import Sequence
 from glob import glob
@@ -15,6 +16,7 @@ MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
 if MOUNTED_GCS_DIR is None:
   raise ValueError("MOUNTED_GCS_DIR is not set or GCS is not mounted.")
 
+logger = logging.getLogger(__name__)
 
 def group_texts(examples, block_size):
   """Group texts into blocks of specified size for training."""
