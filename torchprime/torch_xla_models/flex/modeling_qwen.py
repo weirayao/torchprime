@@ -486,8 +486,9 @@ class Qwen3ForCausalLM(nn.Module):
 
 
 def transition(
-  x_0, sigma, maskable_mask, mask_token_id, mask_block_size: int | torch.Tensor = 1
+  x_0, sigma, maskable_mask, mask_token_id, mask_block_size: int = 1
 ):
+  """Apply masking to input tokens. If mask_block_size > 1, use block masking for all rows."""
 
   if mask_block_size == 1:
     # Original behavior
@@ -496,99 +497,48 @@ def transition(
     x_t = torch.where(move_indices, mask_token_id, x_0)
     return x_t
 
-  # Handle per-row mask_block_size
-  batch_size, seq_len = x_0.shape
-  if isinstance(mask_block_size, torch.Tensor):
-    # Find rows with block_size=1 for token-level masking
-    token_level_mask = (mask_block_size == 1)
-
-    # Apply token-level masking for block_size=1 rows
-    if token_level_mask.any():
-      move_indices = (torch.rand(batch_size, seq_len, device=x_0.device) < sigma) & maskable_mask
-      # Only apply to rows that need token-level masking
-      token_mask_expanded = token_level_mask.unsqueeze(1).expand(-1, seq_len)
-      x_t = torch.where(move_indices & token_mask_expanded, mask_token_id, x_0)
-    else:
-      x_t = x_0
-
-    # Apply block masking for other rows
-    block_level_mask = ~token_level_mask
-    if block_level_mask.any():
-      # Process each unique block size
-      for block_size in mask_block_size.unique():
-        if block_size == 1:
-          continue
-            
-        rows_with_this_size = (mask_block_size == block_size) & block_level_mask
-        if not rows_with_this_size.any():
-          continue
-        
-        # Extract rows that need this block size
-        row_indices = rows_with_this_size.nonzero(as_tuple=False).squeeze(1)
-        x_0_subset = x_0[row_indices]
-        sigma_subset = sigma[row_indices]
-        maskable_mask_subset = maskable_mask[row_indices]
-        
-        # Apply block masking to this subset
-        x_t_subset = block_masking(x_0_subset, sigma_subset, maskable_mask_subset, mask_token_id, block_size.item())
-        
-        # Update the result
-        x_t[row_indices] = x_t_subset
-    
-    return x_t
-
   # Block masking for entire batch
   return block_masking(x_0, sigma, maskable_mask, mask_token_id, mask_block_size)
 
 
 def block_masking(x_0, sigma, maskable_mask, mask_token_id, mask_block_size):
     """
-    Efficient block masking that allows overlapping blocks.
-    This is much faster than the original version with overlap prevention.
+    XLA-compatible block masking applied uniformly to all rows in the batch.
+    Uses efficient tensor operations to avoid dynamic loops.
     """
     batch_size, seq_len = x_0.shape
 
     if seq_len < mask_block_size:
-      return x_0
+        return x_0
 
-    # Create sliding windows to check all possible blocks at once
-    maskable_windows = maskable_mask.unfold(1, mask_block_size, 1)
-    num_windows = maskable_windows.shape[1]
-
-    # Check which windows are fully maskable: (batch_size, num_windows)
-    fully_maskable = maskable_windows.all(dim=2)
+    # Calculate number of possible block positions
+    num_windows = seq_len - mask_block_size + 1
+    
+    # Create all possible block positions: [num_windows, mask_block_size]
+    window_starts = torch.arange(num_windows, device=x_0.device)
+    block_offsets = torch.arange(mask_block_size, device=x_0.device)
+    all_positions = window_starts.unsqueeze(1) + block_offsets.unsqueeze(0)
+    
+    # Check which blocks are fully maskable: [batch_size, num_windows]
+    maskable_blocks = maskable_mask.unsqueeze(1).expand(-1, num_windows, -1).gather(
+        2, all_positions.unsqueeze(0).expand(batch_size, -1, -1)
+    )
+    fully_maskable = maskable_blocks.all(dim=2)
 
     # Determine which blocks should be masked: (batch_size, num_windows)
     effective_sigma = 1 - (1-sigma)**(1/mask_block_size) # NOTE: since we mask with blocks, we need to scale sigma by block size
     should_mask = (torch.rand(batch_size, num_windows, device=x_0.device) < effective_sigma) & fully_maskable
 
-    # Create a mask tensor for all positions
-    final_mask = torch.zeros(batch_size, seq_len, dtype=torch.bool, device=x_0.device)
-
-    # Fully vectorized approach: create all block positions at once
-    # Shape: [num_windows, mask_block_size] - all positions for all possible blocks
-    window_starts = torch.arange(num_windows, device=x_0.device).unsqueeze(1)  # [num_windows, 1]
-    block_offsets = torch.arange(mask_block_size, device=x_0.device).unsqueeze(0)  # [1, mask_block_size]
-    all_positions = window_starts + block_offsets  # [num_windows, mask_block_size]
-
-    # Expand should_mask to match all positions: [batch_size, num_windows, mask_block_size]
-    should_mask_expanded = should_mask.unsqueeze(2).expand(-1, -1, mask_block_size)
-
-    # Check bounds: positions must be < seq_len
-    valid_positions = (all_positions < seq_len) & should_mask_expanded
-
-    # Get batch indices, window indices, and position indices for all valid positions
-    batch_indices, window_indices, offset_indices = valid_positions.nonzero(as_tuple=True)
+    # Create final mask by expanding block decisions to all positions
+    mask_expanded = should_mask.unsqueeze(2).expand(-1, -1, mask_block_size)
+    batch_indices, window_indices, offset_indices = mask_expanded.nonzero(as_tuple=True)
     position_indices = all_positions[window_indices, offset_indices]
 
-    # Apply masking in one go
-    final_mask[batch_indices, position_indices] = True
-
     # Apply the mask
-    x_t = x_0.clone()
-    x_t[final_mask] = mask_token_id
+    result = x_0.clone()
+    result[batch_indices, position_indices] = mask_token_id
 
-    return x_t
+    return result
 
 
 def prefix_input_ids(input_ids, maskable_mask, apply_prefix):
