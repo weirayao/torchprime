@@ -451,11 +451,9 @@ class Qwen3ForCausalLM(nn.Module):
 
       if prefix_probability > 0:
         maskable_mask = prefix_input_ids(input_ids, maskable_mask, apply_prefix)
-        logger.info(f"maskable mask: {maskable_mask}, first row: {maskable_mask[0]}, second row: {maskable_mask[1]}")
       if truncate_probability > 0:
         input_ids = truncate_input_ids(input_ids, apply_truncate, self.config.pad_token_id)
         maskable_mask = maskable_mask & (input_ids != self.config.pad_token_id) # NOTE: necessary?
-        logger.info(f"input ids: {input_ids}, first row: {input_ids[0]}, second row: {input_ids[1]}, maskable mask: {maskable_mask}, first row: {maskable_mask[0]}, second row: {maskable_mask[1]}")
 
     dsigma, noisy_input_ids = sample_noisy_input_ids(
       input_ids, maskable_mask, mask_token_id, sampling_eps, self.config
@@ -484,7 +482,7 @@ class Qwen3ForCausalLM(nn.Module):
     # this is a hack to get something like per token loss
     # https://github.com/ML-GSAI/SMDM/blob/main/pretrain/train_mdm_rl.py#L281-L283
     loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
-    return logits, loss
+    return logits, loss, noisy_input_ids
 
 
 def transition(
@@ -641,6 +639,4 @@ def sample_noisy_input_ids(input_ids, maskable_mask, mask_token_id, sampling_eps
     mask_token_id=mask_token_id,
     mask_block_size=mask_block_size
   )
-  if mask_block_size > 1:
-    logger.info(f"Mask block size: {mask_block_size}, noisy input ids: {noisy_input_ids}, first row: {noisy_input_ids[0]}")
   return dsigma, noisy_input_ids

@@ -563,7 +563,8 @@ class Trainer:
       )
     else:
       # Pre-training mode (original behavior)
-      _logits, loss = self.model(**batch)
+      _logits, loss, noisy_input_ids = self.model(**batch)
+      logger.info(f"noisy input ids: {noisy_input_ids}, first row: {noisy_input_ids[0]}, second row: {noisy_input_ids[1]}")
     
     loss.backward()
     self.optimizer.step()

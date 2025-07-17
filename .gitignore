@@ -85,3 +85,4 @@ checkpoints/
 evaluations/
 
 gpu_venv
+logs/
