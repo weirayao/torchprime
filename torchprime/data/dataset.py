@@ -1,5 +1,6 @@
 import os
 import json
+import os
 import random
 from itertools import chain
 from typing import Sequence
@@ -73,6 +74,7 @@ def make_gcs_pretokenized_dataset(
     split="train",
   )
   if checkpoint_dir is not None:
+    os.makedirs(checkpoint_dir, exist_ok=True)
     with open(f"{checkpoint_dir}/data_files.json", "w") as f:
       json.dump(data_files, f, indent=4)
   data = data.shuffle(seed=seed, buffer_size=32768)
