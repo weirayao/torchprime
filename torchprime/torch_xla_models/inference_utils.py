@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class GenerationConfig_:
+    noise_level: float = 0.1 # NOTE: for unmasking tasks
+    seed: int = 42
     diffusion_steps: int = 10
     mask_token_id: int = 151669
     max_tokens: int = 256
@@ -336,11 +338,35 @@ def generate_(
                         full_confidence, number_transfer_tokens
                     )
                 else:
-                    full_confidence = full_confidence / alg_temp
-                    full_confidence = F.softmax(full_confidence, dim=-1)
-                    transfer_index = torch.multinomial(
-                        full_confidence, num_samples=number_transfer_tokens
-                    )
+                    # Add numerical stability for temperature scaling and softmax
+                    scaled_confidence = full_confidence / alg_temp
+                    
+                    # Clamp extreme values to prevent numerical instability
+                    scaled_confidence = torch.clamp(scaled_confidence, min=-50, max=50)
+                    
+                    # Apply softmax
+                    full_confidence_probs = F.softmax(scaled_confidence, dim=-1)
+                    
+                    # Validate probabilities before multinomial sampling
+                    if torch.isnan(full_confidence_probs).any() or torch.isinf(full_confidence_probs).any():
+                        logger.warning("Invalid probabilities detected, falling back to topk sampling")
+                        _, transfer_index = torch.topk(
+                            full_confidence, number_transfer_tokens
+                        )
+                    else:
+                        # Ensure probabilities are non-negative and sum to 1
+                        full_confidence_probs = torch.clamp(full_confidence_probs, min=1e-8)
+                        full_confidence_probs = full_confidence_probs / full_confidence_probs.sum(dim=-1, keepdim=True)
+                        
+                        try:
+                            transfer_index = torch.multinomial(
+                                full_confidence_probs, num_samples=number_transfer_tokens
+                            )
+                        except RuntimeError as e:
+                            logger.warning(f"Multinomial sampling failed: {e}, falling back to topk sampling")
+                            _, transfer_index = torch.topk(
+                                full_confidence, number_transfer_tokens
+                            )
                 x_ = (
                     torch.zeros_like(x, device=device, dtype=torch.long) + mask_token_id
                 )

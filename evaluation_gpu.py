@@ -10,6 +10,7 @@ logging.basicConfig(
 )
 import torch
 import json
+import random
 from datetime import datetime
 from pathlib import Path
 import hydra
@@ -31,6 +32,67 @@ from torchprime.torch_xla_models.flex.modeling_qwen import Qwen3ForCausalLM
 from gpu_utils import download_gcs_checkpoint
 
 logger = logging.getLogger(__name__)
+
+
+def assemble_query_humaneval_infilling(x, tokenizer, args):
+    prompts = x["prompt"]
+    suffixes = x["suffix"]
+    canonical_solution_lengths = x["canonical_solution_length"]
+    queries = []
+    for prompt, suffix, length in zip(
+        prompts, suffixes, canonical_solution_lengths
+    ):
+        num_infill_tokens = (
+            max(args.max_new_tokens, length)
+            if args.max_new_tokens is not None
+            else length
+        )
+        query = (
+            "You are a helpful assistant. Please fill in the missing code to complete the following python function:\n```python\n"
+            + prompt
+            + tokenizer.mask_token * num_infill_tokens
+            + suffix
+            + "\n```"
+        )
+        queries.append(query)
+    return {"query": queries}
+
+
+def assemble_query_humaneval(x, tokenizer, args):
+    prompts = x["prompt"]
+    solutions = x["canonical_solution"]
+
+    # Define noise level (proportion of tokens to replace with mask tokens)
+    noise_level = args.noise_level
+
+    # Set fixed seed for reproducible noise generation
+    torch.manual_seed(args.seed)
+    
+    # Batch tokenize all solutions for efficiency
+    solution_encodings = tokenizer(solutions, add_special_tokens=False, padding=False)
+    solution_token_ids = solution_encodings["input_ids"]
+    mask_token_id = tokenizer.mask_token_id
+    
+    queries = []
+    for prompt, token_ids in zip(prompts, solution_token_ids):
+        # Convert to torch tensor for efficient operations
+        token_tensor = torch.tensor(token_ids, dtype=torch.long)
+        
+        # Generate noise mask using torch operations
+        noise_mask = torch.rand(len(token_ids)) < noise_level
+        
+        # Apply noise efficiently using torch.where
+        noisy_token_ids = torch.where(noise_mask, mask_token_id, token_tensor)
+        
+        # Decode the noisy tokens back to string
+        noisy_solution = tokenizer.decode(noisy_token_ids.tolist(), skip_special_tokens=False)
+        
+        # Assemble query by concatenating prompt and noisy solution
+        query = prompt + noisy_solution
+        queries.append(query)
+    
+    return {"query": queries}
+
 
 def prepare_dataset(
     tokenizer: PreTrainedTokenizerBase,
@@ -59,44 +121,9 @@ def prepare_dataset(
                     )
                 }
             )
-
-            def assemble_query(x):
-                prompts = x["prompt"]
-                suffixes = x["suffix"]
-                canonical_solution_lengths = x["canonical_solution_length"]
-                queries = []
-                for prompt, suffix, length in zip(
-                    prompts, suffixes, canonical_solution_lengths
-                ):
-                    num_infill_tokens = (
-                        max(args.max_new_tokens, length)
-                        if args.max_new_tokens is not None
-                        else length
-                    )
-                    query = (
-                        "You are a helpful assistant. Please fill in the missing code to complete the following python function:\n```python\n"
-                        + prompt
-                        + tokenizer.mask_token * num_infill_tokens
-                        + suffix
-                        + "\n```"
-                    )
-                    queries.append(query)
-                return {"query": queries}
-
-            dataset = dataset.map(assemble_query, batched=True)
-
+            assemble_query = assemble_query_humaneval_infilling
         case "openai_humaneval":
-            def assemble_query(x):
-                prompts = x["prompt"]
-                queries = [
-                    "Please complete the following python function:\n```python\n"
-                    + prompt
-                    + tokenizer.mask_token * args.max_new_tokens
-                    for prompt in prompts
-                ]
-                return {"query": queries}
-
-            dataset = dataset.map(assemble_query, batched=True)
+            assemble_query = assemble_query_humaneval
 
         case _:
             raise ValueError(f"Unsupported dataset: {dataset.config_name}")
@@ -108,7 +135,7 @@ def prepare_dataset(
     #     enable_thinking=enable_thinking,
     # )
     # print(f"Input text: {text_inputs}")
-
+    dataset = dataset.map(assemble_query, fn_kwargs={"tokenizer": tokenizer, "args": args}, batched=True)
     return dataset
 
 
@@ -185,25 +212,30 @@ def main(config: DictConfig):
                 completion = generation["completion"].detach().cpu().tolist()
             else:
                 completion = generation.detach().cpu().tolist()
-            raw_generation_text = tokenizer.batch_decode(completion, skip_special_tokens=False)
-            match config.eval_dataset_name_or_path:
-                case "loubnabnl/humaneval_infilling":
-                    parsed_generation_text = [
-                        x.split("```python")[1].split("```")[0] for x in raw_generation_text
-                    ]
-                case "openai/openai_humaneval":
-                    parsed_generation_text = [
-                        x.split("```python")[1].split("```")[0] for x in raw_generation_text
-                    ]
-                case _:
-                    raise ValueError(f"Unsupported dataset: {config.eval_dataset_name_or_path}")
+            raw_generation_text = tokenizer.batch_decode(completion, skip_special_tokens=True)
+            # match config.eval_dataset_name_or_path:
+            #     case "loubnabnl/humaneval_infilling":
+            #         parsed_generation_text = [
+            #             x.split("```python")[1].split("```")[0] for x in raw_generation_text
+            #         ]
+            #     case "openai/openai_humaneval":
+            #         parsed_generation_text = [
+            #             x.split("```python")[1].split("```")[0] for x in raw_generation_text
+            #         ]
+            #     case _:
+            #         raise ValueError(f"Unsupported dataset: {config.eval_dataset_name_or_path}")
             if generation_config.return_dict_in_generate:
-                generations.append(gather_object(generation))
-            completions.extend(gather_object(parsed_generation_text))
+                # Move GPU tensors to CPU before storing
+                generation_cpu = {
+                    "completion": generation["completion"].detach().cpu(),
+                    "history": generation["history"],  # Already on CPU
+                    "timing": generation["timing"]
+                }
+                generations.append(gather_object(generation_cpu))
+            # completions.extend(gather_object(parsed_generation_text))
             raw_text.extend(gather_object(raw_generation_text))
-            break
 
-    completions = completions[:len(dataset)]
+    # completions = completions[:len(dataset)]
     raw_text = raw_text[:len(dataset)]
     if generation_config.return_dict_in_generate:
         generations = generations[:len(dataset)]
@@ -216,15 +248,9 @@ def main(config: DictConfig):
     # Create directory if it doesn't exist
     save_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(save_path, "w") as f:
-        json.dump(raw_text, f, indent=4)
     try:
-        dataset = dataset.add_column("completion", completions)
-        dataset = dataset.add_column("raw_completion", raw_text)
+        dataset = dataset.add_column("completion", raw_text)
         dataset.to_json(save_path.with_suffix(".jsonl"))
-        if generation_config.return_dict_in_generate:
-            with open(save_path, "w") as f:
-                json.dump(generations, f, indent=4)
     except Exception as e:
         logger.error(f"Failed to save dataset: {e}")
 
