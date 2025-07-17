@@ -68,7 +68,7 @@ model:
   # truncate probability - with this probability, truncate non-prefixed rows at random position and fill with pad token
   truncate_probability: 0
   # mask block size - randomly sampled from [1,2,4,8] for block masking
-  mask_block_sizes: [1, 2, 4, 8]
+  block_masking_probability: 0
 
   remat:
     # The class names of model layers whose intermediate activations should be

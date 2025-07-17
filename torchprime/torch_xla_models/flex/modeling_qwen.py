@@ -448,11 +448,12 @@ class Qwen3ForCausalLM(nn.Module):
       # Only apply truncation to rows that are NOT prefixed
       apply_truncate = torch.rand(batch_size, device=input_ids.device) < truncate_probability
       apply_truncate = apply_truncate & ~apply_prefix
-      
+
       if prefix_probability > 0:
         maskable_mask = prefix_input_ids(input_ids, maskable_mask, apply_prefix)
       if truncate_probability > 0:
         input_ids = truncate_input_ids(input_ids, apply_truncate, self.config.pad_token_id)
+        maskable_mask = maskable_mask & (input_ids != self.config.pad_token_id) # NOTE: necessary?
 
     dsigma, noisy_input_ids = sample_noisy_input_ids(
       input_ids, maskable_mask, mask_token_id, sampling_eps, self.config
@@ -620,16 +621,18 @@ def truncate_input_ids(input_ids, apply_truncate, pad_token_id):
   return input_ids
 
 
+MASK_BLOCK_SIZES = [2, 4, 8, 16, 32, 64, 128]
+
 def sample_noisy_input_ids(input_ids, maskable_mask, mask_token_id, sampling_eps, config):
   sigma = ((1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps).unsqueeze(-1)
   dsigma = torch.reciprocal(sigma)
-  
+
   # Sample mask block size
-  # TODO: think about how to choose mask block size
-  mask_block_sizes = getattr(config, "mask_block_sizes", [1, 2])
-  indices = torch.randint(0, len(mask_block_sizes), (input_ids.shape[0],), device=input_ids.device)
-  mask_block_sizes_tensor = torch.tensor(mask_block_sizes, device=input_ids.device)
-  mask_block_size = mask_block_sizes_tensor[indices]
+  block_masking_probability = getattr(config, "block_masking_probability", 0)
+  if block_masking_probability > 0:
+    mask_block_size = MASK_BLOCK_SIZES[torch.randint(0, len(MASK_BLOCK_SIZES)).item()]
+  else:
+    mask_block_size = 1
 
   noisy_input_ids = transition(
     input_ids,
