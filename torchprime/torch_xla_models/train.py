@@ -622,13 +622,14 @@ def main(config: DictConfig):
       dataset_name = config.data.dataset_name
       gcs_prefix = "gs://sfr-text-diffusion-model-research/"
       if dataset_name.startswith(gcs_prefix):
-        if config.resume_from_checkpoint is not None:
+        if config.resume_from_checkpoint is None:
           dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
           raw_data = retry(
             lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
           )
         else:
           # TODO: calculate which files to load based on checkpoint step and batch size
+          pass
       else:
         raw_data = retry(
           lambda: make_huggingface_dataset(
