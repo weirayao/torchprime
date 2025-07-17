@@ -529,14 +529,32 @@ def block_masking(x_0, sigma, maskable_mask, mask_token_id, mask_block_size):
     effective_sigma = 1 - (1-sigma)**(1/mask_block_size) # NOTE: since we mask with blocks, we need to scale sigma by block size
     should_mask = (torch.rand(batch_size, num_windows, device=x_0.device) < effective_sigma) & fully_maskable
 
-    # Create final mask by expanding block decisions to all positions
-    mask_expanded = should_mask.unsqueeze(2).expand(-1, -1, mask_block_size)
-    batch_indices, window_indices, offset_indices = mask_expanded.nonzero(as_tuple=True)
-    position_indices = all_positions[window_indices, offset_indices]
+    # Create final mask using simple broadcasting (fully XLA-compatible)
+    # For each position in the sequence, check if it's part of any masked block
+    position_indices = torch.arange(seq_len, device=x_0.device)  # [seq_len]
+    
+    # Check for each position if it falls within any masked block
+    # position_indices: [seq_len] -> [1, 1, seq_len]
+    # all_positions: [num_windows, mask_block_size] -> [1, num_windows, mask_block_size]  
+    # should_mask: [batch_size, num_windows] -> [batch_size, num_windows, 1]
+    
+    position_indices = position_indices.unsqueeze(0).unsqueeze(0)  # [1, 1, seq_len]
+    all_positions = all_positions.unsqueeze(0)  # [1, num_windows, mask_block_size]
+    should_mask = should_mask.unsqueeze(2)  # [batch_size, num_windows, 1]
+    
+    # Check if each position matches any of the positions in masked blocks
+    # [1, 1, seq_len] == [1, num_windows, mask_block_size] -> [1, num_windows, seq_len]
+    position_matches = (position_indices == all_positions.unsqueeze(3)).any(dim=2)  # [1, num_windows, seq_len]
+    
+    # Apply should_mask to get final positions to mask
+    # [batch_size, num_windows, 1] & [1, num_windows, seq_len] -> [batch_size, num_windows, seq_len]
+    should_mask_positions = should_mask & position_matches
+    
+    # Reduce over windows: if any window masks this position, mask it
+    final_mask = should_mask_positions.any(dim=1)  # [batch_size, seq_len]
 
     # Apply the mask
-    result = x_0.clone()
-    result[batch_indices, position_indices] = mask_token_id
+    result = torch.where(final_mask, mask_token_id, x_0)
 
     return result
 
