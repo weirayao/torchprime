@@ -1,4 +1,5 @@
 import os
+import json
 import random
 from itertools import chain
 from typing import Sequence
@@ -51,23 +52,29 @@ DATASET_TYPES = {
 
 def make_gcs_pretokenized_dataset(
   path: str,
+  data_files: list[str] = None,
   seed: int = 42,
+  checkpoint_dir: str = None,
 ) -> IterableDataset:
   """
   Search for all parquet files in the given path and load them into a dataset.
   Shuffle the files first.
   """
   random.seed(seed)
-  data_files = glob(f"{path}/**/*.parquet", recursive=True)
+  if data_files is None:
+    data_files = glob(f"{path}/**/*.parquet", recursive=True)
+    random.shuffle(data_files)
   print(f"dataset path: {data_files}")
-  random.shuffle(data_files)
-  
+
   data = load_dataset(
     "parquet",
     data_files=data_files,
     streaming=True,
     split="train",
   )
+  if checkpoint_dir is not None:
+    with open(f"{checkpoint_dir}/data_files.json", "w") as f:
+      json.dump(data_files, f, indent=4)
   data = data.shuffle(seed=seed, buffer_size=32768)
   return data
 
