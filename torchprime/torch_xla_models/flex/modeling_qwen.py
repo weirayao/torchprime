@@ -628,7 +628,7 @@ def sample_noisy_input_ids(input_ids, maskable_mask, mask_token_id, sampling_eps
   # Sample mask block size
   block_masking_probability = getattr(config, "block_masking_probability", 0)
   if block_masking_probability > 0:
-    mask_block_size = MASK_BLOCK_SIZES[torch.randint(0, len(MASK_BLOCK_SIZES)).item()]
+    mask_block_size = MASK_BLOCK_SIZES[torch.randint(0, len(MASK_BLOCK_SIZES), (1,)).item()]
   else:
     mask_block_size = 1
 
