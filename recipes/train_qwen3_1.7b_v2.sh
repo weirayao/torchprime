@@ -5,7 +5,7 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     model.block_masking_probability=0 \
     model.truncate_probability=0 \
     model.prefix_probability=0 \
-    optimizer.learning_rate=3e-6 \
+    optimizer.learning_rate=3e-8 \
     global_batch_size=8 \
     max_steps=100 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/test-masking-flex-qwen3-1b-v2 \
