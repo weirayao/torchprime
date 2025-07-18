@@ -9,6 +9,7 @@ from glob import glob
 from dotenv import load_dotenv
 load_dotenv()
 
+import torch_xla.runtime as xr
 from datasets import load_dataset, interleave_datasets, Dataset, DatasetDict, IterableDataset, concatenate_datasets
 from transformers.tokenization_utils import PreTrainedTokenizerBase
 
@@ -17,6 +18,10 @@ if MOUNTED_GCS_DIR is None:
   raise ValueError("MOUNTED_GCS_DIR is not set or GCS is not mounted.")
 
 logger = logging.getLogger(__name__)
+
+def is_main_process():
+  """Check if this is the main process (rank 0)."""
+  return xr.process_index() == 0
 
 def group_texts(examples, block_size):
   """Group texts into blocks of specified size for training."""
@@ -76,7 +81,7 @@ def make_gcs_pretokenized_dataset(
     streaming=True,
     split="train",
   )
-  if checkpoint_dir is not None:
+  if checkpoint_dir is not None and is_main_process():
     logger.info(f"Saving data_files.json to {checkpoint_dir}")
     os.makedirs(checkpoint_dir, exist_ok=True)
     with open(f"{checkpoint_dir}/data_files.json", "w") as f:
