@@ -2,9 +2,9 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     training_mode=pretrain \
     data=mixed_train_dataset \
     model=flex-qwen-1b \
-    model.block_masking_probability=0 \
-    model.truncate_probability=0 \
-    model.prefix_probability=0 \
+    model.block_masking_probability=0.05 \
+    model.truncate_probability=0.01 \
+    model.prefix_probability=0.01 \
     optimizer.learning_rate=3e-4 \
     global_batch_size=512 \
     max_steps=100 \
