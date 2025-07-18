@@ -1,7 +1,7 @@
-TPU_VM_NAME="<your_tpu_vm_name>"
+TPU_VM_NAME="sfr-haolin-chen-v4-1024"
 TPU_ZONE="us-central2-b"
-BRANCH="<your_branch>"
-RECIPE="recipes/train_qwen3_1.7b.sh"
+BRANCH="haolin/ckpt_reload_v2"
+RECIPE="recipes/train_qwen3_1.7b_v2.sh"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do

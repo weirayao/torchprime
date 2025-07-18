@@ -455,8 +455,24 @@ class Qwen3ForCausalLM(nn.Module):
         input_ids = truncate_input_ids(input_ids, apply_truncate, self.config.pad_token_id)
         maskable_mask = maskable_mask & (input_ids != self.config.pad_token_id) # NOTE: necessary?
 
-    dsigma, noisy_input_ids = sample_noisy_input_ids(
-      input_ids, maskable_mask, mask_token_id, sampling_eps, self.config
+    # add noise to input_ids
+    sigma = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
+    dsigma = torch.reciprocal(sigma)
+
+    # Sample mask block size
+    MASK_BLOCK_SIZES = [2, 4, 8, 16, 32, 64, 128] # TODO: make this a constant or configurable
+    block_masking_probability = getattr(self.config, "block_masking_probability", 0)
+    if block_masking_probability > 0:
+      mask_block_size = MASK_BLOCK_SIZES[torch.randint(0, len(MASK_BLOCK_SIZES), (1,)).item()]
+    else:
+      mask_block_size = 1
+
+    noisy_input_ids = transition(
+      input_ids,
+      sigma[:, None],
+      maskable_mask=maskable_mask,
+      mask_token_id=mask_token_id,
+      mask_block_size=mask_block_size
     )
     loss_mask = noisy_input_ids == mask_token_id
 
@@ -587,24 +603,4 @@ def truncate_input_ids(input_ids, apply_truncate, pad_token_id):
   return input_ids
 
 
-MASK_BLOCK_SIZES = [2, 4, 8, 16, 32, 64, 128]
 
-def sample_noisy_input_ids(input_ids, maskable_mask, mask_token_id, sampling_eps, config):
-  sigma = ((1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps).unsqueeze(-1)
-  dsigma = torch.reciprocal(sigma)
-
-  # Sample mask block size
-  block_masking_probability = getattr(config, "block_masking_probability", 0)
-  if block_masking_probability > 0:
-    mask_block_size = MASK_BLOCK_SIZES[torch.randint(0, len(MASK_BLOCK_SIZES), (1,)).item()]
-  else:
-    mask_block_size = 1
-
-  noisy_input_ids = transition(
-    input_ids,
-    sigma,
-    maskable_mask=maskable_mask,
-    mask_token_id=mask_token_id,
-    mask_block_size=mask_block_size
-  )
-  return dsigma, noisy_input_ids
