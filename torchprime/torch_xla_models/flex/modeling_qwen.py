@@ -460,10 +460,10 @@ class Qwen3ForCausalLM(nn.Module):
     dsigma = torch.reciprocal(sigma)
 
     # Sample mask block size
-    MASK_BLOCK_SIZES = [2, 4, 8, 16, 32, 64, 128] # TODO: make this a constant or configurable
+    mask_block_sizes = getattr(self.config, "mask_block_sizes", None)
     block_masking_probability = getattr(self.config, "block_masking_probability", 0)
-    if block_masking_probability > 0:
-      mask_block_size = MASK_BLOCK_SIZES[torch.randint(0, len(MASK_BLOCK_SIZES), (1,)).item()]
+    if block_masking_probability > 0 and mask_block_sizes is not None:
+      mask_block_size = mask_block_sizes[torch.randint(0, len(mask_block_sizes), (1,)).item()]
     else:
       mask_block_size = 1
 
