@@ -3,7 +3,7 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     data=flex_v2 \
     model=flex-qwen-1b \
     model.block_masking_probability=0.01 \
-    model.mask_block_sizes=[2, 4] \
+    model.mask_block_sizes=[2,4] \
     model.truncate_probability=0.01 \
     model.prefix_probability=0.01 \
     optimizer.learning_rate=3e-4 \
