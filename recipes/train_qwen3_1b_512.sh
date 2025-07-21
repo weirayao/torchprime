@@ -4,6 +4,7 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train_mid.py \
     global_batch_size=256 \
     max_steps=50000 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b_512_split_datafix_from_hf \
+    checkpoint_dir_for_midtrain=gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b_512_split_datafix_from_hf_midtrain \
     save_steps=500 \
     logging_steps=1 \
     ici_mesh.fsdp=256 \

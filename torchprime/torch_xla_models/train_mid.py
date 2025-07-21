@@ -161,7 +161,8 @@ class Trainer:
     # Initialize checkpoint manager
     # Use GCS for checkpoints with proper path handling
     self.ckpt_dir = config.checkpoint_dir
-    self.ckpt_mgr = CheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
+    self.ckpt_dir_for_midtrain = config.checkpoint_dir_for_midtrain
+    self.ckpt_mgr = CheckpointManager(path=self.ckpt_dir_for_midtrain, save_interval=config.save_steps)
     self.start_step = 0
 
     # Execute all initialization work queued so far before starting training.
@@ -425,14 +426,12 @@ class Trainer:
 
     # Initialize epoch and step counters, accounting for checkpoint loading
     epoch = 0
-    if self.config.resume_for_midtrain:
-      start_step = 0
-    else:
-      start_step = self.start_step
+
+    start_step = self.start_step
 
     # Skip batches if we're resuming from a checkpoint
     resumed_steps = 0
-    if start_step > 0:
+    if start_step > 0 and not self.config.resume_for_midtrain:
       logger.info(f"Skipping {start_step} batches to resume from checkpoint...")
       for _ in range(start_step):
         try:
@@ -502,7 +501,7 @@ class Trainer:
         }
         try:
           self.ckpt_mgr.save(step, state_dict, force=True)
-          logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
+          logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir_for_midtrain}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
         # if is_main_process(): TODO: this causes long hanging during training, disable for now.
