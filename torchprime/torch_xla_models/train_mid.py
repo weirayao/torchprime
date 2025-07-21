@@ -161,6 +161,7 @@ class Trainer:
     # Initialize checkpoint manager
     # Use GCS for checkpoints with proper path handling
     self.ckpt_dir = config.checkpoint_dir
+    self.ckpt_mgr_original = CheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
     self.ckpt_dir_for_midtrain = config.checkpoint_dir_for_midtrain
     self.ckpt_mgr = CheckpointManager(path=self.ckpt_dir_for_midtrain, save_interval=config.save_steps)
     self.start_step = 0
@@ -178,7 +179,7 @@ class Trainer:
 
   def _load_checkpoint(self):
     """Load optimizer, scheduler, and training state from checkpoint."""
-    tracked_steps = self.ckpt_mgr.all_steps()
+    tracked_steps = self.ckpt_mgr_original.all_steps()
     if not tracked_steps:
       logger.warning("No checkpoint steps found. Starting from scratch.")
       return
@@ -191,11 +192,11 @@ class Trainer:
     }
     if self.config.resume_from_checkpoint in tracked_steps:
       logger.info(f"Loading checkpoint from step {self.config.resume_from_checkpoint}")
-      self.ckpt_mgr.restore(self.config.resume_from_checkpoint, state_dict)
+      self.ckpt_mgr_original.restore(self.config.resume_from_checkpoint, state_dict)
     elif self.config.resume_from_checkpoint == "latest":
       last_step = max(tracked_steps)
       logger.warning(f"Checkpoint step {self.config.resume_from_checkpoint} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
-      self.ckpt_mgr.restore(last_step, state_dict)
+      self.ckpt_mgr_original.restore(last_step, state_dict)
     else:
       raise ValueError(f"Invalid checkpoint step: {self.config.resume_from_checkpoint}. Must be one of {tracked_steps} or 'latest'.")
 
