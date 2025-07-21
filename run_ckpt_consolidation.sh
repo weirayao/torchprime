@@ -6,45 +6,17 @@ BRANCH="haolin/masking_strategy"
 RECIPE="recipes/ckpt_consolidation.sh"
 
 # Define checkpoint directories and resume checkpoints
+GCS_PREFIX="gs://sfr-text-diffusion-model-research/checkpoints/"
 CHECKPOINT_DIRS=(
-    # "gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b_512_split_datafix"
-    "gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b_512_split_datafix_from_hf"
+    "flex-qwen3-1b-v2"
 )
 
 RESUME_CHECKPOINTS=(
-    # "16000"
-    # "14500"
-    "12000"
-    # "9500"
-    # "7000"
-    # "4500"
-    # "2500"
+    35000
+    40000
+    42500
 )
 
-# Parse command line arguments
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    -r|--recipe)
-      RECIPE="$2"
-      shift 2
-      ;;
-    -h|--help)
-      echo "Usage: $0 [-r|--recipe RECIPE_PATH]"
-      echo "  -r, --recipe    Path to training recipe (default: recipes/ckpt_consolidation.sh)"
-      echo "  -h, --help      Show this help message"
-      echo ""
-      echo "This script will run checkpoint consolidation for all combinations of:"
-      echo "Checkpoint directories: ${CHECKPOINT_DIRS[*]}"
-      echo "Resume checkpoints: ${RESUME_CHECKPOINTS[*]}"
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $1"
-      echo "Use -h or --help for usage information"
-      exit 1
-      ;;
-  esac
-done
 
 # Run checkpoint consolidation for each combination
 total_combinations=$((${#CHECKPOINT_DIRS[@]} * ${#RESUME_CHECKPOINTS[@]}))
@@ -53,9 +25,10 @@ current_combination=0
 for checkpoint_dir in "${CHECKPOINT_DIRS[@]}"; do
     for resume_checkpoint in "${RESUME_CHECKPOINTS[@]}"; do
         ((current_combination++))
+        checkpoint="${GCS_PREFIX}${checkpoint_dir}"
         echo "=================================================="
         echo "Running checkpoint consolidation [$current_combination/$total_combinations]:"
-        echo "  Checkpoint dir: $checkpoint_dir"
+        echo "  Checkpoint dir: $checkpoint"
         echo "  Resume checkpoint: $resume_checkpoint"
         echo "=================================================="
         
@@ -71,13 +44,13 @@ for checkpoint_dir in "${CHECKPOINT_DIRS[@]}"; do
             git checkout '"$BRANCH"'; \
             git pull; \
             source venv/bin/activate; \
-            bash '"$RECIPE"' "'"$checkpoint_dir"'" "'"$resume_checkpoint"'"'
+            bash '"$RECIPE"' "'"$checkpoint"'" "'"$resume_checkpoint"'"'
         
         # Check if the command succeeded
         if [ $? -eq 0 ]; then
-            echo "✅ Successfully completed: $checkpoint_dir with checkpoint $resume_checkpoint"
+            echo "✅ Successfully completed: $checkpoint with checkpoint $resume_checkpoint"
         else
-            echo "❌ Failed: $checkpoint_dir with checkpoint $resume_checkpoint"
+            echo "❌ Failed: $checkpoint with checkpoint $resume_checkpoint"
             echo "Do you want to continue with the next combination? (y/n)"
             read -r response
             if [[ "$response" != "y" && "$response" != "Y" ]]; then
@@ -93,3 +66,7 @@ for checkpoint_dir in "${CHECKPOINT_DIRS[@]}"; do
 done
 
 echo "🎉 All checkpoint consolidation jobs completed!"
+
+echo "⬇️ Downloading checkpoints from GCS to local..."
+python gpu_utils.py --checkpoint_dirs "${CHECKPOINT_DIRS[@]}" --resume_checkpoints "${RESUME_CHECKPOINTS[@]}"
+echo "✅ All checkpoints downloaded to local."

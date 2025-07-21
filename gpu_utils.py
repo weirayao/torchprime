@@ -1,5 +1,6 @@
 import os
 import logging
+import argparse
 logger = logging.getLogger(__name__)
 
 def download_gcs_checkpoint(gcs_bucket, checkpoint, local_checkpoint_path):
@@ -28,25 +29,19 @@ def download_gcs_checkpoint(gcs_bucket, checkpoint, local_checkpoint_path):
 
 if __name__ == "__main__":
     # Define checkpoint directories and resume checkpoints
-    CHECKPOINT_DIRS=[
-        "flex_processed_v1_qw1_7b_512_split_datafix",
-        "flex_processed_v1_qw1_7b_512_split_datafix_from_hf"
-    ]
 
-    RESUME_CHECKPOINTS=[
-        "16000",
-        "14500",
-        "12000",
-        "9500",
-        "7000",
-        "4500",
-        "2500"
-    ]
+    parser = argparse.ArgumentParser(description="Download GCS checkpoints.")
+    parser.add_argument('--checkpoint_dirs', nargs='+', required=True, help='List of checkpoint directories')
+    parser.add_argument('--resume_checkpoints', nargs='+', required=True, help='List of resume checkpoints')
+    args = parser.parse_args()
+
+    checkpoint_dirs = args.checkpoint_dirs
+    resume_checkpoints = args.resume_checkpoints
 
     gcs_bucket = "gs://sfr-text-diffusion-model-research/consolidated_checkpoints"
     local_checkpoint_path = "/export/agentstudio-family-2/haolin/consolidated_checkpoints"
-    for checkpoint_dir in CHECKPOINT_DIRS:
-        for resume_checkpoint in RESUME_CHECKPOINTS:
+    for checkpoint_dir in checkpoint_dirs:
+        for resume_checkpoint in resume_checkpoints:
             checkpoint = os.path.join(checkpoint_dir, str(resume_checkpoint))
             print("📁 Starting to download checkpoint: ", checkpoint)
             download_gcs_checkpoint(gcs_bucket, checkpoint, local_checkpoint_path)
