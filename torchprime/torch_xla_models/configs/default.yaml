@@ -32,6 +32,9 @@ resume_from_checkpoint: null
 save_steps: 1000
 steps_to_skip: 0 # Number of steps to skip when resuming from checkpoint
 
+checkpoint_dir_for_midtrain: checkpoints/
+resume_for_midtrain: null
+
 optimizer:
   learning_rate: 3.e-4
 lr_scheduler:
