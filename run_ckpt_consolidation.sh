@@ -12,9 +12,9 @@ CHECKPOINT_DIRS=(
 )
 
 RESUME_CHECKPOINTS=(
-    35000
-    40000
-    42500
+    45000
+    47500
+    49500
 )
 
 
@@ -51,12 +51,6 @@ for checkpoint_dir in "${CHECKPOINT_DIRS[@]}"; do
             echo "✅ Successfully completed: $checkpoint with checkpoint $resume_checkpoint"
         else
             echo "❌ Failed: $checkpoint with checkpoint $resume_checkpoint"
-            echo "Do you want to continue with the next combination? (y/n)"
-            read -r response
-            if [[ "$response" != "y" && "$response" != "Y" ]]; then
-                echo "Stopping execution."
-                exit 1
-            fi
         fi
         
         echo ""

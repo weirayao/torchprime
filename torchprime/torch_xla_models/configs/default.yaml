@@ -29,6 +29,7 @@ output_dir: outputs
 checkpoint_dir: checkpoints/ # Always use this field for loading checkpoints
 sft_save_dir: null # When training_mode is 'sft', use this field for saving checkpoints
 resume_from_checkpoint: null
+load_model_only: false
 save_steps: 1000
 steps_to_skip: 0 # Number of steps to skip when resuming from checkpoint
 

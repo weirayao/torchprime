@@ -8,9 +8,10 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     model.prefix_probability=0.01 \
     optimizer.learning_rate=3e-4 \
     global_batch_size=512 \
-    max_steps=50000 \
+    max_steps=100000 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex-qwen3-1b-v2 \
     resume_from_checkpoint=null \
+    load_model_only=true \
     save_steps=500 \
     logging_steps=1 \
     ici_mesh.fsdp=512 \

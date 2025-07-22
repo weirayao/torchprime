@@ -205,9 +205,10 @@ class Trainer:
       raise ValueError(f"Invalid checkpoint step: {self.config.resume_from_checkpoint}. Must be one of {tracked_steps} or 'latest'.")
 
     self.model.load_state_dict(state_dict["model"])
-    self.optimizer.load_state_dict(state_dict["optimizer"])
-    self.lr_scheduler.load_state_dict(state_dict["scheduler"])
-    self.start_step = state_dict["step"]
+    if not self.config.load_model_only:
+      self.optimizer.load_state_dict(state_dict["optimizer"])
+      self.lr_scheduler.load_state_dict(state_dict["scheduler"])
+      self.start_step = state_dict["step"]
 
   def _get_eval_dataloader(self):
     if self.eval_dataset is None:
