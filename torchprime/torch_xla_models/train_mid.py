@@ -160,7 +160,9 @@ class Trainer:
     # Initialize checkpoint manager
     # Use GCS for checkpoints with proper path handling
     self.ckpt_dir = self.config.checkpoint_dir # NOTE: config.checkpoint_dir always used for loading checkpoints
-    self.ckpt_mgr = CheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
+    self.ckpt_mgr_original = CheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
+    self.ckpt_dir_for_midtrain = config.checkpoint_dir_for_midtrain
+    self.ckpt_mgr = CheckpointManager(path=self.ckpt_dir_for_midtrain, save_interval=config.save_steps)
     if self.config.training_mode == "sft":
       if self.config.sft_save_dir is None:
         raise ValueError("SFT mode requires a non-null sft_save_dir")
@@ -183,7 +185,7 @@ class Trainer:
 
   def _load_checkpoint(self):
     """Load optimizer, scheduler, and training state from checkpoint."""
-    tracked_steps = self.ckpt_mgr.all_steps()
+    tracked_steps = self.ckpt_mgr_original.all_steps()
     if not tracked_steps:
       logger.warning("No checkpoint steps found. Starting from scratch.")
       return
@@ -196,18 +198,20 @@ class Trainer:
     }
     if self.config.resume_from_checkpoint in tracked_steps:
       logger.info(f"Loading checkpoint from step {self.config.resume_from_checkpoint}")
-      self.ckpt_mgr.restore(self.config.resume_from_checkpoint, state_dict)
+      self.ckpt_mgr_original.restore(self.config.resume_from_checkpoint, state_dict)
     elif self.config.resume_from_checkpoint == "latest":
       last_step = max(tracked_steps)
       logger.warning(f"Checkpoint step {self.config.resume_from_checkpoint} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
-      self.ckpt_mgr.restore(last_step, state_dict)
+      self.ckpt_mgr_original.restore(last_step, state_dict)
     else:
       raise ValueError(f"Invalid checkpoint step: {self.config.resume_from_checkpoint}. Must be one of {tracked_steps} or 'latest'.")
-
-    self.model.load_state_dict(state_dict["model"])
-    self.optimizer.load_state_dict(state_dict["optimizer"])
-    self.lr_scheduler.load_state_dict(state_dict["scheduler"])
-    self.start_step = state_dict["step"]
+    if self.config.resume_for_midtrain:
+      self.model.load_state_dict(state_dict["model"])
+    else:
+      self.model.load_state_dict(state_dict["model"])
+      self.optimizer.load_state_dict(state_dict["optimizer"])
+      self.lr_scheduler.load_state_dict(state_dict["scheduler"])
+      self.start_step = state_dict["step"]
 
   def _get_eval_dataloader(self):
     if self.eval_dataset is None:
@@ -403,7 +407,7 @@ class Trainer:
       logger.info(f"    Resuming from step: {self.start_step}")
     if is_main_process():
       wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
-      wandb.init(project="text-diffusion-model-research-qwen3-1b-pretrain-diffucoder-data-run", name=self.config.model.model_class)
+      wandb.init(project="text-diffusion-model-research-qwen3-1b-midtrain_v2", name=self.config.model.model_class)
       # Log the configuration to wandb
       wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
       # Set wandb step to start_step if resuming from checkpoint
@@ -417,7 +421,7 @@ class Trainer:
     # Skip batches for partial file processing when resuming from checkpoint
     if self.config.resume_from_checkpoint is not None and self.config.steps_to_skip == 0:
       logger.warning("steps_to_skip is 0, but resume_from_checkpoint is not None. This will cause the trainer to start from the beginning of the dataset. Please check the logs to see if this is expected.")
-    if self.config.steps_to_skip > 0:
+    if self.config.steps_to_skip > 0 and not self.config.resume_for_midtrain:
       logger.info(f"Skipping {self.config.steps_to_skip} batches for partial file processing...")
       for _ in range(self.config.steps_to_skip):
         try:
@@ -486,7 +490,7 @@ class Trainer:
         }
         try:
           self.save_ckpt_mgr.save(step, state_dict, force=True)
-          logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
+          logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir_for_midtrain}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
         xm.wait_device_ops()
