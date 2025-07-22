@@ -684,7 +684,7 @@ def main(config: DictConfig):
       if dataset_name.startswith(gcs_prefix):
         checkpoint_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_dir.split(gcs_prefix)[1])
         dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
-        if config.resume_from_checkpoint is None:
+        if config.resume_from_checkpoint is None or config.resume_for_midtrain:
           logger.info(f"Training from scratch, loading all data files from {dataset_name}")
           data = retry(
             lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_dir)
