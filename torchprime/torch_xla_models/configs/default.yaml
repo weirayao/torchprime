@@ -36,7 +36,7 @@ checkpoint_dir_for_midtrain: checkpoints/
 resume_for_midtrain: null
 
 optimizer:
-  learning_rate: 3.e-4
+  learning_rate: 2.e-4
 lr_scheduler:
   type: linear
   warmup_steps: 150
