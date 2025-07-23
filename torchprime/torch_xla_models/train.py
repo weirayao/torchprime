@@ -206,6 +206,7 @@ class Trainer:
 
     self.model.load_state_dict(state_dict["model"])
     if not self.config.load_model_only:
+      logger.info("Loading optimizer and scheduler from checkpoint since load_model_only is False")
       self.optimizer.load_state_dict(state_dict["optimizer"])
       self.lr_scheduler.load_state_dict(state_dict["scheduler"])
       self.start_step = state_dict["step"]
