@@ -34,6 +34,7 @@ steps_to_skip: 0 # Number of steps to skip when resuming from checkpoint
 
 checkpoint_dir_for_midtrain: checkpoints/
 resume_for_midtrain: null
+continue_for_masked_midtrain: null
 
 optimizer:
   learning_rate: 2.e-4
