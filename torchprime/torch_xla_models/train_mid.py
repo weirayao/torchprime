@@ -684,51 +684,51 @@ def main(config: DictConfig):
       if dataset_name.startswith(gcs_prefix):
         checkpoint_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_dir.split(gcs_prefix)[1])
         dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
-        if config.resume_from_checkpoint is None or config.resume_for_midtrain:
-          logger.info(f"Training from scratch, loading all data files from {dataset_name}")
-          data = retry(
-            lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_dir)
-          )
+        # if config.resume_from_checkpoint is None or config.resume_for_midtrain:
+        logger.info(f"Training from scratch, loading all data files from {dataset_name}")
+        data = retry(
+          lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_dir)
+        )
           # No additional steps to skip when starting fresh
-        else:
-          logger.info(f"Resuming from checkpoint {config.resume_from_checkpoint}, will recompute the data files to skip")
-          # Calculate which files to skip based on checkpoint step and batch size
-          samples_per_file = 5000
-          total_samples_processed = config.resume_from_checkpoint * config.global_batch_size
-          files_to_skip, num_samples_processed_in_current_file = divmod(total_samples_processed, samples_per_file)
+        # else:
+        #   logger.info(f"Resuming from checkpoint {config.resume_from_checkpoint}, will recompute the data files to skip")
+        #   # Calculate which files to skip based on checkpoint step and batch size
+        #   samples_per_file = 5000
+        #   total_samples_processed = config.resume_from_checkpoint * config.global_batch_size
+        #   files_to_skip, num_samples_processed_in_current_file = divmod(total_samples_processed, samples_per_file)
 
-          logger.info(f"Resuming from checkpoint step {config.resume_from_checkpoint}")
-          logger.info(f"Total samples processed: {total_samples_processed}")
-          logger.info(f"Files to skip: {files_to_skip}")
-          logger.info(f"Remaining samples in current file: {num_samples_processed_in_current_file}")
+        #   logger.info(f"Resuming from checkpoint step {config.resume_from_checkpoint}")
+        #   logger.info(f"Total samples processed: {total_samples_processed}")
+        #   logger.info(f"Files to skip: {files_to_skip}")
+        #   logger.info(f"Remaining samples in current file: {num_samples_processed_in_current_file}")
 
-          # Calculate additional steps to skip within the current file
-          steps_to_skip = num_samples_processed_in_current_file // config.global_batch_size
-          logger.info(f"Additional steps to skip in current file: {steps_to_skip}")
-          config.steps_to_skip = steps_to_skip
+        #   # Calculate additional steps to skip within the current file
+        #   steps_to_skip = num_samples_processed_in_current_file // config.global_batch_size
+        #   logger.info(f"Additional steps to skip in current file: {steps_to_skip}")
+        #   config.steps_to_skip = steps_to_skip
 
-          # Read data files from checkpoint directory
-          data_files_path = os.path.join(checkpoint_dir, "data_files.json")
+        #   # Read data files from checkpoint directory
+        #   data_files_path = os.path.join(checkpoint_dir, "data_files.json")
           
-          with open(data_files_path, "r") as f:
-            all_data_files = json.load(f)
-          assert isinstance(all_data_files, list), "data_files.json should be a list"
+        #   with open(data_files_path, "r") as f:
+        #     all_data_files = json.load(f)
+        #   assert isinstance(all_data_files, list), "data_files.json should be a list"
           
-          # Skip the appropriate number of files
-          remaining_files = all_data_files[files_to_skip:]
+        #   # Skip the appropriate number of files
+        #   remaining_files = all_data_files[files_to_skip:]
           
-          logger.info(f"Total data files: {len(all_data_files)}")
-          logger.info(f"Remaining files after skipping: {len(remaining_files)}")
+        #   logger.info(f"Total data files: {len(all_data_files)}")
+        #   logger.info(f"Remaining files after skipping: {len(remaining_files)}")
           
-          # Load dataset starting from the appropriate files
-          data = retry(
-            lambda: make_gcs_pretokenized_dataset(
-              dataset_name, 
-              data_files=remaining_files,
-              seed=config.seed,
-              checkpoint_dir=None  # Don't save data_files.json again
-            )
-          )
+        #   # Load dataset starting from the appropriate files
+        #   data = retry(
+        #     lambda: make_gcs_pretokenized_dataset(
+        #       dataset_name, 
+        #       data_files=remaining_files,
+        #       seed=config.seed,
+        #       checkpoint_dir=None  # Don't save data_files.json again
+        #     )
+        #   )
       else:
         data = retry(
           lambda: make_huggingface_dataset(
