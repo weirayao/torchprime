@@ -10,6 +10,7 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train_mid.py \
     global_batch_size=256 \
     max_steps=15000 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v2_midtrain \
+    checkpoint_dir_for_midtrain=gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v2_midtrain_ep2 \
     save_steps=500 \
     continue_for_masked_midtrain=True \
     logging_steps=1 \
