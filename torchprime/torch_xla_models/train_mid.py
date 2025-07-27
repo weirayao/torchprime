@@ -170,7 +170,7 @@ class Trainer:
       self.save_ckpt_mgr = CheckpointManager(path=self.config.sft_save_dir, save_interval=self.config.save_steps)
     else:
       self.save_ckpt_mgr = self.ckpt_mgr
-    self.start_step = 0
+    self.start_step = config.steps_to_skip
 
     # Execute all initialization work queued so far before starting training.
     torch_xla.sync()
