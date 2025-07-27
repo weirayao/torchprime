@@ -17,6 +17,7 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train_mid.py \
     logging_steps=1 \
     ici_mesh.fsdp=256 \
     resume_from_checkpoint=22500 \
+    resume_for_midtrain=True \
     ici_mesh.tensor=1 \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \
