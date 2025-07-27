@@ -1,20 +1,21 @@
 XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train_mid.py \
     training_mode=pretrain \
-    data=mid_train_dataset \
+    data=mid_train_dataset_v2 \
     model=flex-qwen-1b \
     model.block_masking_probability=0.05 \
     model.mask_block_sizes=[2,4,8] \
     model.truncate_probability=0.01 \
     model.prefix_probability=0.01 \
-    optimizer.learning_rate=2e-4 \
-    global_batch_size=256 \
-    max_steps=8000 \
+    optimizer.learning_rate=3e-4 \
+    lr_scheduler.warmup_steps=50 \
+    global_batch_size=512 \
+    max_steps=6000 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex-qwen3-1b-v2 \
-    checkpoint_dir_for_midtrain=gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v2_midtrain \
+    checkpoint_dir_for_midtrain=gs://sfr-text-diffusion-model-research/checkpoints/midtrain_v2 \
     resume_from_checkpoint=null \
     save_steps=500 \
     logging_steps=1 \
-    ici_mesh.fsdp=256 \
+    ici_mesh.fsdp=512 \
     resume_from_checkpoint=42500 \
     resume_for_midtrain=True \
     ici_mesh.tensor=1 \
