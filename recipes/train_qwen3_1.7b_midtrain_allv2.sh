@@ -11,7 +11,7 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train_mid.py \
     global_batch_size=512 \
     max_steps=6000 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/flex-qwen3-1b-v2 \
-    checkpoint_dir_for_midtrain=gs://sfr-text-diffusion-model-research/checkpoints/midtrain_v2 \
+    checkpoint_dir_for_midtrain=gs://sfr-text-diffusion-model-research/checkpoints/midtrain_allv2 \
     resume_from_checkpoint=null \
     save_steps=500 \
     logging_steps=1 \
