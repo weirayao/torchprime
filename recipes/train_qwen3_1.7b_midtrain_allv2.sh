@@ -7,7 +7,7 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train_mid.py \
     model.truncate_probability=0.1 \
     model.prefix_probability=0.1 \
     optimizer.learning_rate=3e-4 \
-    lr_scheduler.warmup_steps=0 \
+    lr_scheduler.warmup_steps=1 \
     global_batch_size=512 \
     max_steps=17500 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/midtrain_allv2 \
