@@ -17,8 +17,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class GenerationConfig_:
-    noise_level: float = 0.1 # NOTE: for unmasking tasks
-    seed: int = 42
     diffusion_steps: int = 10
     mask_token_id: int = 151669
     max_tokens: int = 256

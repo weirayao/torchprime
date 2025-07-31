@@ -6,9 +6,11 @@ eval_dataset_name_or_path: "loubnabnl/humaneval_infilling"
 eval_results_save_path: "evaluations"
 eval_batch_size: 8
 
+noise_levels: [0.1, 0.25, 0.5, 0.75]
+repeats: 3
+seed: 42
+
 generation:
-  noise_level: 0.5
-  seed: 42
   diffusion_steps: 10
   mask_token_id: 151669
   max_tokens: 256
@@ -22,5 +24,6 @@ generation:
   output_history: false
   return_dict_in_generate: false
 
+baseline_model_name_or_path: null
 checkpoint_dir: "flex_processed_v1_qw1_7b_512_split_datafix"
 resume_from_checkpoint: 16000
