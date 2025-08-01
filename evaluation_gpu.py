@@ -148,6 +148,7 @@ def main(config: DictConfig):
 
     # Initialize model (once, outside loops)
     if config.baseline_model_name_or_path is None:
+        run_name = config.checkpoint_dir
         gcs_bucket = "gs://sfr-text-diffusion-model-research/consolidated_checkpoints"
         local_checkpoint_path = "/export/agentstudio-family-2/haolin/consolidated_checkpoints"
         checkpoint = os.path.join(config.checkpoint_dir, str(config.resume_from_checkpoint))
@@ -161,6 +162,7 @@ def main(config: DictConfig):
             model.load_state_dict(state_dict)
         model.eval()
     else:
+        run_name = config.baseline_model_name_or_path.split('/')[-1]
         model = AutoModel.from_pretrained(config.baseline_model_name_or_path, trust_remote_code=True, torch_dtype=torch.bfloat16)
         model.eval()
     logger.info(f"Model initialized successfully!")
@@ -213,8 +215,8 @@ def main(config: DictConfig):
     model = accelerator.prepare(model)
     device = accelerator.device
 
-    # Convert noise_levels to list if it's a single value
-    noise_levels = config.noise_levels if isinstance(config.noise_levels, list) else [config.noise_levels]
+    # Convert noise_levels to list
+    noise_levels = OmegaConf.to_object(config.noise_levels)
     
     # Loop over noise levels and repeats
     for noise_level in noise_levels:
@@ -271,13 +273,13 @@ def main(config: DictConfig):
                 save_path = (
                     Path(config.eval_results_save_path)
                     / config.eval_dataset_name_or_path
-                    / f"{config.checkpoint_dir.split('/')[-1]}_{config.resume_from_checkpoint}_noise_{noise_level}_repeat_{repeat + 1}_{timestamp}.json"
+                    / f"{run_name}_{config.resume_from_checkpoint}_noise_{noise_level}_repeat_{repeat + 1}_{timestamp}.json"
                 )
             else:
                 save_path = (
                     Path(config.eval_results_save_path)
                     / config.eval_dataset_name_or_path
-                    / f"{config.baseline_model_name_or_path.split('/')[-1]}_noise_{noise_level}_repeat_{repeat + 1}_{timestamp}.json"
+                    / f"{run_name}_noise_{noise_level}_repeat_{repeat + 1}_{timestamp}.json"
                 )
             # Create directory if it doesn't exist
             save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -292,7 +294,7 @@ def main(config: DictConfig):
                     "base_seed": config.seed,
                     "generation_config": OmegaConf.to_container(config.generation),
                     "dataset_name": config.eval_dataset_name_or_path,
-                    "run_name": config.checkpoint_dir.split('/')[-1],
+                    "run_name": run_name,
                     "resume_from_checkpoint": config.resume_from_checkpoint,
                 }
                 metadata_path = save_path.with_suffix(".metadata.json")
