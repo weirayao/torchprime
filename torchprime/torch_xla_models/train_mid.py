@@ -391,26 +391,26 @@ class Trainer:
   def train_loop(self):
     if self.config.resume_from_checkpoint is not None:
       self._load_checkpoint()
-    print("DEBUG: 20")
+    print("DEBUG: 18.0")
     self.model.train()
-    print("DEBUG: 20.1")
+    print("DEBUG: 18.1")
     self.model.zero_grad()
-    print("DEBUG: 20.2")
+    print("DEBUG: 18.2")
     # For now we assume that we wil never train for mor than one epoch
     max_step = self.config.max_steps
-    print("DEBUG: 20.3")
+    print("DEBUG: 18.3")
     train_loader = self._get_train_dataloader()
-    print("DEBUG: 20.4")
+    print("DEBUG: 18.4")
     train_iterator = iter(train_loader)
-    print("DEBUG: 20.5")
+    print("DEBUG: 18.5")
     metrics_logger = MetricsLogger(self.config.model)
-    print("DEBUG: 20.6")
+    print("DEBUG: 18.6")
     logger.info("Starting training")
     logger.info(f"    Max step: {max_step}")
     logger.info(f"    Global batch size: {self.global_batch_size}")
     if hasattr(self, 'start_step') and self.start_step > 0:
       logger.info(f"    Resuming from step: {self.start_step}")
-    # print("skip wandb")
+    print("skip wandb")
     if is_main_process():
       wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
       wandb.init(project="tdm-qwen3-1b-midtrain_allv2_this_is_a_test)", name=self.config.model.model_class)
@@ -423,14 +423,14 @@ class Trainer:
     # Initialize epoch and step counters, accounting for checkpoint loading
     epoch = 0
     start_step = self.start_step
-    print("DEBUG: 20.7")
+    print("DEBUG: 18.7")
     # Skip batches for partial file processing when resuming from checkpoint
     if self.config.resume_from_checkpoint is not None and self.config.steps_to_skip == 0:
       logger.warning("steps_to_skip is 0, but resume_from_checkpoint is not None. This will cause the trainer to start from the beginning of the dataset. Please check the logs to see if this is expected.")
-    print("DEBUG: 20.8")
+    print("DEBUG: 18.8")
     if self.config.steps_to_skip > 0 and not self.config.resume_for_midtrain:
       logger.info(f"Skipping {self.config.steps_to_skip} batches for partial file processing...")
-      print("DEBUG: 20.9")
+      print("DEBUG: 18.9")
       for _ in range(self.config.steps_to_skip):
         try:
           next(train_iterator)
@@ -438,7 +438,7 @@ class Trainer:
           epoch += 1
           train_iterator = iter(train_loader)
           next(train_iterator)
-    print("DEBUG: 20.10")
+    print("DEBUG: 18.10")
     for step in range(start_step, max_step):
       try:
         batch = next(train_iterator)
@@ -453,22 +453,25 @@ class Trainer:
       # Validate batch for SFT mode
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
-      print("DEBUG: 20.11")
+      print("DEBUG: 18.11")
       loss = self.train_step(batch)
-      print("DEBUG: 20.12")
+      print("DEBUG: 18.12")
       trace_end_time = timer()
-      print("DEBUG: 20.13")
+      print("DEBUG: 18.13")
       if step % self.config.logging_steps == 0:
-
+        print("DEBUG: 18.14")
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
           loss = loss.detach().item()
+          print("DEBUG: 18.15.1")
           logger.info(
             f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
             f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
           )
+          print("DEBUG: 18.15.2")
           if math.isnan(loss):
             raise ValueError(f"Loss is NaN at step {step}")
           if is_main_process():
+            print("DEBUG: 18.15.3")
             wandb.log(
               {
                 "train/loss": loss,
@@ -481,57 +484,70 @@ class Trainer:
               },
               step=step  # Explicitly set the wandb global step
             )
-
+            print("DEBUG: 18.15.4")
+        print("DEBUG: 18.15")
         xm.add_step_closure(
           step_closure,
           args=(epoch, step, loss, trace_start_time, trace_end_time),
           run_async=True,
         )
-
+        print("DEBUG: 18.16")
       if step > self.start_step and step % self.config.save_steps == 0:
         # NOTE: currently we save the checkpoint synchronously
+        print("DEBUG: 18.17")
         xm.wait_device_ops()  # Wait for all XLA operations to complete
+        print("DEBUG: 18.18")
         state_dict = {
           "model": self.model.state_dict(),
           "optimizer": self.optimizer.state_dict(),
           "scheduler": self.lr_scheduler.state_dict(),
           "step": step,
         }
+        print("DEBUG: 18.19")
         try:
           self.save_ckpt_mgr.save(step, state_dict, force=True)
+          print("DEBUG: 18.20")
           logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir_for_midtrain}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
         xm.wait_device_ops()
-
+        print("DEBUG: 18.21")
       # Capture profile at the prefer step
       if step == self.config.profile_step:
+        print("DEBUG: 18.22")
         # Wait until device execution catches up to tracing before triggering the profile. This will
         # interrupt training slightly on the hosts which are capturing, but by waiting after tracing
         # for the step, the interruption will be minimal.
         xm.wait_device_ops()
+        print("DEBUG: 18.23")
         xp.trace_detached(
           "127.0.0.1:9012",
           self.config.profile_dir,
           self.config.profile_duration,
         )
-
+        print("DEBUG: 18.24")
     xm.wait_device_ops()
+    print("DEBUG: 18.25")
     logger.info("Finished training run")
-
+    print("DEBUG: 18.26")
     if self.config.profile_step >= 0:
+      print("DEBUG: 18.27")
       # Analyze the step duration from the latest profile
       step_duration = step_duration_from_latest_profile(self.config.profile_dir)
+      print("DEBUG: 18.28")
       metrics_logger.log_step_execution_time(step_duration)
-
+      print("DEBUG: 18.29")
       tpu_name = os.environ.get("TORCHPRIME_TPU_TYPE", None)
+      print("DEBUG: 18.30")
       if tpu_name:
+        print("DEBUG: 18.31")
         # Add "torch_dtype" in model config
         model_config_for_mfu = OmegaConf.to_container(self.config.model, resolve=True)
+        print("DEBUG: 18.32")
         model_config_for_mfu["torch_dtype"] = str(
           get_model_dtype(self.model)
         ).removeprefix("torch.")
-
+        print("DEBUG: 18.33")
         # Compute MFU
         mfu = compute_mfu(
           config=model_config_for_mfu,
@@ -541,12 +557,17 @@ class Trainer:
           num_slices=get_num_slices(),
           sequence_length=self.config.block_size,
         )
+        print("DEBUG: 18.34")
         metrics_logger.log_mfu(mfu.mfu)
-
+        print("DEBUG: 18.35")
     # Print and save metrics
+    print("DEBUG: 18.36")
     metrics = metrics_logger.finalize()
+    print("DEBUG: 18.37")
     logger.info("***** train metrics *****\n%s", metrics)
+    print("DEBUG: 18.38")
     metrics.save(Path(self.config.output_dir) / "train_metrics.json")
+    print("DEBUG: 18.39")
 
   def _validate_sft_batch(self, batch):
     """Validate SFT batch before training step."""
