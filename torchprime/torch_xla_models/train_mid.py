@@ -410,14 +410,15 @@ class Trainer:
     logger.info(f"    Global batch size: {self.global_batch_size}")
     if hasattr(self, 'start_step') and self.start_step > 0:
       logger.info(f"    Resuming from step: {self.start_step}")
-    if is_main_process():
-      wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
-      wandb.init(project="tdm-qwen3-1b-midtrain_allv2_this_is_a_test)", name=self.config.model.model_class)
-      # Log the configuration to wandb
-      wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
-      # Set wandb step to start_step if resuming from checkpoint
-      if self.start_step > 0:
-        wandb.log({}, step=self.start_step-1)  # Set the initial step counter
+    print("skip wandb")
+    # if is_main_process():
+    #   wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
+    #   wandb.init(project="tdm-qwen3-1b-midtrain_allv2_this_is_a_test)", name=self.config.model.model_class)
+    #   # Log the configuration to wandb
+    #   wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
+    #   # Set wandb step to start_step if resuming from checkpoint
+    #   if self.start_step > 0:
+    #     wandb.log({}, step=self.start_step-1)  # Set the initial step counter
 
     # Initialize epoch and step counters, accounting for checkpoint loading
     epoch = 0
