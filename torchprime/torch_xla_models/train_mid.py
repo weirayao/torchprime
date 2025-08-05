@@ -461,6 +461,7 @@ class Trainer:
       if step % self.config.logging_steps == 0:
         print("DEBUG: 18.14")
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
+          print("DEBUG: 18.15.0")
           loss = loss.detach().item()
           print("DEBUG: 18.15.1")
           logger.info(
@@ -492,6 +493,9 @@ class Trainer:
           run_async=True,
         )
         print("DEBUG: 18.16")
+        # Use mark_step instead of wait_device_ops to properly end the step
+        xm.mark_step()
+        print("DEBUG: 18.16.1")
       if step > self.start_step and step % self.config.save_steps == 0:
         # NOTE: currently we save the checkpoint synchronously
         print("DEBUG: 18.17")
