@@ -460,6 +460,7 @@ class Trainer:
       print("DEBUG: 18.13")
       if step % self.config.logging_steps == 0:
         print("DEBUG: 18.14")
+        xm.mark_step()
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
           print("DEBUG: 18.15.0")
           loss = loss.detach().item()
@@ -487,16 +488,13 @@ class Trainer:
             )
             print("DEBUG: 18.15.4")
         print("DEBUG: 18.15")
-        # xm.add_step_closure(
-        #   step_closure,
-        #   args=(epoch, step, loss, trace_start_time, trace_end_time),
-        #   run_async=True,
-        # )
-        step_closure(epoch, step, loss, trace_start_time, trace_end_time)
+        xm.add_step_closure(
+          step_closure,
+          args=(epoch, step, loss, trace_start_time, trace_end_time),
+          run_async=True,
+        )
         print("DEBUG: 18.16")
-        # Use mark_step instead of wait_device_ops to properly end the step
-        torch_xla.sync()
-        print("DEBUG: 18.16.1")
+        
       if step > self.start_step and step % self.config.save_steps == 0:
         # NOTE: currently we save the checkpoint synchronously
         print("DEBUG: 18.17")
