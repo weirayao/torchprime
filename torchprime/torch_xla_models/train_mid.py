@@ -455,6 +455,7 @@ class Trainer:
         self._validate_sft_batch(batch)
       print("DEBUG: 18.11")
       loss = self.train_step(batch)
+      torch_xla.sync()
       print("DEBUG: 18.12")
       trace_end_time = timer()
       print("DEBUG: 18.13")
@@ -463,7 +464,8 @@ class Trainer:
         xm.mark_step()
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
           print("DEBUG: 18.15.0")
-          loss = loss.detach().item()
+          # loss = loss.detach().item()
+          loss = loss.cpu().detach().item()
           print("DEBUG: 18.15.1")
           logger.info(
             f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
