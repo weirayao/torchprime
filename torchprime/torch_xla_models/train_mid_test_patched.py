@@ -464,8 +464,11 @@ class Trainer:
         xm.mark_step()
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
           print("DEBUG: 18.15.0")
-          # loss = loss.detach().item()
-          loss = loss.cpu().detach().item()
+          # Safely reduce loss across replicas, then convert to Python float on host
+          loss_detached = loss.detach()
+          loss_reduced = xm.mesh_reduce("loss", loss_detached, torch.mean)
+          if is_main_process():
+            loss = loss_reduced.item()
           print("DEBUG: 18.15.1")
           logger.info(
             f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
@@ -611,12 +614,13 @@ class Trainer:
     print("DEBUG: 20.16")
     loss.backward()
     print("DEBUG: 20.17")
-    self.optimizer.step()
+    xm.optimizer_step(self.optimizer, barrier=True)
     print("DEBUG: 20.18")
     self.lr_scheduler.step()
     print("DEBUG: 20.19")
     self.model.zero_grad()
     print("DEBUG: 20.20")
+    xm.mark_step()
     return loss
 
 
