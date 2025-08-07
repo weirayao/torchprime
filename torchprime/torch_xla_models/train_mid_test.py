@@ -490,11 +490,12 @@ class Trainer:
             )
             print("DEBUG: 18.15.4")
         print("DEBUG: 18.15")
-        xm.add_step_closure(
-          step_closure,
-          args=(epoch, step, loss, trace_start_time, trace_end_time),
-          run_async=True,
-        )
+        # xm.add_step_closure(
+        #   step_closure,
+        #   args=(epoch, step, loss, trace_start_time, trace_end_time),
+        #   run_async=True,
+        # )
+        step_closure(epoch, step, loss, trace_start_time, trace_end_time)
         print("DEBUG: 18.16")
         
       if step > self.start_step and step % self.config.save_steps == 0:
