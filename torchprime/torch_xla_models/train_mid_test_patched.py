@@ -466,9 +466,7 @@ class Trainer:
           print("DEBUG: 18.15.0")
           # Safely reduce loss across replicas, then convert to Python float on host
           loss_detached = loss.detach()
-          loss_reduced = xm.mesh_reduce("loss", loss_detached, torch.mean)
-          if is_main_process():
-            loss = loss_reduced.item()
+          loss_reduced = xm.mesh_reduce("loss", loss_detached, torch.mean)   
           print("DEBUG: 18.15.1")
           logger.info(
             f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
@@ -479,6 +477,7 @@ class Trainer:
             raise ValueError(f"Loss is NaN at step {step}")
           if is_main_process():
             print("DEBUG: 18.15.3")
+            loss = loss_reduced.item()
             wandb.log(
               {
                 "train/loss": loss,
