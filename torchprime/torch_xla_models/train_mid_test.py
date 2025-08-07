@@ -461,11 +461,11 @@ class Trainer:
       print("DEBUG: 18.13")
       if step % self.config.logging_steps == 0:
         print("DEBUG: 18.14")
-        # xm.mark_step()
+        xm.mark_step()
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
           print("DEBUG: 18.15.0")
-          loss = loss.detach().item()
-          # loss = loss.cpu().detach().item()
+          # loss = loss.detach().item()
+          loss = loss.cpu().detach().item()
           print("DEBUG: 18.15.1")
           logger.info(
             f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
