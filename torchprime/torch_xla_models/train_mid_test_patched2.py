@@ -112,7 +112,7 @@ class Trainer:
 
     # TODO(https://github.com/pytorch/xla/issues/8696): Minibatch only works in 1D sharding.
     minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
-    self.minibatch = minibatch
+    self.minibatch = False
     logger.info(f"Minibatch dataloading: {minibatch}")
 
     # TODO(https://github.com/AI-Hypercomputer/torchprime/issues/66): Test this for multislice
