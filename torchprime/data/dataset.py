@@ -6,16 +6,16 @@ import logging
 from itertools import chain
 from typing import Sequence
 from glob import glob
-from dotenv import load_dotenv
-load_dotenv()
+# from dotenv import load_dotenv
+# load_dotenv()
 
 import torch_xla.runtime as xr
 from datasets import load_dataset, interleave_datasets, Dataset, DatasetDict, IterableDataset, concatenate_datasets
 from transformers.tokenization_utils import PreTrainedTokenizerBase
 
-MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
-if MOUNTED_GCS_DIR is None:
-  raise ValueError("MOUNTED_GCS_DIR is not set or GCS is not mounted.")
+# MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
+# if MOUNTED_GCS_DIR is None:
+#   raise ValueError("MOUNTED_GCS_DIR is not set or GCS is not mounted.")
 
 logger = logging.getLogger(__name__)
 
