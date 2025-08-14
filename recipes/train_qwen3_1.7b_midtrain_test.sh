@@ -8,14 +8,14 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     model.prefix_probability=0.25 \
     optimizer.learning_rate=3e-4 \
     lr_scheduler.warmup_steps=1 \
-    global_batch_size=128 \
+    global_batch_size=64 \
     max_steps=36000 \
     checkpoint_dir=gs://sfr-text-diffusion-model-research/checkpoints/midtrain_allv2 \
     checkpoint_dir_for_midtrain=gs://sfr-text-diffusion-model-research/checkpoints/midtrain_allv2_this_is_a_test \
     save_steps=500 \
     steps_to_skip=29500 \
     logging_steps=1 \
-    ici_mesh.fsdp=128 \
+    ici_mesh.fsdp=64 \
     resume_from_checkpoint=29500 \
     resume_for_midtrain=True \
     ici_mesh.tensor=1 \
