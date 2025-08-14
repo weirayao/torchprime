@@ -1,4 +1,4 @@
-XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train_mid_test_patched2.py \
+XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train.py \
     training_mode=pretrain \
     data=mid_train_dataset_v2 \
     model=flex-qwen-1b \
