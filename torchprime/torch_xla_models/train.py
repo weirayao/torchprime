@@ -10,8 +10,8 @@ from functools import partial
 from pathlib import Path
 from timeit import default_timer as timer
 
-from dotenv import load_dotenv
-load_dotenv()
+# from dotenv import load_dotenv
+# load_dotenv()
 
 import datasets
 import hydra
@@ -24,7 +24,7 @@ import torch_xla.distributed.parallel_loader as pl
 import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
 import transformers
-import wandb
+# import wandb
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, IterableDataset
@@ -137,7 +137,7 @@ class Trainer:
     model = self._add_checkpoint_offload_scan_model(model)
     model = self._add_optimization_barrier_model(model)
     self.model = model
-    self.hf_model = load_hf_model(self.config.model)
+    # self.hf_model = load_hf_model(self.config.model)
 
     # Set up optimizers
     self.optimizer = Adafactor(
@@ -401,14 +401,14 @@ class Trainer:
     logger.info(f"    Global batch size: {self.global_batch_size}")
     if hasattr(self, 'start_step') and self.start_step > 0:
       logger.info(f"    Resuming from step: {self.start_step}")
-    if is_main_process():
-      wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
-      wandb.init(project="text-diffusion-model-research-qwen3-1b-pretrain-diffucoder-data-run", name=self.config.model.model_class)
-      # Log the configuration to wandb
-      wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
-      # Set wandb step to start_step if resuming from checkpoint
-      if self.start_step > 0:
-        wandb.log({}, step=self.start_step-1)  # Set the initial step counter
+    # if is_main_process():
+    #   wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
+    #   wandb.init(project="text-diffusion-model-research-qwen3-1b-pretrain-diffucoder-data-run", name=self.config.model.model_class)
+    #   # Log the configuration to wandb
+    #   wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
+    #   # Set wandb step to start_step if resuming from checkpoint
+    #   if self.start_step > 0:
+    #     wandb.log({}, step=self.start_step-1)  # Set the initial step counter
 
     # Initialize epoch and step counters, accounting for checkpoint loading
     epoch = 0
@@ -455,19 +455,19 @@ class Trainer:
           )
           if math.isnan(loss):
             raise ValueError(f"Loss is NaN at step {step}")
-          if is_main_process():
-            wandb.log(
-              {
-                "train/loss": loss,
-                "train/ppl": math.exp(loss),
-                "train/step_time": (trace_end_time - trace_start_time) * 1000,
-                "train/epoch": epoch,
-                "train/step": step,
-                "train/lr": self.lr_scheduler.get_last_lr()[0],
-                "train/total_tokens": self.config.data.block_size * (step + 1) * self.global_batch_size,
-              },
-              step=step  # Explicitly set the wandb global step
-            )
+          # if is_main_process():
+          #   wandb.log(
+          #     {
+          #       "train/loss": loss,
+          #       "train/ppl": math.exp(loss),
+          #       "train/step_time": (trace_end_time - trace_start_time) * 1000,
+          #       "train/epoch": epoch,
+          #       "train/step": step,
+          #       "train/lr": self.lr_scheduler.get_last_lr()[0],
+          #       "train/total_tokens": self.config.data.block_size * (step + 1) * self.global_batch_size,
+          #     },
+          #     step=step  # Explicitly set the wandb global step
+          #   )
 
         xm.add_step_closure(
           step_closure,
@@ -608,7 +608,7 @@ def main(config: DictConfig):
   # NOTE: read HF model from GCS bucket if resume_from_checkpoint is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
   load_from_checkpoint = hasattr(config, 'resume_from_checkpoint') and config.resume_from_checkpoint is not None
   with set_default_dtype(torch.bfloat16), torch_xla.device():
-    model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
+    model = initialize_model_class(config.model, load_from_hf=False)
 
   n_params = sum([p.numel() for p in model.parameters()])
   if is_main_process():
