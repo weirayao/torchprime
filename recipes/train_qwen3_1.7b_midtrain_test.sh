@@ -16,7 +16,7 @@ XLA_FLAGS="--xla_cpu_enable_fast_math=false --xla_dump_to=/tmp/xla_dumps --xla_d
     save_steps=500 \
     steps_to_skip=29500 \
     logging_steps=1 \
-    ici_mesh.fsdp=4 \
+    ici_mesh.fsdp=1 \
     resume_from_checkpoint=29500 \
     resume_for_midtrain=True \
     ici_mesh.tensor=1 \
