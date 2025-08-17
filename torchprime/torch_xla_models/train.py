@@ -566,12 +566,17 @@ class Trainer:
       )
     else:
       # Pre-training mode (original behavior)
+      print("DEBUG: 569")
       _logits, loss = self.model(**batch)
-    
+      print("DEBUG: 571")
     loss.backward()
+    print("DEBUG: 573")
     self.optimizer.step()
+    print("DEBUG: 574")
     self.lr_scheduler.step()
+    print("DEBUG: 575")
     self.model.zero_grad()
+    print("DEBUG: 576")
     return loss
 
 
