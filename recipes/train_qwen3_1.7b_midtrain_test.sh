@@ -22,5 +22,3 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train_mid.py \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \
     model/remat=qwen-scan
-# fsdp * tensor * data * expert == num_devices
-# global_batch_size mod num_devices == 0
