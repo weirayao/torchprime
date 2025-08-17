@@ -1,7 +1,7 @@
-TPU_VM_NAME="sfr-haolin-chen-v4-1024"
-TPU_ZONE="us-central2-b"
-BRANCH="haolin/ckpt_reload_v2"
-RECIPE="recipes/train_qwen3_1.7b_v2.sh"
+TPU_VM_NAME="sfr-shiyu-wang-v5p-32"
+TPU_ZONE="us-central1-a"
+BRANCH="shiyu/midtrain_v2"
+RECIPE="recipes/train_qwen3_1.7b_midtrain_test.sh"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
