@@ -1,4 +1,5 @@
-XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train_mid.py \
+# XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 
+XLA_FLAGS="--xla_cpu_enable_fast_math=false --xla_dump_to=/tmp/xla_dumps --xla_dump_hlo_pass_re=.* --xla_hlo_profile" python torchprime/torch_xla_models/train_mid.py \
     training_mode=pretrain \
     data=mid_train_dataset_v2 \
     model=flex-qwen-1b \
