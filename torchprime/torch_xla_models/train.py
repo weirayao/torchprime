@@ -437,12 +437,13 @@ class Trainer:
         batch = next(train_iterator)
 
       trace_start_time = timer()
-      
+      logger.info("WE ARE HERE")
       # Validate batch for SFT mode
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
-      
+      logger.info("WE ARE HERE 1")
       loss = self.train_step(batch)
+      logger.info("WE ARE HERE 2")
       trace_end_time = timer()
 
       if step % 1 == 0:
