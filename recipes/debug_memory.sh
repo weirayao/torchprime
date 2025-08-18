@@ -115,3 +115,4 @@ echo "=== Memory Usage Summary ==="
 echo "If both tests pass, the issue is likely in the training loop or batch size."
 echo "If scan test fails, scan layers are causing the issue."
 echo "If basic test fails, there's a fundamental model loading issue."
+
