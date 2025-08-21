@@ -247,8 +247,8 @@ class Trainer:
         for batch in self.dataloader: 
           self.step += 1
           # Log the shapes of the inputs and targets. 
-          if self.step % 100 == 0:
-            self._log_shapes(batch) 
+          # if self.step % 100 == 0:
+          self._log_shapes(batch) 
           yield batch 
     
       def _log_shapes(self, batch): 
