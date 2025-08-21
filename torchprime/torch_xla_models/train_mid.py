@@ -67,20 +67,15 @@ from torchprime.torch_xla_models.model_utils import (
   get_model_dtype,
 )
 from torchprime.utils.retry import retry
-print("DEBUG: 0")
 check_min_version("4.39.3")
 logger = logging.getLogger(__name__)
-print("DEBUG: 0.1")
 xr.use_spmd()
 assert xr.is_spmd() is True
-print("DEBUG: 0.2")
 if not dist.is_initialized():
   dist.init_process_group(backend='gloo', init_method='xla://')
-print("DEBUG: 0.3") 
 def is_main_process():
   """Check if this is the main process (rank 0)."""
   return xr.process_index() == 0
-print("DEBUG: 0.4")
 
 MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
 
@@ -391,20 +386,13 @@ class Trainer:
   def train_loop(self):
     if self.config.resume_from_checkpoint is not None:
       self._load_checkpoint()
-    print("DEBUG: 18.0")
     self.model.train()
-    print("DEBUG: 18.1")
     self.model.zero_grad()
-    print("DEBUG: 18.2")
     # For now we assume that we wil never train for mor than one epoch
     max_step = self.config.max_steps
-    print("DEBUG: 18.3")
     train_loader = self._get_train_dataloader()
-    print("DEBUG: 18.4")
     train_iterator = iter(train_loader)
-    print("DEBUG: 18.5")
     metrics_logger = MetricsLogger(self.config.model)
-    print("DEBUG: 18.6")
     logger.info("Starting training")
     logger.info(f"    Max step: {max_step}")
     logger.info(f"    Global batch size: {self.global_batch_size}")
@@ -423,14 +411,11 @@ class Trainer:
     # Initialize epoch and step counters, accounting for checkpoint loading
     epoch = 0
     start_step = self.start_step
-    print("DEBUG: 18.7")
     # Skip batches for partial file processing when resuming from checkpoint
     if self.config.resume_from_checkpoint is not None and self.config.steps_to_skip == 0:
       logger.warning("steps_to_skip is 0, but resume_from_checkpoint is not None. This will cause the trainer to start from the beginning of the dataset. Please check the logs to see if this is expected.")
-    print("DEBUG: 18.8")
     if self.config.steps_to_skip > 0 and not self.config.resume_for_midtrain:
       logger.info(f"Skipping {self.config.steps_to_skip} batches for partial file processing...")
-      print("DEBUG: 18.9")
       for _ in range(self.config.steps_to_skip):
         try:
           next(train_iterator)
@@ -438,7 +423,6 @@ class Trainer:
           epoch += 1
           train_iterator = iter(train_loader)
           next(train_iterator)
-    print("DEBUG: 18.10")
     for step in range(start_step, max_step):
       try:
         batch = next(train_iterator)
@@ -453,29 +437,21 @@ class Trainer:
       # Validate batch for SFT mode
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
-      print("DEBUG: 18.11")
       loss = self.train_step(batch)
       torch_xla.sync()
-      print("DEBUG: 18.12")
       trace_end_time = timer()
-      print("DEBUG: 18.13")
       if step % self.config.logging_steps == 0:
-        print("DEBUG: 18.14")
         # xm.mark_step()
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
-          print("DEBUG: 18.15.0")
           loss = loss.detach().item()
           # loss = loss.cpu().detach().item()
-          print("DEBUG: 18.15.1")
           logger.info(
             f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
             f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
           )
-          print("DEBUG: 18.15.2")
           if math.isnan(loss):
             raise ValueError(f"Loss is NaN at step {step}")
           if is_main_process():
-            print("DEBUG: 18.15.3")
             wandb.log(
               {
                 "train/loss": loss,
@@ -488,71 +464,51 @@ class Trainer:
               },
               step=step  # Explicitly set the wandb global step
             )
-            print("DEBUG: 18.15.4")
-        print("DEBUG: 18.15")
         xm.add_step_closure(
           step_closure,
           args=(epoch, step, loss, trace_start_time, trace_end_time),
           run_async=True,
         )
-        print("DEBUG: 18.16")
         
       if step > self.start_step and step % self.config.save_steps == 0:
         # NOTE: currently we save the checkpoint synchronously
-        print("DEBUG: 18.17")
         xm.wait_device_ops()  # Wait for all XLA operations to complete
-        print("DEBUG: 18.18")
         state_dict = {
           "model": self.model.state_dict(),
           "optimizer": self.optimizer.state_dict(),
           "scheduler": self.lr_scheduler.state_dict(),
           "step": step,
         }
-        print("DEBUG: 18.19")
         try:
           self.save_ckpt_mgr.save(step, state_dict, force=True)
-          print("DEBUG: 18.20")
           logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir_for_midtrain}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
         xm.wait_device_ops()
-        print("DEBUG: 18.21")
       # Capture profile at the prefer step
       if step == self.config.profile_step:
-        print("DEBUG: 18.22")
         # Wait until device execution catches up to tracing before triggering the profile. This will
         # interrupt training slightly on the hosts which are capturing, but by waiting after tracing
         # for the step, the interruption will be minimal.
         xm.wait_device_ops()
-        print("DEBUG: 18.23")
         xp.trace_detached(
           "127.0.0.1:9012",
           self.config.profile_dir,
           self.config.profile_duration,
         )
-        print("DEBUG: 18.24")
     xm.wait_device_ops()
-    print("DEBUG: 18.25")
     logger.info("Finished training run")
-    print("DEBUG: 18.26")
     if self.config.profile_step >= 0:
-      print("DEBUG: 18.27")
       # Analyze the step duration from the latest profile
       step_duration = step_duration_from_latest_profile(self.config.profile_dir)
-      print("DEBUG: 18.28")
       metrics_logger.log_step_execution_time(step_duration)
-      print("DEBUG: 18.29")
       tpu_name = os.environ.get("TORCHPRIME_TPU_TYPE", None)
-      print("DEBUG: 18.30")
       if tpu_name:
-        print("DEBUG: 18.31")
         # Add "torch_dtype" in model config
         model_config_for_mfu = OmegaConf.to_container(self.config.model, resolve=True)
-        print("DEBUG: 18.32")
         model_config_for_mfu["torch_dtype"] = str(
           get_model_dtype(self.model)
         ).removeprefix("torch.")
-        print("DEBUG: 18.33")
         # Compute MFU
         mfu = compute_mfu(
           config=model_config_for_mfu,
@@ -562,17 +518,11 @@ class Trainer:
           num_slices=get_num_slices(),
           sequence_length=self.config.block_size,
         )
-        print("DEBUG: 18.34")
         metrics_logger.log_mfu(mfu.mfu)
-        print("DEBUG: 18.35")
     # Print and save metrics
-    print("DEBUG: 18.36")
     metrics = metrics_logger.finalize()
-    print("DEBUG: 18.37")
     logger.info("***** train metrics *****\n%s", metrics)
-    print("DEBUG: 18.38")
     metrics.save(Path(self.config.output_dir) / "train_metrics.json")
-    print("DEBUG: 18.39")
 
   def _validate_sft_batch(self, batch):
     """Validate SFT batch before training step."""
@@ -596,69 +546,51 @@ class Trainer:
   def train_step(self, batch):
     if self.config.training_mode == "sft":
       # For SFT, src_mask should already be in the batch from data collator
-      print("DEBUG: 20.14")
       _logits, loss = self.model(
         input_ids=batch["input_ids"],
         attention_mask=batch["attention_mask"],
         src_mask=batch["src_mask"],
         training_mode="sft"
       )
-      print("DEBUG: 20.15")
     else:
       # Pre-training mode (original behavior)
       _logits, loss = self.model(**batch)
-    print("DEBUG: 20.16")
     loss.backward()
-    print("DEBUG: 20.17")
     self.optimizer.step()
-    print("DEBUG: 20.18")
     self.lr_scheduler.step()
-    print("DEBUG: 20.19")
     self.model.zero_grad()
-    print("DEBUG: 20.20")
     return loss
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="default")
 def main(config: DictConfig):  
   # Configure logging (only on main process to avoid duplicate logs)
-  print("DEBUG: 1")
   if is_main_process():
     print(OmegaConf.to_yaml(config))  # Print the config for debugging
-  print("DEBUG: 2")
   log_level = logging.INFO
   logger.setLevel(log_level)
   logger.setLevel(log_level)
-  print("DEBUG: 3")
   datasets.utils.logging.set_verbosity(log_level)
   transformers.utils.logging.set_verbosity(log_level)
   transformers.utils.logging.enable_default_handler()
   transformers.utils.logging.enable_explicit_format()
-  print("DEBUG: 4")
   # Initialize distributed process group for XLA
   # torch.distributed.init_process_group('gloo', init_method='xla://')
-  print("DEBUG: 5")
   set_seed(config.seed)
-  print("DEBUG: 6")
   torch_xla.manual_seed(config.seed)
-  print("DEBUG: 7")
   # Start profiling server (only on main process)
   server = xp.start_server(9012)
-  print("DEBUG: 8")
   logger.info(f"Profiling server started: {str(server)}")
   # TODO(https://github.com/AI-Hypercomputer/torchprime/issues/14): Add tokenizers to torchprime.
   tokenizer_name = config.model.tokenizer_name
   tokenizer = retry(lambda: AutoTokenizer.from_pretrained(tokenizer_name))
-  print("DEBUG: 9")
   # Set the model dtype to bfloat16, and set the default device to the XLA device.
   # This will capture the model constructor into a graph so that we can add
   # sharding annotations to the weights later, and run the constructor on the XLA device.
   # NOTE: read HF model from GCS bucket if resume_from_checkpoint is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
   load_from_checkpoint = hasattr(config, 'resume_from_checkpoint') and config.resume_from_checkpoint is not None
-  print("DEBUG: 10")
   with set_default_dtype(torch.bfloat16), torch_xla.device():
     model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
-  print("DEBUG: 11")
   n_params = sum([p.numel() for p in model.parameters()])
   if is_main_process():
     if load_from_checkpoint:
@@ -730,12 +662,10 @@ def main(config: DictConfig):
         checkpoint_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_dir.split(gcs_prefix)[1])
         dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
         if config.resume_from_checkpoint is None or config.resume_for_midtrain or config.continue_for_masked_midtrain:
-          print("DEBUG: 12")
           logger.info(f"Training from scratch, loading all data files from {dataset_name}")
           data = retry(
             lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_dir)
           )
-          print("DEBUG: 12")
           # No additional steps to skip when starting fresh
         else:
           logger.info(f"Resuming from checkpoint {config.resume_from_checkpoint}, will recompute the data files to skip")
@@ -789,7 +719,6 @@ def main(config: DictConfig):
         )
     elif config.data.gcs_dataset_names:
       # Downloading and loading a dataset from GCS bucket.
-      print("DEBUG: 13")
       data = retry(
         lambda: make_gcs_dataset(
           names=config.data.gcs_dataset_names,
@@ -799,11 +728,9 @@ def main(config: DictConfig):
           block_size=config.data.block_size,
         )
       )
-      print("DEBUG: 14")
     else:
       raise ValueError("No dataset provided")
   # data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # not working as expected, will only load a subset of the dataset
-  print("DEBUG: 15")
   if isinstance(data, IterableDataset):
     try:
       logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
@@ -811,23 +738,19 @@ def main(config: DictConfig):
       logger.info(f"Dataset split successful for device {xr.process_index()}")
     except Exception as e:
       logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
-  print("DEBUG: 16")
   trainer = Trainer(
     model=model,
     tokenizer=tokenizer,
     config=config,
     train_dataset=data,
   )
-  print("DEBUG: 17")
   # Synchronize all processes before starting training
   xm.wait_device_ops()  # Wait for all XLA operations to complete
   if is_main_process():
     logger.info("All processes synchronized, starting training")
-  print("DEBUG: 18")
   # TODO(https://github.com/pytorch/xla/issues/8954): Remove `jax_env_context`.
   with jax_env_context():
     trainer.train_loop()
-  print("DEBUG: 19")
 
 if __name__ == "__main__":
   logging.basicConfig(
