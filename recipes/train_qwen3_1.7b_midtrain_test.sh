@@ -15,10 +15,10 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/train_mid.py \
     save_steps=500 \
     steps_to_skip=29500 \
     logging_steps=1 \
-    ici_mesh.fsdp=64 \
+    ici_mesh.fsdp=32 \
     resume_from_checkpoint=29500 \
     resume_for_midtrain=True \
-    ici_mesh.tensor=1 \
+    ici_mesh.tensor=2 \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \
     model/remat=qwen-scan
