@@ -234,7 +234,44 @@ class Trainer:
     )
     return loader
 
-
+  def _instrument_dataloader(self, dataloader, name): 
+    """Instrument the shapes from the dataloader with a name for logging.""" 
+  
+    class WrapperDataLoader: 
+      def __init__(self, dataloader, name): 
+        self.dataloader = dataloader 
+        self.name = name 
+        self.step = 0
+    
+      def __iter__(self): 
+        for batch in self.dataloader: 
+          self.step += 1
+          # Log the shapes of the inputs and targets. 
+          if self.step % 100 == 0:
+            self._log_shapes(batch) 
+          yield batch 
+    
+      def _log_shapes(self, batch): 
+        import torch.utils._pytree as pytree 
+    
+        shapes = pytree.tree_map( 
+          lambda x: x.shape if isinstance(x, torch.Tensor) else None, batch 
+        ) 
+        logger.info(f"[{self.name}] step: {self.step}, data shapes: {shapes}, data: {batch}") 
+    
+        # Visualize one example tensor. 
+        t = next(iter(pytree.tree_iter(batch))) 
+        if t.device.type == "xla": 
+          import click 
+          from torch_xla.distributed.spmd.debugging import visualize_tensor_sharding 
+    
+          generated_table = visualize_tensor_sharding(t, use_color=False) 
+          click.echo(generated_table) 
+    
+      # def __len__(self): 
+      #   return len(self.dataloader) 
+  
+    return WrapperDataLoader(dataloader, name) 
   def _get_train_dataloader(self):
     if self.train_dataset is None:
       raise ValueError("Trainer: training requires a train_dataset.")
