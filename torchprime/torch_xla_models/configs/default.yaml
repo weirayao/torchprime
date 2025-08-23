@@ -31,7 +31,11 @@ checkpoint_load_step: null # checkpoint step to load, can be "latest" or a speci
 resume_from_checkpoint: false # whether to resume from checkpoint and load the optimizer, scheduler, and masking scheduler
 checkpoint_save_dir: null # for saving checkpoints
 save_steps: 1000
+# DO NOT set in recipe they are for resuming from checkpoint only and set by the trainer:
 steps_to_skip: 0 # Number of steps to skip when resuming from checkpoint
+all_data_files: null
+dataset_name: null
+is_resuming_epoch: false
 
 checkpoint_dir_for_midtrain: checkpoints/
 resume_for_midtrain: null
