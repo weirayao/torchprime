@@ -1,32 +1,124 @@
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Tuple, Union
 
 import torch
 from torch import nn
 
 from transformers.activations import ACT2FN
-from transformers.cache_utils import Cache, DynamicCache
-from transformers.generation import GenerationMixin
 from transformers.integrations import use_kernel_forward_from_hub
-from transformers.masking_utils import create_causal_mask, create_sliding_window_causal_mask
-from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
-from transformers.modeling_layers import (
-    GenericForQuestionAnswering,
-    GenericForSequenceClassification,
-    GenericForTokenClassification,
-    GradientCheckpointingLayer,
-)
-from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
-from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
-from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
+# from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from transformers.processing_utils import Unpack
 from transformers.utils import TransformersKwargs, auto_docstring, can_return_tuple
 from transformers.utils.deprecation import deprecate_kwarg
 from transformers.utils.generic import check_model_inputs
-from transformers.models.qwen2.configuration_qwen2 import Qwen2Config
+# from transformers.models.qwen2.configuration_qwen2 import Qwen2Config
+from omegaconf import DictConfig
 from torchprime.torch_xla_models.flex.attention import AttentionModule
+from torchprime.layers.sequential import HomogeneousSequential
+from torchprime.rope.rope import RopeScaling, default_rope_frequencies
+IS_TPU = not torch.cuda.is_available()
+if IS_TPU:
+    from torchprime.torch_xla_models import offloading
+
+def prefix_input_ids(input_ids, maskable_mask, apply_prefix):
+    """Apply prefix to input_ids based on configured probability. Return a masksable mask such that the prefix is not masked."""
+    batch_size, seq_len = input_ids.shape
+    # Generate random prefix lengths for all batch items
+    prefix_lengths = torch.randint(1, seq_len, (batch_size,), device=input_ids.device)
+    # Create position indices: [1, seq_len]
+    position_indices = torch.arange(seq_len, device=input_ids.device).unsqueeze(0) # [1, seq_len]
+    # Create prefix mask: True where position < prefix_length
+    prefix_mask = position_indices < prefix_lengths.unsqueeze(1)  # [batch_size, seq_len]
+    # Apply prefix masking: set to False where we should apply prefix masking
+    maskable_mask = maskable_mask & ~(apply_prefix.unsqueeze(1) & prefix_mask)
+    return maskable_mask
 
 
-class Qwen2MLP(nn.Module):
+def transition(
+    x_0, sigma, maskable_mask, mask_token_id, mask_block_size: int = 1):
+    """Apply masking to input tokens. If mask_block_size > 1, use block masking for all rows."""
+
+    if mask_block_size == 1:
+        # Original behavior
+        # weiran: diffullama
+        move_indices = (torch.rand(*x_0.shape, device=x_0.device) < sigma) & maskable_mask
+        x_t = torch.where(move_indices, mask_token_id, x_0)
+        return x_t
+
+    # Block masking for entire batch
+    return block_masking(x_0, sigma, maskable_mask, mask_token_id, mask_block_size)
+
+
+def block_masking(x_0, sigma, maskable_mask, mask_token_id, mask_block_size):
+    """
+    XLA-compatible block masking applied uniformly to all rows in the batch.
+    Uses efficient tensor operations to avoid dynamic loops.
+    """
+    batch_size, seq_len = x_0.shape
+
+    if seq_len < mask_block_size:
+        return x_0
+
+    # Calculate number of possible block positions
+    num_windows = seq_len - mask_block_size + 1
+    
+    # Create all possible block positions: [num_windows, mask_block_size]
+    window_starts = torch.arange(num_windows, device=x_0.device)
+    block_offsets = torch.arange(mask_block_size, device=x_0.device)
+    all_positions = window_starts.unsqueeze(1) + block_offsets.unsqueeze(0)
+    
+    # Check which blocks are fully maskable: [batch_size, num_windows]
+    maskable_blocks = maskable_mask.unsqueeze(1).expand(-1, num_windows, -1).gather(
+        2, all_positions.unsqueeze(0).expand(batch_size, -1, -1)
+    )
+    fully_maskable = maskable_blocks.all(dim=2)
+
+    # Determine which blocks should be masked: (batch_size, num_windows)
+    effective_sigma = 1 - (1-sigma)**(1/mask_block_size) # NOTE: since we mask with blocks, we need to scale sigma by block size
+    should_mask = (torch.rand(batch_size, num_windows, device=x_0.device) < effective_sigma) & fully_maskable
+
+    # Create final mask using simple broadcasting (fully XLA-compatible)
+    # For each position in the sequence, check if it's part of any masked block
+    position_indices = torch.arange(seq_len, device=x_0.device)  # [seq_len]
+    
+    # Check for each position if it falls within any masked block
+    # position_indices: [seq_len] -> [1, 1, seq_len]
+    # all_positions: [num_windows, mask_block_size] -> [1, num_windows, mask_block_size]  
+    # should_mask: [batch_size, num_windows] -> [batch_size, num_windows, 1]
+    
+    position_indices = position_indices.unsqueeze(0).unsqueeze(0)  # [1, 1, seq_len]
+    all_positions = all_positions.unsqueeze(0)  # [1, num_windows, mask_block_size]
+    should_mask = should_mask.unsqueeze(2)  # [batch_size, num_windows, 1]
+    
+    # Check if each position matches any of the positions in masked blocks
+    # [1, 1, seq_len] == [1, num_windows, mask_block_size] -> [1, num_windows, seq_len]
+    position_matches = (position_indices == all_positions.unsqueeze(3)).any(dim=2)  # [1, num_windows, seq_len]
+    
+    # Apply should_mask to get final positions to mask
+    # [batch_size, num_windows, 1] & [1, num_windows, seq_len] -> [batch_size, num_windows, seq_len]
+    should_mask_positions = should_mask & position_matches
+    
+    # Reduce over windows: if any window masks this position, mask it
+    final_mask = should_mask_positions.any(dim=1)  # [batch_size, seq_len]
+
+    # Apply the mask
+    result = torch.where(final_mask, mask_token_id, x_0)
+
+    return result
+
+def truncate_input_ids(input_ids, apply_truncate, pad_token_id):
+    """Truncate input_ids at random position and fill with pad token. Return the input_ids with suffix truncated and filled with pad token."""
+    batch_size, seq_len = input_ids.shape
+    # Generate random truncation positions for all batch items
+    truncate_positions = torch.randint(1, seq_len, (batch_size,), device=input_ids.device)
+    # Create position indices: [1, seq_len]
+    position_indices = torch.arange(seq_len, device=input_ids.device).unsqueeze(0) # [1, seq_len]
+    # Create truncate mask: True where position >= truncate_position
+    truncate_mask = position_indices >= truncate_positions.unsqueeze(1)  # [batch_size, seq_len]
+    # Apply truncation: fill with pad token where we should truncate
+    input_ids = torch.where(apply_truncate.unsqueeze(1) & truncate_mask, pad_token_id, input_ids)
+    return input_ids
+
+class Qwen2MLP(nn.Module): # Shiyu: Completed
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -114,66 +206,73 @@ def eager_attention_forward(
     return attn_output, attn_weights
 
 
-class Qwen2Attention(nn.Module):
+class Qwen2Attention(nn.Module): # Shiyu: Completed
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
-    def __init__(self, config: Qwen2Config, layer_idx: int):
+    def __init__(self, config: DictConfig, layer_idx: int | None = None):
         super().__init__()
         self.config = config
         self.attention_block = AttentionModule(config)
         self.layer_idx = layer_idx
+        self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
-        self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
-        self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
+        self.head_dim = getattr(config, "head_dim", self.hidden_size // self.num_heads)
+        self.num_key_value_heads = config.num_key_value_heads
+        self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.scaling = self.head_dim**-0.5
-        self.attention_dropout = config.attention_dropout
-        self.is_causal = True
-        self.q_proj = nn.Linear(config.hidden_size, config.num_attention_heads * self.head_dim, bias=True)
-        self.k_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=True)
-        self.v_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=True)
-        self.o_proj = nn.Linear(config.num_attention_heads * self.head_dim, config.hidden_size, bias=False)
-        self.sliding_window = config.sliding_window if config.layer_types[layer_idx] == "sliding_attention" else None
+        self.attention_dropout = getattr(config, "attention_dropout", 0.0)
+        # weiran: diffullama
+        self.is_causal = False
+        self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=True)
+        self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=True)
+        self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=True)
+        self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
+        # Handle sliding window - check if layer_types exists and if this layer should use sliding attention
+        if not config.use_sliding_window:
+            self.sliding_window = None
+        else:
+            raise NotImplementedError("Sliding window is not implemented for Qwen3")
 
-    @deprecate_kwarg("past_key_value", new_name="past_key_values", version="4.58")
     def forward(
         self,
         hidden_states: torch.Tensor,
-        position_embeddings: tuple[torch.Tensor, torch.Tensor],
-        attention_mask: Optional[torch.Tensor],
-        **kwargs: Unpack[FlashAttentionKwargs],
-    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
-        # input_shape = hidden_states.shape[:-1]
-        # hidden_shape = (*input_shape, -1, self.head_dim)
+        position_embeddings: Tuple[torch.Tensor, torch.Tensor],
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+    ) -> torch.FloatTensor:
         bsz, q_len, _ = hidden_states.size()
 
-        query_states = self.q_proj(hidden_states).view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-        value_states = self.v_proj(hidden_states).view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        query_states = self.q_proj(hidden_states)
+        key_states = self.k_proj(hidden_states)
+        value_states = self.v_proj(hidden_states)
+
+        # Apply q_norm and k_norm to the head dimension
+        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim)
+        key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim)
+        value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim)
+
+        # Apply normalization
+        query_states = self.q_norm(query_states)
+        key_states = self.k_norm(key_states)
+
+        # Transpose to get the right shape for attention
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+        value_states = value_states.transpose(1, 2)
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-        # if past_key_values is not None:
-        #     # sin and cos are specific to RoPE models; cache_position needed for the static cache
-        #     cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
-        #     key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
-
-        # attention_interface: Callable = eager_attention_forward
-        # if self.config._attn_implementation != "eager":
-        #     attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
-
         attn_output = self.attention_block(
-                query_states, key_states, value_states, attention_mask
-            )
+            query_states, key_states, value_states, attention_mask
+        )
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
         attn_output = self.o_proj(attn_output)
         return attn_output
 
-
-@use_kernel_forward_from_hub("RMSNorm")
-class Qwen2RMSNorm(nn.Module):
-    def __init__(self, hidden_size, eps: float = 1e-6) -> None:
+class Qwen2RMSNorm(nn.Module): # Shiyu: Completed
+    def __init__(self, hidden_size, eps=1e-6):
         """
         Qwen2RMSNorm is equivalent to T5LayerNorm
         """
@@ -181,7 +280,7 @@ class Qwen2RMSNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(hidden_size))
         self.variance_epsilon = eps
 
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+    def forward(self, hidden_states):
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.to(torch.float32)
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
@@ -192,32 +291,49 @@ class Qwen2RMSNorm(nn.Module):
         return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"
 
 
-class Qwen2DecoderLayer(GradientCheckpointingLayer):
-    def __init__(self, config: Qwen2Config, layer_idx: int):
+class Qwen2DecoderLayer(nn.Module): # Shiyu: Completed
+    def __init__(self, config: DictConfig, layer_idx: int):
         super().__init__()
         self.hidden_size = config.hidden_size
+        self.layer_idx = layer_idx
 
         self.self_attn = Qwen2Attention(config=config, layer_idx=layer_idx)
 
         self.mlp = Qwen2MLP(config)
         self.input_layernorm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.attention_type = config.layer_types[layer_idx]
+        self.post_attention_layernorm = Qwen2RMSNorm(
+            config.hidden_size, eps=getattr(config, "rms_norm_eps", 1e-6)
+        )
 
-    @deprecate_kwarg("past_key_value", new_name="past_key_values", version="4.58")
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_embeddings: Optional[tuple[torch.Tensor, torch.Tensor]] = None,  # necessary, but kept here for BC
-        **kwargs: Unpack[TransformersKwargs],
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        position_embeddings: tuple[torch.Tensor, torch.Tensor]| None = None,  # necessary, but kept here for BC
     ) -> torch.Tensor:
+        """
+        Args:
+        hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
+        attention_mask (`torch.FloatTensor`, *optional*):
+            attention mask of size `(batch_size, sequence_length)` if flash attention is used or `(batch_size, 1,
+            query_sequence_length, key_sequence_length)` if default attention is used.
+        """    
+        # This gives the `hidden_states` tensor a name so that we can layer specify
+        # to offload this tensor to host RAM to save memory. This is not a standard
+        # torch API because there is no such feature in PyTorch. Instead, the name
+        # becomes node metadata during FX graph capture.
+        if IS_TPU:
+            hidden_states = offloading.offload_name(hidden_states, "decoder_input")
+
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
+
         # Self Attention
         hidden_states = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
+            position_ids=position_ids,
             position_embeddings=position_embeddings,
         )
         hidden_states = residual + hidden_states
@@ -227,253 +343,230 @@ class Qwen2DecoderLayer(GradientCheckpointingLayer):
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
+        
         return hidden_states
 
+class Qwen2RotaryEmbedding(nn.Module): # Shiyu: Completed
+    inv_freq: nn.Buffer
 
-@auto_docstring
-class Qwen2PreTrainedModel(PreTrainedModel):
-    config: Qwen2Config
-    base_model_prefix = "model"
-    supports_gradient_checkpointing = True
-    _no_split_modules = ["Qwen2DecoderLayer"]
-    _skip_keys_device_placement = ["past_key_values"]
-    _supports_flash_attn = True
-    _supports_sdpa = True
-    _supports_flex_attn = True
-
-    _can_compile_fullgraph = True
-    _supports_attention_backend = True
-    _can_record_outputs = {
-        "hidden_states": Qwen2DecoderLayer,
-        "attentions": Qwen2Attention,
-    }
-
-
-class Qwen2RotaryEmbedding(nn.Module):
-    inv_freq: torch.Tensor  # fix linting for `register_buffer`
-
-    def __init__(self, config: Qwen2Config, device=None):
+    def __init__(
+        self,
+        head_dim,
+        rope_theta,
+        scaling: RopeScaling | None = None,
+    ):
         super().__init__()
-        # BC: "rope_type" was originally "type"
-        if hasattr(config, "rope_scaling") and isinstance(config.rope_scaling, dict):
-            self.rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type"))
+        if scaling is None:
+            inv_freq = default_rope_frequencies(head_dim, theta=rope_theta)
         else:
-            self.rope_type = "default"
-        self.max_seq_len_cached = config.max_position_embeddings
-        self.original_max_seq_len = config.max_position_embeddings
-
-        self.config = config
-        self.rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
-
-        inv_freq, self.attention_scaling = self.rope_init_fn(self.config, device)
+            raise NotImplementedError("Scaling is not implemented for Qwen3")
         self.register_buffer("inv_freq", inv_freq, persistent=False)
-        self.original_inv_freq = self.inv_freq
 
     @torch.no_grad()
-    @dynamic_rope_update  # power user: used with advanced RoPE types (e.g. dynamic rope)
     def forward(self, x, position_ids):
-        inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1).to(x.device)
+        # x: [bs, num_attention_heads, seq_len, head_size]
+        inv_freq_expanded = (
+            self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
+        )
         position_ids_expanded = position_ids[:, None, :].float()
-
-        device_type = x.device.type if isinstance(x.device.type, str) and x.device.type != "mps" else "cpu"
-        with torch.autocast(device_type=device_type, enabled=False):  # Force float32
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+        # Force float32 since bfloat16 loses precision on long contexts
+        # See https://github.com/huggingface/transformers/pull/29285
+        device_type = x.device.type
+        device_type = (
+            device_type if isinstance(device_type, str) and device_type != "mps" else "cpu"
+        )
+        with torch.autocast(device_type=device_type, enabled=False):
+            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(
+                1, 2
+            )
             emb = torch.cat((freqs, freqs), dim=-1)
-            cos = emb.cos() * self.attention_scaling
-            sin = emb.sin() * self.attention_scaling
-
+            cos = emb.cos()
+            sin = emb.sin()
         return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
-
-@auto_docstring
-class Qwen2Model(Qwen2PreTrainedModel):
-    def __init__(self, config: Qwen2Config):
-        super().__init__(config)
-        self.padding_idx = config.pad_token_id
+class Qwen2Model(nn.Module): # Shiyu: Completed
+    def __init__(self, config: DictConfig):
+        super().__init__()
         self.vocab_size = config.vocab_size
-
-        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
-        self.layers = nn.ModuleList(
-            [Qwen2DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+        if "pad_token_id" not in config:
+            self.padding_idx = None
+        else:
+            self.padding_idx = config.pad_token_id
+        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=self.padding_idx)
+        # `HomogeneousSequential` is similar to `nn.Sequential` but can be compiled with
+        # `scan` described in https://pytorch.org/xla/release/r2.6/features/scan.html.
+        self.layers = HomogeneousSequential(
+            *[
+                Qwen2DecoderLayer(config, layer_idx)
+                for layer_idx in range(config.num_hidden_layers)
+            ]
         )
-        self.norm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.rotary_emb = Qwen2RotaryEmbedding(config=config)
-        self.gradient_checkpointing = False
-        self.has_sliding_layers = "sliding_attention" in self.config.layer_types
+        self.norm = Qwen2RMSNorm(config.hidden_size, eps=getattr(config, "rms_norm_eps", 1e-6))
 
-        # Initialize weights and apply final processing
-        self.post_init()
+        rope_scaling = config.get("rope_scaling", None)
+        head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+        self.rope_theta = getattr(config, "rope_theta", 10000.0)
+        if rope_scaling is not None:
+            rope_scaling = RopeScaling(**rope_scaling)
+        self.rotary_emb = Qwen2RotaryEmbedding(
+            head_dim=head_dim, rope_theta=self.rope_theta, scaling=rope_scaling
+        )
 
-    @check_model_inputs
-    @auto_docstring
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        use_cache: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        **kwargs: Unpack[TransformersKwargs],
-    ) -> BaseModelOutputWithPast:
-        if (input_ids is None) ^ (inputs_embeds is not None):
-            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+        input_ids: torch.LongTensor,
+        attention_mask: torch.FloatTensor | None = None,
+    ) -> torch.Tensor:
+        # convert input ids to embeddings
+        inputs_embeds = self.embed_tokens(input_ids)
 
-        if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
+        seq_length = inputs_embeds.size(1)
 
-        if use_cache and past_key_values is None:
-            past_key_values = DynamicCache(config=self.config)
+        # TODO(https://github.com/pytorch/xla/issues/8783): Pass position_ids as `long()`
+        # when `scan` can take non-differentiable inputs.
+        position_ids = (
+            torch.arange(seq_length, device=inputs_embeds.device).unsqueeze(0).float()
+        )
 
-        if cache_position is None:
-            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
-            cache_position = torch.arange(
-                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
-            )
+        # Create a causal attention mask
+        causal_mask = torch.triu(
+            torch.full((seq_length, seq_length), float("-inf"), device=inputs_embeds.device), diagonal=1,
+        )
+        causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # Add batch and head dimension
 
-        if position_ids is None:
-            position_ids = cache_position.unsqueeze(0)
-
-        # It may already have been prepared by e.g. `generate`
-        if not isinstance(causal_mask_mapping := attention_mask, dict):
-            # Prepare mask arguments
-            mask_kwargs = {
-                "config": self.config,
-                "input_embeds": inputs_embeds,
-                "attention_mask": attention_mask,
-                "cache_position": cache_position,
-                "past_key_values": past_key_values,
-                "position_ids": position_ids,
-            }
-            # Create the masks
-            causal_mask_mapping = {
-                "full_attention": create_causal_mask(**mask_kwargs),
-            }
-            # The sliding window alternating layers are not always activated depending on the config
-            if self.has_sliding_layers:
-                causal_mask_mapping["sliding_attention"] = create_sliding_window_causal_mask(**mask_kwargs)
+        if attention_mask is not None:
+            causal_mask = causal_mask * attention_mask[:, None, None, :]
 
         hidden_states = inputs_embeds
 
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
-        for decoder_layer in self.layers[: self.config.num_hidden_layers]:
-            hidden_states = decoder_layer(
-                hidden_states,
-                attention_mask=causal_mask_mapping[decoder_layer.attention_type],
-                position_embeddings=position_embeddings,
-                **kwargs,
-            )
-
-        hidden_states = self.norm(hidden_states)
-        return BaseModelOutputWithPast(
-            last_hidden_state=hidden_states,
-            past_key_values=past_key_values if use_cache else None,
+        # decoder layers
+        hidden_states = self.layers(
+            hidden_states,
+            attention_mask=causal_mask,
+            position_ids=position_ids,
+            position_embeddings=position_embeddings,
         )
 
+        hidden_states = self.norm(hidden_states)
+        
+        return hidden_states
 
-@auto_docstring
-class Qwen2ForCausalLM(Qwen2PreTrainedModel, GenerationMixin):
-    _tied_weights_keys = ["lm_head.weight"]
-    _tp_plan = {"lm_head": "colwise_rep"}
-    _pp_plan = {"lm_head": (["hidden_states"], ["logits"])}
-
+class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
     def __init__(self, config):
         super().__init__(config)
+        self.config = config
         self.model = Qwen2Model(config)
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.mask_token_id = config.mask_token_id
 
-        # Initialize weights and apply final processing
-        self.post_init()
+        # # Initialize weights and apply final processing
+        # self.post_init()
+    def _init_weights(self, module):
+        std = getattr(self.config, "initializer_range", 0.02)
+        if isinstance(module, nn.Linear):
+            module.weight.data.normal_(mean=0.0, std=std)
+        if module.bias is not None:
+            module.bias.data.zero_()
+        elif isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0, std=std)
+        if module.padding_idx is not None:
+            module.weight.data[module.padding_idx].zero_()
 
-    def set_decoder(self, decoder):
-        self.model = decoder
-
-    def get_decoder(self):
-        return self.model
-
-    @can_return_tuple
-    @auto_docstring
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        logits_to_keep: Union[int, torch.Tensor] = 0,
-        **kwargs: Unpack[TransformersKwargs],
-    ) -> CausalLMOutputWithPast:
-        r"""
-        Example:
+        input_ids: torch.LongTensor,
+        labels: torch.LongTensor | None = None,
+        attention_mask: torch.FloatTensor | None = None,
+        src_mask: torch.BoolTensor | None = None,
+        training_mode: str = "pretrain",
+    ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:
+        if not self.training:
+            model_output = self.model(input_ids=input_ids, attention_mask=attention_mask)   
+            hidden_states = model_output
+            logits = self.lm_head(hidden_states) # NOTE: we shift logits in generate()
+            # logits = logits.float()[..., :-1, :].contiguous() # NOTE: we shift logits in inference_utils at inference time
+            return logits, None
+        
+        if training_mode == "sft" and src_mask is None:
+            raise ValueError("SFT mode requires a non-null src_mask")
+        
+        sampling_eps = 1e-3
+        mask_token_id = self.mask_token_id
+        loss_func = nn.CrossEntropyLoss(reduction="none")
+        batch_size, seq_len = input_ids.shape     # input_ids: [batch_size, seq_len]
 
-        ```python
-        >>> from transformers import AutoTokenizer, Qwen2ForCausalLM
+        if src_mask is not None: # SFT
+            maskable_mask = ~src_mask
+        else: # pretrain or midtrain
+            maskable_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
+            prefix_probability = getattr(self.config, "prefix_probability", 0)
+            truncate_probability = getattr(self.config, "truncate_probability", 0)
+            # Generate random decisions for all batch items
+            apply_prefix = torch.rand(batch_size, device=input_ids.device) < prefix_probability
+            # Only apply truncation to rows that are NOT prefixed
+            apply_truncate = torch.rand(batch_size, device=input_ids.device) < truncate_probability
+            apply_truncate = apply_truncate & ~apply_prefix
 
-        >>> model = Qwen2ForCausalLM.from_pretrained("meta-qwen2/Qwen2-2-7b-hf")
-        >>> tokenizer = AutoTokenizer.from_pretrained("meta-qwen2/Qwen2-2-7b-hf")
+            if prefix_probability > 0:
+                maskable_mask = prefix_input_ids(input_ids, maskable_mask, apply_prefix)
+            if truncate_probability > 0:
+                input_ids = truncate_input_ids(input_ids, apply_truncate, self.config.pad_token_id)
+                maskable_mask = maskable_mask & (input_ids != self.config.pad_token_id) # NOTE: necessary?
+        # add noise to input_ids
+        sigma = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
+        dsigma = torch.reciprocal(sigma)
+        # Sample mask block size
+        mask_block_sizes = getattr(self.config, "mask_block_sizes", None)
+        block_masking_probability = getattr(self.config, "block_masking_probability", 0)
+        if block_masking_probability > 0 and mask_block_sizes is not None:
+            mask_block_size = mask_block_sizes[torch.randint(0, len(mask_block_sizes), (1,)).item()]
+        else:
+            mask_block_size = 1
 
-        >>> prompt = "Hey, are you conscious? Can you talk to me?"
-        >>> inputs = tokenizer(prompt, return_tensors="pt")
-
-        >>> # Generate
-        >>> generate_ids = model.generate(inputs.input_ids, max_length=30)
-        >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-        "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
-        ```"""
-        outputs: BaseModelOutputWithPast = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            cache_position=cache_position,
-            **kwargs,
+        noisy_input_ids = transition(
+            input_ids,
+            sigma[:, None],
+            maskable_mask=maskable_mask,
+            mask_token_id=mask_token_id,
+            mask_block_size=mask_block_size
         )
-
-        hidden_states = outputs.last_hidden_state
-        # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-        slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-        logits = self.lm_head(hidden_states[:, slice_indices, :])
-
-        loss = None
-        if labels is not None:
-            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
-
-        return CausalLMOutputWithPast(
-            loss=loss,
-            logits=logits,
-            past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )
-
-
-class Qwen2ForSequenceClassification(GenericForSequenceClassification, Qwen2PreTrainedModel):
-    pass
-
-
-class Qwen2ForTokenClassification(GenericForTokenClassification, Qwen2PreTrainedModel):
-    pass
-
-
-class Qwen2ForQuestionAnswering(GenericForQuestionAnswering, Qwen2PreTrainedModel):
-    base_model_prefix = "transformer"  # For BC, where `transformer` was used instead of `model`
+        loss_mask = noisy_input_ids == mask_token_id
+        
+        hidden_states = self.model(input_ids=noisy_input_ids, attention_mask=attention_mask)
+        # hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
+        logits = self.lm_head(hidden_states)
+        logits = logits.float()
+        # logits: [bs, seq_len, vocab_size]
+        # Shifted logits and labels
+        # logits: [bs, seq_len-1, vocab_size]
+        logits = logits[..., :-1, :].contiguous()
+        # weiran: if the shifted token is not masked in the original input, the loss is 0
+        # loss_mask: [bs, seq_len-1]
+        loss_mask = loss_mask[..., 1:].contiguous()
+        target_ids = input_ids[..., 1:].contiguous()
+        # loss: [bs, seq_len-1]
+        loss = loss_func(
+        logits.reshape(-1, logits.shape[-1]), target_ids.reshape(-1)).reshape(target_ids.shape[0],-1)
+        loss = loss.masked_fill(~loss_mask, 0)
+        # weiran: divide by the number of tokens in the sequence instead of the number of masked tokens
+        # justification is dsigma already accounts for the number of masked tokens
+        # this is a hack to get something like per token loss
+        # https://github.com/ML-GSAI/SMDM/blob/main/pretrain/train_mdm_rl.py#L281-L283
+        loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
+        return logits, loss
 
 
-__all__ = [
-    "Qwen2PreTrainedModel",
-    "Qwen2Model",
-    "Qwen2ForCausalLM",
-    "Qwen2RMSNorm",
-    "Qwen2ForSequenceClassification",
-    "Qwen2ForTokenClassification",
-    "Qwen2ForQuestionAnswering",
-]
+# class Qwen2ForSequenceClassification(GenericForSequenceClassification, Qwen2PreTrainedModel):
+#     pass
+
+
+# class Qwen2ForTokenClassification(GenericForTokenClassification, Qwen2PreTrainedModel):
+#     pass
+
+
+# class Qwen2ForQuestionAnswering(GenericForQuestionAnswering, Qwen2PreTrainedModel):
+#     base_model_prefix = "transformer"  # For BC, where `transformer` was used instead of `model`
