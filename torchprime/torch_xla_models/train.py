@@ -464,9 +464,18 @@ class Trainer:
               checkpoint_dir=None
             )
           )
+          if isinstance(self.train_dataset, IterableDataset):
+            try:
+              logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
+              self.train_dataset = split_dataset_by_node(self.train_dataset, xr.process_index(), xr.process_count())
+              logger.info(f"Dataset split successful for device {xr.process_index()}")
+            except Exception as e:
+              logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")  
 
           # Recreate dataloader with the full dataset
           train_loader = self._get_train_dataloader()
+          xm.wait_device_ops()
+          torch_xla.sync()
 
         train_iterator = iter(train_loader)
         batch = next(train_iterator)
@@ -591,7 +600,7 @@ class Trainer:
   def train_step(self, batch):
     # Get current masking probabilities from scheduler
     masking_schedule = self.masking_scheduler.get_schedule()
-    logger.info(f"masking_probs: {masking_schedule}")
+    logger.info(f"step: {self.masking_scheduler.current_step}, masking_schedule: {masking_schedule}")
     if self.config.training_mode == "sft":
       # For SFT, src_mask should already be in the batch from data collator
       _logits, loss = self.model(
@@ -802,7 +811,6 @@ def main(config: DictConfig):
       )
     else:
       raise ValueError("No dataset provided")
-  # data = split_dataset_by_node(data, xr.process_index(), xr.process_count()) # not working as expected, will only load a subset of the dataset
   if isinstance(data, IterableDataset):
     try:
       logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
