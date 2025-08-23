@@ -15,9 +15,9 @@ python torchprime/torch_xla_models/train.py \
     global_batch_size=32 \
     max_steps=100 \
     checkpoint_load_dir=gs://sfr-text-diffusion-model-research/checkpoints/test/ \
-    checkpoint_load_step=null \
-    resume_from_checkpoint=false \
-    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/test/ \
+    checkpoint_load_step=20 \
+    resume_from_checkpoint=true \
+    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/test_reloading/ \
     save_steps=10 \
     logging_steps=1 \
     ici_mesh.fsdp=4 \
