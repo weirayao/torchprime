@@ -655,8 +655,8 @@ def main(config: DictConfig):
   # Set the model dtype to bfloat16, and set the default device to the XLA device.
   # This will capture the model constructor into a graph so that we can add
   # sharding annotations to the weights later, and run the constructor on the XLA device.
-  # NOTE: read HF model from GCS bucket if checkpoint_load_step is not provided, otherwise read from checkpoint_load_dir/checkpoint_load_step in _load_checkpoint()
-  load_from_checkpoint = hasattr(config, 'checkpoint_load_step') and config.checkpoint_load_step is not None
+  # NOTE: read HF model from GCS bucket if checkpoint is not provided, otherwise read from checkpoint_load_dir/checkpoint_load_step in _load_checkpoint()
+  load_from_checkpoint = config.checkpoint_load_dir is not None and config.checkpoint_load_step is not None
   with set_default_dtype(torch.bfloat16), torch_xla.device():
     model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
 
