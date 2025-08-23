@@ -132,7 +132,6 @@ class Trainer:
     model = self._add_checkpoint_offload_scan_model(model)
     model = self._add_optimization_barrier_model(model)
     self.model = model
-    self.hf_model = load_hf_model(self.config.model)
 
     # Set up optimizers
     self.optimizer = Adafactor(
