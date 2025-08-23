@@ -401,7 +401,7 @@ class Trainer:
     print("skip wandb")
     if is_main_process():
       wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
-      wandb.init(project="tdm-qwen3-1b-midtrain_allv2_this_is_a_test)", name=self.config.model.model_class)
+      wandb.init(project="tdm-qwen2-1b-midtrain_allv2_this_is_a_test)", name=self.config.model.model_class)
       # Log the configuration to wandb
       wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
       # Set wandb step to start_step if resuming from checkpoint
