@@ -217,10 +217,6 @@ class Qwen2Attention(nn.Module): # Shiyu: Completed
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim)
 
-        # Apply normalization
-        query_states = self.q_norm(query_states)
-        key_states = self.k_norm(key_states)
-
         # Transpose to get the right shape for attention
         query_states = query_states.transpose(1, 2)
         key_states = key_states.transpose(1, 2)
