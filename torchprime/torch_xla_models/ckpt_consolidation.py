@@ -79,8 +79,8 @@ def main(config: DictConfig):
   # Set the model dtype to bfloat16, and set the default device to the XLA device.
   # This will capture the model constructor into a graph so that we can add
   # sharding annotations to the weights later, and run the constructor on the XLA device.
-  # NOTE: read HF model from GCS bucket if resume_from_checkpoint is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
-  load_from_checkpoint = hasattr(config, 'resume_from_checkpoint')
+    # NOTE: read HF model from GCS bucket if checkpoint_load_step is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
+  load_from_checkpoint = hasattr(config, 'checkpoint_load_step') and config.checkpoint_load_step is not None
   with set_default_dtype(torch.bfloat16), torch_xla.device():
     model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
 
@@ -99,7 +99,7 @@ def main(config: DictConfig):
   # TODO(https://github.com/pytorch/xla/issues/8954): Remove `jax_env_context`.
   with jax_env_context():
     gcs_prefix = "gs://sfr-text-diffusion-model-research/"
-    save_dir = Path(MOUNTED_GCS_DIR) / config.checkpoint_dir.split(gcs_prefix)[1].replace("checkpoints", "consolidated_checkpoints") / f"{config.resume_from_checkpoint}"
+    save_dir = Path(MOUNTED_GCS_DIR) / config.checkpoint_load_dir.split(gcs_prefix)[1].replace("checkpoints", "consolidated_checkpoints") / f"{config.checkpoint_load_step}"
     model_sd = model.state_dict()
     reload_sd = {
       "model": {
@@ -108,7 +108,7 @@ def main(config: DictConfig):
       }
     }
 
-    trainer.ckpt_mgr.restore(config.resume_from_checkpoint, reload_sd)
+    trainer.checkpoint_load_manager.restore(config.checkpoint_load_step, reload_sd)
     cpu_state = {k.replace("._orig_mod", ""): v for k, v in reload_sd["model"].items()}
     # dist_cp.load(
     #   state_dict=reload_sd,
@@ -129,7 +129,6 @@ def main(config: DictConfig):
 
       save_sharded_safetensors_by_layer(cpu_state, str(save_dir), tmp_dir=tmp_dir)
       logger.info("Safetensors shards + index written to %s", save_dir)
-      # trainer._consolidate_checkpoint(config.resume_from_checkpoint)
       tokenizer.save_pretrained(save_dir)
     xm.rendezvous("checkpoint_consolidation_barrier")
     logger.info("Checkpoint consolidation complete")

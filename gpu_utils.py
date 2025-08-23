@@ -13,7 +13,8 @@ def download_gcs_checkpoint(gcs_bucket, checkpoint, local_checkpoint_path):
     gcs_path = gcs_path.rstrip("/")
     local_path = local_path.rstrip("/")
     index_json_path = os.path.join(local_path, "model.safetensors.index.json")
-    if os.path.exists(index_json_path):
+    model_safetensors_path = os.path.join(local_path, "model.safetensors")
+    if os.path.exists(index_json_path) or os.path.exists(model_safetensors_path):
         logger.info(f"✅ Checkpoint already exists locally at {local_path}")
         return local_path
 
@@ -38,8 +39,8 @@ if __name__ == "__main__":
     checkpoint_dirs = args.checkpoint_dirs
     resume_checkpoints = args.resume_checkpoints
 
-    gcs_bucket = "gs://sfr-text-diffusion-model-research/consolidated_checkpoints"
-    local_checkpoint_path = "/export/agentstudio-family-2/haolin/consolidated_checkpoints"
+    gcs_bucket = "gs://sfr-text-diffusion-model-research/dllm_sft_checkpoints"
+    local_checkpoint_path = "/export/agentstudio-family-2/haolin/dllm_sft_checkpoints"
     for checkpoint_dir in checkpoint_dirs:
         for resume_checkpoint in resume_checkpoints:
             checkpoint = os.path.join(checkpoint_dir, str(resume_checkpoint))

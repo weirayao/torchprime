@@ -338,14 +338,18 @@ def generate_(
                         full_confidence, number_transfer_tokens
                     )
                 else:
-                    # Add numerical stability for temperature scaling and softmax
-                    scaled_confidence = full_confidence / alg_temp
-                    
-                    # Clamp extreme values to prevent numerical instability
-                    scaled_confidence = torch.clamp(scaled_confidence, min=-50, max=50)
-                    
+                    # FIXME: numerically unstable
+                    # Handle -inf values properly during temperature scaling
+                    # Keep -inf as -inf, scale finite values by temperature
+                    # is_inf_mask = torch.isinf(full_confidence)
+                    # scaled_confidence = torch.where(
+                    #     is_inf_mask,
+                    #     full_confidence,  # Keep -inf as -inf
+                    #     torch.clamp(full_confidence / alg_temp, max=50)  # Scale finite values and clamp max
+                    # )
+
                     # Apply softmax
-                    full_confidence_probs = F.softmax(scaled_confidence, dim=-1)
+                    full_confidence_probs = F.softmax(confidence, dim=-1)
                     
                     # Validate probabilities before multinomial sampling
                     if torch.isnan(full_confidence_probs).any() or torch.isinf(full_confidence_probs).any():

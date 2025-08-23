@@ -10,8 +10,8 @@ from functools import partial
 from pathlib import Path
 from timeit import default_timer as timer
 
-# from dotenv import load_dotenv
-# load_dotenv()
+from dotenv import load_dotenv
+load_dotenv()
 
 import datasets
 import hydra
@@ -24,7 +24,7 @@ import torch_xla.distributed.parallel_loader as pl
 import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
 import transformers
-# import wandb
+import wandb
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, IterableDataset
@@ -66,6 +66,7 @@ from torchprime.torch_xla_models.model_utils import (
   load_hf_model,
   get_model_dtype,
 )
+from torchprime.torch_xla_models.masking_scheduler import MaskingScheduler
 from torchprime.utils.retry import retry
 
 check_min_version("4.39.3")
@@ -80,7 +81,6 @@ if not dist.is_initialized():
 def is_main_process():
   """Check if this is the main process (rank 0)."""
   return xr.process_index() == 0
-
 
 MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
 
@@ -157,17 +157,28 @@ class Trainer:
       num_training_steps=self.config.max_steps,
     )
 
+    # Initialize masking scheduler
+    scheduler_config = self.config.model.masking_scheduler
+    self.masking_scheduler = MaskingScheduler(
+      schedule_type=scheduler_config.schedule_type,
+      max_schedule_steps=scheduler_config.max_schedule_steps,
+      prefix_probability=self.config.model.prefix_probability,
+      truncate_probability=self.config.model.truncate_probability,
+      block_masking_probability=self.config.model.block_masking_probability,
+      mask_block_sizes=self.config.model.mask_block_sizes,
+      total_training_steps=self.config.max_steps,
+    )
+
     # Initialize checkpoint manager
     # Use GCS for checkpoints with proper path handling
-    self.ckpt_dir = self.config.checkpoint_dir # NOTE: config.checkpoint_dir always used for loading checkpoints
-    self.ckpt_mgr = CheckpointManager(path=self.ckpt_dir, save_interval=config.save_steps)
-    if self.config.training_mode == "sft":
-      if self.config.sft_save_dir is None:
-        raise ValueError("SFT mode requires a non-null sft_save_dir")
-      # NOTE: config.sft_save_dir only used for saving checkpoints, for resuming from sft checkpoints, we can use the save value as config.checkpoint_dir
-      self.save_ckpt_mgr = CheckpointManager(path=self.config.sft_save_dir, save_interval=self.config.save_steps)
+    self.checkpoint_load_dir = self.config.checkpoint_load_dir # NOTE: config.checkpoint_load_dir always used for loading checkpoints
+    self.checkpoint_load_manager = CheckpointManager(path=self.checkpoint_load_dir, save_interval=config.save_steps)
+    if self.config.checkpoint_save_dir is not None:
+      self.checkpoint_save_dir = self.config.checkpoint_save_dir
+      self.checkpoint_save_manager = CheckpointManager(path=self.checkpoint_save_dir, save_interval=self.config.save_steps)
     else:
-      self.save_ckpt_mgr = self.ckpt_mgr
+      self.checkpoint_save_dir = self.checkpoint_load_dir
+      self.checkpoint_save_manager = self.checkpoint_load_manager
     self.start_step = 0
 
     # Execute all initialization work queued so far before starting training.
@@ -183,7 +194,7 @@ class Trainer:
 
   def _load_checkpoint(self):
     """Load optimizer, scheduler, and training state from checkpoint."""
-    tracked_steps = self.ckpt_mgr.all_steps()
+    tracked_steps = self.checkpoint_load_manager.all_steps()
     if not tracked_steps:
       logger.warning("No checkpoint steps found. Starting from scratch.")
       return
@@ -192,22 +203,27 @@ class Trainer:
       "model": self.model.state_dict(),
       "optimizer": self.optimizer.state_dict(),
       "scheduler": self.lr_scheduler.state_dict(),
+      "masking_scheduler": self.masking_scheduler.state_dict(),
       "step": self.start_step,
     }
-    if self.config.resume_from_checkpoint in tracked_steps:
-      logger.info(f"Loading checkpoint from step {self.config.resume_from_checkpoint}")
-      self.ckpt_mgr.restore(self.config.resume_from_checkpoint, state_dict)
-    elif self.config.resume_from_checkpoint == "latest":
+    checkpoint_load_step = self.config.checkpoint_load_step
+    if checkpoint_load_step in tracked_steps:
+      logger.info(f"Loading checkpoint from step {checkpoint_load_step}")
+      self.checkpoint_load_manager.restore(checkpoint_load_step, state_dict)
+    elif checkpoint_load_step == "latest":
       last_step = max(tracked_steps)
-      logger.warning(f"Checkpoint step {self.config.resume_from_checkpoint} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
-      self.ckpt_mgr.restore(last_step, state_dict)
+      logger.warning(f"Checkpoint step {checkpoint_load_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
+      self.checkpoint_load_manager.restore(last_step, state_dict)
     else:
-      raise ValueError(f"Invalid checkpoint step: {self.config.resume_from_checkpoint}. Must be one of {tracked_steps} or 'latest'.")
+      raise ValueError(f"Invalid checkpoint step: {checkpoint_load_step}. Must be one of {tracked_steps} or 'latest'.")
 
     self.model.load_state_dict(state_dict["model"])
-    self.optimizer.load_state_dict(state_dict["optimizer"])
-    self.lr_scheduler.load_state_dict(state_dict["scheduler"])
-    self.start_step = state_dict["step"]
+    if self.config.resume_from_checkpoint:
+      self.optimizer.load_state_dict(state_dict["optimizer"])
+      self.lr_scheduler.load_state_dict(state_dict["scheduler"])
+      if "masking_scheduler" in state_dict:
+        self.masking_scheduler.load_state_dict(state_dict["masking_scheduler"])
+      self.start_step = state_dict["step"]
 
   def _get_eval_dataloader(self):
     if self.eval_dataset is None:
@@ -385,7 +401,7 @@ class Trainer:
     return tuple(classes_to_checkpoint)
 
   def train_loop(self):
-    if self.config.resume_from_checkpoint is not None:
+    if self.config.checkpoint_load_step is not None:
       self._load_checkpoint()
     self.model.train()
     self.model.zero_grad()
@@ -401,22 +417,22 @@ class Trainer:
     logger.info(f"    Global batch size: {self.global_batch_size}")
     if hasattr(self, 'start_step') and self.start_step > 0:
       logger.info(f"    Resuming from step: {self.start_step}")
-    # if is_main_process():
-    #   wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
-    #   wandb.init(project="text-diffusion-model-research-qwen3-1b-pretrain-diffucoder-data-run", name=self.config.model.model_class)
-    #   # Log the configuration to wandb
-    #   wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
-    #   # Set wandb step to start_step if resuming from checkpoint
-    #   if self.start_step > 0:
-    #     wandb.log({}, step=self.start_step-1)  # Set the initial step counter
+    if is_main_process():
+      wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
+      wandb.init(project="text-diffusion-model-research-qwen3-1b-pretrain-diffucoder-data-run", name=self.config.model.model_class)
+      # Log the configuration to wandb
+      wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
+      # Set wandb step to start_step if resuming from checkpoint
+      if self.start_step > 0:
+        wandb.log({}, step=self.start_step-1)  # Set the initial step counter
 
     # Initialize epoch and step counters, accounting for checkpoint loading
     epoch = 0
     start_step = self.start_step
 
     # Skip batches for partial file processing when resuming from checkpoint
-    if self.config.resume_from_checkpoint is not None and self.config.steps_to_skip == 0:
-      logger.warning("steps_to_skip is 0, but resume_from_checkpoint is not None. This will cause the trainer to start from the beginning of the dataset. Please check the logs to see if this is expected.")
+    if self.config.checkpoint_load_step is not None and self.config.steps_to_skip == 0:
+      logger.warning("steps_to_skip is 0, but checkpoint_load_step is not None. This will cause the trainer to start from the beginning of the dataset. Please check the logs to see if this is expected.")
     if self.config.steps_to_skip > 0:
       logger.info(f"Skipping {self.config.steps_to_skip} batches for partial file processing...")
       for _ in range(self.config.steps_to_skip):
@@ -433,20 +449,36 @@ class Trainer:
       except StopIteration:
         logger.warning(f"DataLoader exhausted at step {step}, reset iterator")
         epoch += 1
+
+        # If we just finished the resuming epoch and have all_data_files, recreate dataset with full data
+        if hasattr(self.config, 'is_resuming_epoch') and self.config.is_resuming_epoch and hasattr(self.config, 'all_data_files'):
+          logger.info("Finished resuming epoch, switching to full dataset for subsequent epochs")
+          self.config.is_resuming_epoch = False
+
+          # Recreate dataset with all files
+          self.train_dataset = retry(
+            lambda: make_gcs_pretokenized_dataset(
+              self.config.dataset_name,
+              data_files=self.config.all_data_files,
+              seed=self.config.seed,
+              checkpoint_dir=None
+            )
+          )
+
+          # Recreate dataloader with the full dataset
+          train_loader = self._get_train_dataloader()
+
         train_iterator = iter(train_loader)
         batch = next(train_iterator)
 
       trace_start_time = timer()
-      logger.info("WE ARE HERE")
       # Validate batch for SFT mode
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
-      logger.info("WE ARE HERE 1")
       loss = self.train_step(batch)
-      logger.info("WE ARE HERE 2")
       trace_end_time = timer()
 
-      if step % 1 == 0:
+      if step % self.config.logging_steps == 0:
 
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
           loss = loss.detach().item()
@@ -456,19 +488,19 @@ class Trainer:
           )
           if math.isnan(loss):
             raise ValueError(f"Loss is NaN at step {step}")
-          # if is_main_process():
-          #   wandb.log(
-          #     {
-          #       "train/loss": loss,
-          #       "train/ppl": math.exp(loss),
-          #       "train/step_time": (trace_end_time - trace_start_time) * 1000,
-          #       "train/epoch": epoch,
-          #       "train/step": step,
-          #       "train/lr": self.lr_scheduler.get_last_lr()[0],
-          #       "train/total_tokens": self.config.data.block_size * (step + 1) * self.global_batch_size,
-          #     },
-          #     step=step  # Explicitly set the wandb global step
-          #   )
+          if is_main_process():
+            wandb.log(
+              {
+                "train/loss": loss,
+                "train/ppl": math.exp(loss),
+                "train/step_time": (trace_end_time - trace_start_time) * 1000,
+                "train/epoch": epoch,
+                "train/step": step,
+                "train/lr": self.lr_scheduler.get_last_lr()[0],
+                "train/total_tokens": self.config.data.block_size * (step + 1) * self.global_batch_size,
+              },
+              step=step  # Explicitly set the wandb global step
+            )
 
         xm.add_step_closure(
           step_closure,
@@ -483,11 +515,12 @@ class Trainer:
           "model": self.model.state_dict(),
           "optimizer": self.optimizer.state_dict(),
           "scheduler": self.lr_scheduler.state_dict(),
+          "masking_scheduler": self.masking_scheduler.state_dict(),
           "step": step,
         }
         try:
-          self.save_ckpt_mgr.save(step, state_dict, force=True)
-          logger.info(f"Checkpoint saved at step {step} to {self.ckpt_dir}")
+          self.checkpoint_save_manager.save(step, state_dict, force=True)
+          logger.info(f"Checkpoint saved at step {step} to {self.checkpoint_save_dir}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
         xm.wait_device_ops()
@@ -556,27 +589,29 @@ class Trainer:
 
   @torch_xla.compile(full_graph=True)
   def train_step(self, batch):
+    # Get current masking probabilities from scheduler
+    masking_schedule = self.masking_scheduler.get_schedule()
+    logger.info(f"masking_probs: {masking_schedule}")
     if self.config.training_mode == "sft":
       # For SFT, src_mask should already be in the batch from data collator
       _logits, loss = self.model(
         input_ids=batch["input_ids"],
         attention_mask=batch["attention_mask"],
         src_mask=batch["src_mask"],
-        training_mode="sft"
+        training_mode="sft",
+        masking_schedule=masking_schedule
       )
     else:
       # Pre-training mode (original behavior)
-      print("DEBUG: 569")
-      _logits, loss = self.model(**batch)
-      print("DEBUG: 571")
+      _logits, loss = self.model(
+        **batch,
+        masking_schedule=masking_schedule
+      )
     loss.backward()
-    print("DEBUG: 573")
     self.optimizer.step()
-    print("DEBUG: 574")
     self.lr_scheduler.step()
-    print("DEBUG: 575")
+    self.masking_scheduler.step()
     self.model.zero_grad()
-    print("DEBUG: 576")
     return loss
 
 
@@ -611,10 +646,10 @@ def main(config: DictConfig):
   # Set the model dtype to bfloat16, and set the default device to the XLA device.
   # This will capture the model constructor into a graph so that we can add
   # sharding annotations to the weights later, and run the constructor on the XLA device.
-  # NOTE: read HF model from GCS bucket if resume_from_checkpoint is not provided, otherwise read from checkpoint_dir in _load_checkpoint()
-  load_from_checkpoint = hasattr(config, 'resume_from_checkpoint') and config.resume_from_checkpoint is not None
+  # NOTE: read HF model from GCS bucket if checkpoint_load_step is not provided, otherwise read from checkpoint_load_dir/checkpoint_load_step in _load_checkpoint()
+  load_from_checkpoint = hasattr(config, 'checkpoint_load_step') and config.checkpoint_load_step is not None
   with set_default_dtype(torch.bfloat16), torch_xla.device():
-    model = initialize_model_class(config.model, load_from_hf=False)
+    model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
 
   n_params = sum([p.numel() for p in model.parameters()])
   if is_main_process():
@@ -684,22 +719,25 @@ def main(config: DictConfig):
       dataset_name = config.data.dataset_name
       gcs_prefix = "gs://sfr-text-diffusion-model-research/"
       if dataset_name.startswith(gcs_prefix):
-        checkpoint_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_dir.split(gcs_prefix)[1])
+        checkpoint_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_load_dir.split(gcs_prefix)[1])
         dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
-        if config.resume_from_checkpoint is None:
+        if not config.resume_from_checkpoint:
           logger.info(f"Training from scratch, loading all data files from {dataset_name}")
           data = retry(
             lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_dir)
           )
           # No additional steps to skip when starting fresh
+          # Store dataset info for multi-epoch training
+          config.all_data_files = None  # Will be set from data_files.json if exists
+          config.is_resuming_epoch = False
         else:
-          logger.info(f"Resuming from checkpoint {config.resume_from_checkpoint}, will recompute the data files to skip")
+          logger.info(f"Resuming from checkpoint {config.checkpoint_load_step}, will recompute the data files to skip")
           # Calculate which files to skip based on checkpoint step and batch size
           samples_per_file = 5000
-          total_samples_processed = config.resume_from_checkpoint * config.global_batch_size
+          total_samples_processed = config.checkpoint_load_step * config.global_batch_size
           files_to_skip, num_samples_processed_in_current_file = divmod(total_samples_processed, samples_per_file)
 
-          logger.info(f"Resuming from checkpoint step {config.resume_from_checkpoint}")
+          logger.info(f"Resuming from checkpoint step {config.checkpoint_load_step}")
           logger.info(f"Total samples processed: {total_samples_processed}")
           logger.info(f"Files to skip: {files_to_skip}")
           logger.info(f"Remaining samples in current file: {num_samples_processed_in_current_file}")
@@ -711,27 +749,36 @@ def main(config: DictConfig):
 
           # Read data files from checkpoint directory
           data_files_path = os.path.join(checkpoint_dir, "data_files.json")
-          
+
           with open(data_files_path, "r") as f:
             all_data_files = json.load(f)
           assert isinstance(all_data_files, list), "data_files.json should be a list"
-          
-          # Skip the appropriate number of files
+
+          # Store all data files for subsequent epochs
+          config.all_data_files = all_data_files
+          config.dataset_name = dataset_name
+          config.is_resuming_epoch = True
+
+          # Skip the appropriate number of files for the current epoch
           remaining_files = all_data_files[files_to_skip:]
-          
+
           logger.info(f"Total data files: {len(all_data_files)}")
           logger.info(f"Remaining files after skipping: {len(remaining_files)}")
-          
+
           # Load dataset starting from the appropriate files
           data = retry(
             lambda: make_gcs_pretokenized_dataset(
-              dataset_name, 
+              dataset_name,
               data_files=remaining_files,
               seed=config.seed,
               checkpoint_dir=None  # Don't save data_files.json again
             )
           )
       else:
+        # Initialize multi-epoch training flags for non-GCS datasets
+        config.is_resuming_epoch = False
+        config.all_data_files = None
+        
         data = retry(
           lambda: make_huggingface_dataset(
             name=config.data.dataset_name,
