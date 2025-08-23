@@ -159,13 +159,22 @@ class Trainer:
 
     # Initialize masking scheduler
     scheduler_config = self.config.model.masking_scheduler
+    # Convert mask_block_sizes to proper list format
+    mask_block_sizes = self.config.model.mask_block_sizes
+    if mask_block_sizes is not None:
+      # Convert to list (handles OmegaConf ListConfig)
+      mask_block_sizes = list(mask_block_sizes)
+      # If it's a list of lists, ensure inner lists are also converted
+      if len(mask_block_sizes) > 0 and isinstance(mask_block_sizes[0], (list, type(self.config.model.mask_block_sizes))):
+        mask_block_sizes = [list(inner) for inner in mask_block_sizes]
+    
     self.masking_scheduler = MaskingScheduler(
       schedule_type=scheduler_config.schedule_type,
       max_schedule_steps=scheduler_config.max_schedule_steps,
       prefix_probability=self.config.model.prefix_probability,
       truncate_probability=self.config.model.truncate_probability,
       block_masking_probability=self.config.model.block_masking_probability,
-      mask_block_sizes=self.config.model.mask_block_sizes,
+      mask_block_sizes=mask_block_sizes,
       total_training_steps=self.config.max_steps,
     )
 

@@ -42,13 +42,13 @@ class MaskingScheduler:
 
         # Current step counter
         self.current_step = 0
-        
+
         # Handle mask block sizes scheduling
         self.mask_block_sizes = mask_block_sizes
         self.total_training_steps = total_training_steps
         self.scheduled_block_sizes = False
         self.block_size_boundaries = []
-        
+
         if mask_block_sizes is not None and len(mask_block_sizes) > 0:
             # Check if it's a list of lists (scheduled)
             if isinstance(mask_block_sizes[0], list):
@@ -65,7 +65,8 @@ class MaskingScheduler:
                 ]
                 logger.info(
                     "Scheduled block sizes: %s with boundaries at steps: %s",
-                    mask_block_sizes, self.block_size_boundaries
+                    mask_block_sizes,
+                    self.block_size_boundaries,
                 )
             else:
                 logger.info("Using constant block sizes: %s", mask_block_sizes)
@@ -94,11 +95,11 @@ class MaskingScheduler:
         """Get the current mask block sizes based on the step."""
         if self.mask_block_sizes is None:
             return None
-        
+
         if not self.scheduled_block_sizes:
             # Simple list of block sizes, return as is
             return self.mask_block_sizes
-        
+
         # Scheduled block sizes - determine which phase we're in
         phase = 0
         for i, boundary in enumerate(self.block_size_boundaries):
@@ -108,10 +109,12 @@ class MaskingScheduler:
         else:
             # We're past all boundaries, use the last phase
             phase = len(self.mask_block_sizes) - 1
-        
+
         return self.mask_block_sizes[phase]
 
-    def get_schedule(self, step: Optional[int] = None) -> Dict[str, Union[float, List[int]]]:
+    def get_schedule(
+        self, step: Optional[int] = None
+    ) -> Dict[str, Union[float, List[int]]]:
         """
         Get current masking probabilities and block sizes based on the schedule.
 
@@ -125,29 +128,34 @@ class MaskingScheduler:
             step = self.current_step
 
         result = {}
-        
+
         if self.schedule_type == "constant":
-            result.update({
-                "prefix_probability": self.target_prefix_prob,
-                "truncate_probability": self.target_truncate_prob,
-                "block_masking_probability": self.target_block_masking_prob,
-            })
+            result.update(
+                {
+                    "prefix_probability": self.target_prefix_prob,
+                    "truncate_probability": self.target_truncate_prob,
+                    "block_masking_probability": self.target_block_masking_prob,
+                }
+            )
 
         elif self.schedule_type == "linear":
             # Linear interpolation from 0 to target over max_schedule_steps
             progress = min(1.0, step / self.max_schedule_steps)
 
-            result.update({
-                "prefix_probability": self.target_prefix_prob * progress,
-                "truncate_probability": self.target_truncate_prob * progress,
-                "block_masking_probability": self.target_block_masking_prob * progress,
-            })
-        
+            result.update(
+                {
+                    "prefix_probability": self.target_prefix_prob * progress,
+                    "truncate_probability": self.target_truncate_prob * progress,
+                    "block_masking_probability": self.target_block_masking_prob
+                    * progress,
+                }
+            )
+
         # Add current block sizes
         current_block_sizes = self.get_current_block_sizes(step)
         if current_block_sizes is not None:
             result["mask_block_sizes"] = current_block_sizes
-        
+
         return result
 
     def step(self):
@@ -177,7 +185,7 @@ class MaskingScheduler:
         self.target_truncate_prob = state_dict["target_truncate_prob"]
         self.target_block_masking_prob = state_dict["target_block_masking_prob"]
         self.current_step = state_dict["current_step"]
-        
+
         # Load mask block sizes configuration
         self.mask_block_sizes = state_dict.get("mask_block_sizes")
         self.total_training_steps = state_dict.get("total_training_steps")
