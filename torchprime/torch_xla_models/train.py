@@ -114,6 +114,15 @@ class Trainer:
     minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
     self.minibatch = minibatch
     logger.info(f"Minibatch dataloading: {minibatch}")
+    if not minibatch:
+      # NOTE(haolin): when minibatch is False, this will be the batch size per worker
+      # because
+      # 1. per worker will load the self.global_batch_size samples in a step
+      # 2. we did not use distributed sampler for IterableDataset, instead we split the dataset by workers
+      # so the effective global batch size is the global batch size * number of workers
+      self.effective_global_batch_size = self.global_batch_size * xr.process_count()
+    else:
+      self.effective_global_batch_size = self.global_batch_size
 
     # TODO(https://github.com/AI-Hypercomputer/torchprime/issues/66): Test this for multislice
     self.input_sharding_spec = xs.ShardingSpec(
@@ -427,6 +436,7 @@ class Trainer:
     logger.info("Starting training")
     logger.info(f"    Max step: {max_step}")
     logger.info(f"    Global batch size: {self.global_batch_size}")
+    logger.info(f"    Effective global batch size: {self.effective_global_batch_size}")
     if hasattr(self, 'start_step') and self.start_step > 0:
       logger.info(f"    Resuming from step: {self.start_step}")
     if is_main_process():
@@ -518,7 +528,7 @@ class Trainer:
                 "train/epoch": epoch,
                 "train/step": step,
                 "train/lr": self.lr_scheduler.get_last_lr()[0],
-                "train/total_tokens": self.config.data.block_size * (step + 1) * self.global_batch_size,
+                "train/total_tokens": self.config.data.block_size * (step + 1) * self.effective_global_batch_size,
               },
               step=step  # Explicitly set the wandb global step
             )
