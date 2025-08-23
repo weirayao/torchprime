@@ -172,7 +172,10 @@ class Trainer:
     # Initialize checkpoint manager
     # Use GCS for checkpoints with proper path handling
     self.checkpoint_load_dir = self.config.checkpoint_load_dir # NOTE: config.checkpoint_load_dir always used for loading checkpoints
-    self.checkpoint_load_manager = CheckpointManager(path=self.checkpoint_load_dir, save_interval=config.save_steps)
+    if self.checkpoint_load_dir is not None:
+      self.checkpoint_load_manager = CheckpointManager(path=self.checkpoint_load_dir, save_interval=config.save_steps)
+    else:
+      self.checkpoint_load_manager = None
     if self.config.checkpoint_save_dir is not None:
       self.checkpoint_save_dir = self.config.checkpoint_save_dir
       self.checkpoint_save_manager = CheckpointManager(path=self.checkpoint_save_dir, save_interval=self.config.save_steps)
