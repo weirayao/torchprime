@@ -728,12 +728,12 @@ def main(config: DictConfig):
       dataset_name = config.data.dataset_name
       gcs_prefix = "gs://sfr-text-diffusion-model-research/"
       if dataset_name.startswith(gcs_prefix):
-        checkpoint_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_load_dir.split(gcs_prefix)[1])
+        checkpoint_save_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_save_dir.split(gcs_prefix)[1])
         dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
         if not config.resume_from_checkpoint:
           logger.info(f"Training from scratch, loading all data files from {dataset_name}")
           data = retry(
-            lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_dir)
+            lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_save_dir)
           )
           # No additional steps to skip when starting fresh
           # Store dataset info for multi-epoch training
@@ -757,7 +757,8 @@ def main(config: DictConfig):
           config.steps_to_skip = steps_to_skip
 
           # Read data files from checkpoint directory
-          data_files_path = os.path.join(checkpoint_dir, "data_files.json")
+          checkpoint_load_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_load_dir.split(gcs_prefix)[1])
+          data_files_path = os.path.join(checkpoint_load_dir, "data_files.json")
 
           with open(data_files_path, "r") as f:
             all_data_files = json.load(f)
