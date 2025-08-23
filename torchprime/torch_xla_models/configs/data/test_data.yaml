@@ -5,6 +5,7 @@ block_size: 8192
 cache_dir: null
 # Huggingface dataset name, will OVERRIDE gcs_dataset_names if provided
 dataset_name: gs://sfr-text-diffusion-model-research/data/test_data
+samples_per_file: 400
 dataset_config_name: null
 # GCS dataset names and mixing weights
 gcs_dataset_names: null
