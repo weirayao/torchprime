@@ -206,7 +206,7 @@ def load_hf_model(model_config):
   hf_model = hf_model_class.from_pretrained(
     model_config.tokenizer_name,
     torch_dtype=torch.bfloat16,
-    device_map="auto",
+    device_map="cpu",
   )
   return hf_model
 
