@@ -764,8 +764,13 @@ def main(config: DictConfig):
         else:
           logger.info(f"Resuming from checkpoint {config.checkpoint_load_step}, will recompute the data files to skip")
           # Calculate which files to skip based on checkpoint step and batch size
-          samples_per_file = 5000
-          total_samples_processed = config.checkpoint_load_step * config.global_batch_size
+          samples_per_file = config.data.samples_per_file if hasattr(config.data, 'samples_per_file') and config.data.samples_per_file is not None else 5000
+          minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
+          if minibatch:
+            effective_global_batch_size = config.global_batch_size
+          else:
+            effective_global_batch_size = config.global_batch_size * xr.process_count()
+          total_samples_processed = config.checkpoint_load_step * effective_global_batch_size
           files_to_skip, num_samples_processed_in_current_file = divmod(total_samples_processed, samples_per_file)
 
           logger.info(f"Resuming from checkpoint step {config.checkpoint_load_step}")
@@ -774,7 +779,7 @@ def main(config: DictConfig):
           logger.info(f"Remaining samples in current file: {num_samples_processed_in_current_file}")
 
           # Calculate additional steps to skip within the current file
-          steps_to_skip = num_samples_processed_in_current_file // config.global_batch_size
+          steps_to_skip = num_samples_processed_in_current_file // effective_global_batch_size
           logger.info(f"Additional steps to skip in current file: {steps_to_skip}")
           config.steps_to_skip = steps_to_skip
 
