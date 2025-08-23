@@ -456,7 +456,7 @@ class Qwen2Model(nn.Module): # Shiyu: Completed
 
 class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__()
         self.config = config
         self.model = Qwen2Model(config)
         self.vocab_size = config.vocab_size
@@ -465,16 +465,18 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
 
         # # Initialize weights and apply final processing
         # self.post_init()
+        self.apply(self._init_weights)
+        
     def _init_weights(self, module):
         std = getattr(self.config, "initializer_range", 0.02)
         if isinstance(module, nn.Linear):
             module.weight.data.normal_(mean=0.0, std=std)
-        if module.bias is not None:
-            module.bias.data.zero_()
+            if module.bias is not None:
+                module.bias.data.zero_()
         elif isinstance(module, nn.Embedding):
             module.weight.data.normal_(mean=0.0, std=std)
-        if module.padding_idx is not None:
-            module.weight.data[module.padding_idx].zero_()
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
 
     def forward(
         self,
