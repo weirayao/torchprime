@@ -1,9 +1,12 @@
 import re
+import logging
 from collections.abc import Callable
 from copy import copy
 from typing import Optional
 
 import torch.nn
+
+logger = logging.getLogger(__name__)
 
 ShardWeightFn = Callable[[torch.Tensor, str], torch.Tensor]
 """
@@ -135,6 +138,7 @@ def shard_model_from_config(
   def shard_weight(param, name):
     name = _process_sharding_name(name)
     spec = config.get(name)
+    logger.info(f"sharding param {param} with name {name} and spec {spec}")
     if spec is not None:
       seen_params.add(name)
       return shard_param(param, tuple(spec))
@@ -215,6 +219,7 @@ def shard_torch_xla_model_from_config(
   def shard_activation(tensor, spec: tuple[str, ...]):
     the_mesh = mesh if mesh is not None else xs.get_global_mesh()
     assert the_mesh is not None, "No mesh found"
+    logger.info(f"sharding activation {tensor} with spec {spec} and mesh {the_mesh}")
     return xs.mark_sharding_with_gradients(tensor, the_mesh, spec)
 
   # TODO(https://github.com/pytorch/xla/issues/8809): If we shard parameters with
@@ -222,6 +227,7 @@ def shard_torch_xla_model_from_config(
   # living much longer than needed.
   def shard_param(tensor, spec: tuple[str, ...]):
     the_mesh = mesh if mesh is not None else xs.get_global_mesh()
+    logger.info(f"sharding param {tensor} with spec {spec} and mesh {the_mesh}")
     assert the_mesh is not None, "No mesh found"
     return xs.mark_sharding(tensor, the_mesh, spec).global_tensor
 

@@ -147,7 +147,8 @@ class Trainer:
     model = self._add_optimization_barrier_model(model)
     self.model = model
     # self.hf_model = load_hf_model(self.config.model)
-
+    logger.info(f"model.state_dict().keys() after sharding and trainer init: {model.state_dict().keys()}")
+    logger.info(f"model.state_dict() after sharding and trainer init: {model.state_dict()}")
     # Set up optimizers
     self.optimizer = Adafactor(
       params=model.parameters(),
@@ -496,8 +497,8 @@ class Trainer:
 
           # Recreate dataloader with the full dataset
           train_loader = self._get_train_dataloader()
-          xm.wait_device_ops()
           torch_xla.sync()
+          xm.wait_device_ops()
 
         train_iterator = iter(train_loader)
         batch = next(train_iterator)
@@ -681,6 +682,9 @@ def main(config: DictConfig):
   load_from_checkpoint = config.checkpoint_load_dir is not None and config.checkpoint_load_step is not None
   with set_default_dtype(torch.bfloat16), torch_xla.device():
     model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
+  
+  logger.info(f"model.state_dict().keys() after loading: {model.state_dict().keys()}")
+  logger.info(f"model.state_dict() after loading: {model.state_dict()}")
 
   n_params = sum([p.numel() for p in model.parameters()])
   if is_main_process():
