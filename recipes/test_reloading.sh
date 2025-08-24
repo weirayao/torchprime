@@ -13,11 +13,11 @@ python torchprime/torch_xla_models/train.py \
     model.masking_scheduler.max_schedule_steps=50 \
     optimizer.learning_rate=2e-4 \
     global_batch_size=32 \
-    max_steps=100 \
-    checkpoint_load_dir=gs://sfr-text-diffusion-model-research/checkpoints/test/ \
+    max_steps=30 \
+    checkpoint_load_dir=gs://sfr-text-diffusion-model-research/checkpoints/test_state_dict_2d/ \
     checkpoint_load_step=20 \
     resume_from_checkpoint=true \
-    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/test_reloading/ \
+    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/test_state_dict_2d_resave/ \
     save_steps=10 \
     logging_steps=1 \
     ici_mesh.fsdp=4 \
