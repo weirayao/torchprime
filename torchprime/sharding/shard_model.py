@@ -219,7 +219,6 @@ def shard_torch_xla_model_from_config(
   def shard_activation(tensor, spec: tuple[str, ...]):
     the_mesh = mesh if mesh is not None else xs.get_global_mesh()
     assert the_mesh is not None, "No mesh found"
-    logger.info(f"sharding activation {tensor} with spec {spec} and mesh {the_mesh}")
     return xs.mark_sharding_with_gradients(tensor, the_mesh, spec)
 
   # TODO(https://github.com/pytorch/xla/issues/8809): If we shard parameters with

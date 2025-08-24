@@ -550,6 +550,7 @@ class Trainer:
           "step": step,
         }
         try:
+          logger.info(f"model.state_dict().keys() before saving: {self.model.state_dict().keys()}")
           self.checkpoint_save_manager.save(step, state_dict, force=True)
           logger.info(f"Checkpoint saved at step {step} to {self.checkpoint_save_dir}")
         except Exception as e:
