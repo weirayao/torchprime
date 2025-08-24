@@ -496,8 +496,8 @@ class Trainer:
 
           # Recreate dataloader with the full dataset
           train_loader = self._get_train_dataloader()
-          torch_xla.sync()
           xm.wait_device_ops()
+          torch_xla.sync()
 
         train_iterator = iter(train_loader)
         batch = next(train_iterator)
@@ -636,8 +636,9 @@ class Trainer:
     else:
       # Pre-training mode (original behavior)
       _logits, loss = self.model(
-        **batch,
-        masking_schedule=masking_schedule
+        input_ids=batch["input_ids"],
+        labels=batch["input_ids"],
+        # masking_schedule=masking_schedule
       )
     loss.backward()
     self.optimizer.step()
