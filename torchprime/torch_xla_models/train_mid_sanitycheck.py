@@ -590,9 +590,10 @@ def main(config: DictConfig):
   load_from_checkpoint = hasattr(config, 'resume_from_checkpoint') and config.resume_from_checkpoint is not None
   with set_default_dtype(torch.bfloat16), torch_xla.device():
     model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
-    inputs = torch.ones(1, 1536).to(torch_xla.device())
-    output = model.lm_head(inputs)
-    logger.info(f"Output for sanity check: {output[:, :10]}")
+    model = model.eval()
+    inputs = torch.ones([1, 10], dtype=torch.int32).to(torch_xla.device())
+    output, _ = model(inputs)
+    logger.info(f"Output for sanity check: {output}")
   n_params = sum([p.numel() for p in model.parameters()])
   if is_main_process():
     if load_from_checkpoint:
