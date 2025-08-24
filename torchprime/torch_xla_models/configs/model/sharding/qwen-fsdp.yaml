@@ -7,9 +7,9 @@ model.layers.*.self_attn.o_proj.weight: [fsdp, tensor]
 model.layers.*.mlp.gate_proj.weight: [fsdp, tensor]
 model.layers.*.mlp.up_proj.weight: [fsdp, tensor]
 model.layers.*.mlp.down_proj.weight: [tensor, fsdp]
-model.layers.*.input_layernorm.weight: [fsdp, null]
-model.layers.*.post_attention_layernorm.weight: [fsdp, null]
-model.norm.weight: [fsdp, null]
+model.layers.*.input_layernorm.weight: [fsdp]
+model.layers.*.post_attention_layernorm.weight: [fsdp]
+model.norm.weight: [fsdp]
 lm_head.weight: [fsdp, tensor]
 
 # Activations

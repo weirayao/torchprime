@@ -1,0 +1,22 @@
+export LIBTPU_INIT_ARGS="--xla_tpu_scoped_vmem_limit_kib=98304 --xla_enable_async_all_gather=true --xla_tpu_overlap_compute_collective_tc=true --xla_tpu_enable_async_collective_fusion_multiple_steps=true --xla_tpu_enable_async_collective_fusion=true --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true"
+export XLA_IR_DEBUG=1
+export XLA_HLO_DEBUG=1
+python torchprime/torch_xla_models/train.py \
+    training_mode=pretrain \
+    data=test_data \
+    model=llama-3-8b \
+    optimizer.learning_rate=2e-4 \
+    global_batch_size=32 \
+    max_steps=30 \
+    checkpoint_load_dir=gs://sfr-text-diffusion-model-research/checkpoints/test_state_dict/ \
+    checkpoint_load_step=null \
+    resume_from_checkpoint=false \
+    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/test_state_dict/ \
+    save_steps=10 \
+    logging_steps=1 \
+    ici_mesh.fsdp=4 \
+    ici_mesh.tensor=2 \
+    ici_mesh.data=1 \
+    ici_mesh.expert=1 \
+    model/remat=llama-scan
+# fsdp * tensor * data * expert == num_devices
