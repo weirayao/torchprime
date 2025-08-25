@@ -31,6 +31,7 @@ HF_MODEL_CLASS_MAPPING = {
   "llama.LlamaForCausalLM": "LlamaForCausalLM",
   "flex.LlamaForCausalLM": "LlamaForCausalLM", 
   "flex.Qwen3ForCausalLM": "Qwen3ForCausalLM",
+  "flex.Qwen2ForCausalLM": "Qwen2ForCausalLM",
   "mixtral.MixtralForCausalLM": "MixtralForCausalLM",
   "llama4.Llama4TextForCausalLM": "Llama4ForCausalLM",
   "qwen.Qwen3ForCausalLM": "Qwen3ForCausalLM",
