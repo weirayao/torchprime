@@ -7,6 +7,7 @@ from transformers.activations import ACT2FN
 from transformers.generation import GenerationMixin
 from transformers.generation.configuration_utils import GenerationConfig
 from transformers.modeling_utils import PreTrainedModel
+from transformers.utils import TransformersKwargs, auto_docstring
 from omegaconf import DictConfig
 from torchprime.torch_xla_models.flex.attention import AttentionModule
 from torchprime.layers.sequential import HomogeneousSequential
