@@ -147,7 +147,7 @@ class Trainer:
     model = self._add_optimization_barrier_model(model)
     self.model = model
     # self.hf_model = load_hf_model(self.config.model)
-    logger.info(f"model.state_dict().keys() after sharding and trainer init: {model.state_dict().keys()}")
+    # logger.info(f"model.state_dict().keys() after sharding and trainer init: {model.state_dict().keys()}")
     # Set up optimizers
     self.optimizer = Adafactor(
       params=model.parameters(),
@@ -623,7 +623,7 @@ class Trainer:
   def train_step(self, batch):
     # Get current masking probabilities from scheduler
     masking_schedule = self.masking_scheduler.get_schedule()
-    logger.info(f"step: {self.masking_scheduler.current_step}, masking_schedule: {masking_schedule}")
+    # logger.info(f"step: {self.masking_scheduler.current_step}, masking_schedule: {masking_schedule}")
     if self.config.training_mode == "sft":
       # For SFT, src_mask should already be in the batch from data collator
       _logits, loss = self.model(

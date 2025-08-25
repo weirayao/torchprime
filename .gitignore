@@ -55,6 +55,9 @@ htmlcov/
 # Ignore pytest cache
 .pytest_cache/
 
+# Ignore sanity check results
+sanity_check/
+
 # Ignore ruff cache
 .ruff_cache/
 

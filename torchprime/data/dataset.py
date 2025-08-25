@@ -74,6 +74,7 @@ def make_gcs_pretokenized_dataset(
     data_files = glob(f"{path}/**/*.parquet", recursive=True)
     random.shuffle(data_files)
   logger.info(f"data_files: {data_files}")
+  logger.info(f"number of data_files: {len(data_files)}")
 
   data = load_dataset(
     "parquet",
@@ -86,6 +87,11 @@ def make_gcs_pretokenized_dataset(
     os.makedirs(checkpoint_dir, exist_ok=True)
     with open(f"{checkpoint_dir}/data_files.json", "w") as f:
       json.dump(data_files, f, indent=4)
+  def no_eos(example):
+    # assume tokenized data is under "input_ids"
+    return 151645 not in example["input_ids"]
+
+  data = data.filter(no_eos)
   data = data.shuffle(seed=seed, buffer_size=32768)
   return data
 
