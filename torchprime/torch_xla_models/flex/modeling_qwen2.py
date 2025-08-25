@@ -6,8 +6,6 @@ from torch import nn
 from transformers.activations import ACT2FN
 from transformers.generation import GenerationMixin
 from transformers.generation.configuration_utils import GenerationConfig
-from transformers.modeling_utils import PreTrainedModel
-from transformers.utils import auto_docstring
 from omegaconf import DictConfig
 from torchprime.torch_xla_models.flex.attention import AttentionModule
 from torchprime.layers.sequential import HomogeneousSequential
@@ -175,24 +173,6 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
         return hidden_states
     hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
-
-@auto_docstring
-class Qwen2PreTrainedModel(PreTrainedModel):
-    config: DictConfig
-    base_model_prefix = "model"
-    supports_gradient_checkpointing = True
-    _no_split_modules = ["Qwen2DecoderLayer"]
-    _skip_keys_device_placement = ["past_key_values"]
-    _supports_flash_attn = True
-    _supports_sdpa = True
-    _supports_flex_attn = True
-
-    _can_compile_fullgraph = True
-    _supports_attention_backend = True
-    _can_record_outputs = {
-        "hidden_states": Qwen2DecoderLayer,
-        "attentions": Qwen2Attention,
-    }
 
 
 class Qwen2Attention(nn.Module): # Shiyu: Completed
@@ -439,7 +419,7 @@ class Qwen2Model(nn.Module): # Shiyu: Completed
         
         return hidden_states
 
-class Qwen2ForCausalLM(Qwen2PreTrainedModel, GenerationMixin): # Shiyu: Completed
+class Qwen2ForCausalLM(nn.Module, GenerationMixin): # Shiyu: Completed
     def __init__(self, config):
         super().__init__()
         self.config = config
