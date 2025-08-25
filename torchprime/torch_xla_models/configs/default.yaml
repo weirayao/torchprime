@@ -36,7 +36,7 @@ steps_to_skip: 0 # Number of steps to skip when resuming from checkpoint
 all_data_files: null
 dataset_name: null
 is_resuming_epoch: false
-is_encoder_decoder: false
+
 
 checkpoint_dir_for_midtrain: checkpoints/
 resume_for_midtrain: null
@@ -76,6 +76,7 @@ dcn_mesh:
 model:
   # prefix masking probability - with this probability, randomly sample a prefix length that won't be maskable
   prefix_probability: 0
+  is_encoder_decoder: false
   # truncate probability - with this probability, truncate non-prefixed rows at random position and fill with pad token
   truncate_probability: 0
   # block masking probability - with this probability, randomly sample a block size and mask with it
