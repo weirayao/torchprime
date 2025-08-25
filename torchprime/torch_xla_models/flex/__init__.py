@@ -2,4 +2,4 @@
 from .modeling_qwen import Qwen3ForCausalLM
 
 
-__all__ = ["Qwen3ForCausalLM"]
+__all__ = ["Qwen3ForCausalLM", "Qwen2ForCausalLM"]

@@ -4,7 +4,7 @@ export XLA_HLO_DEBUG=1
 python torchprime/torch_xla_models/train.py \
     training_mode=pretrain \
     data=test_data \
-    model=flex-qwen-1b \
+    model=flex-qwen2-1b \
     model.block_masking_probability=1 \
     model.mask_block_sizes=[[2,4,8],[16,32,64]] \
     model.truncate_probability=0.5 \
@@ -24,5 +24,5 @@ python torchprime/torch_xla_models/train.py \
     ici_mesh.tensor=2 \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \
-    model/remat=qwen-scan
+    model/remat=qwen2-scan
 # fsdp * tensor * data * expert == num_devices
