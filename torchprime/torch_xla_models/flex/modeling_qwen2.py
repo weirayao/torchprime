@@ -423,7 +423,7 @@ class Qwen2ForCausalLM(nn.Module, GenerationMixin): # Shiyu: Completed
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.config.is_encoder_decoder = False
+        # self.config.is_encoder_decoder = False
         self.model = Qwen2Model(config)
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)

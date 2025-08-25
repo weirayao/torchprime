@@ -36,6 +36,7 @@ steps_to_skip: 0 # Number of steps to skip when resuming from checkpoint
 all_data_files: null
 dataset_name: null
 is_resuming_epoch: false
+is_encoder_decoder: false
 
 checkpoint_dir_for_midtrain: checkpoints/
 resume_for_midtrain: null
