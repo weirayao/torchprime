@@ -438,7 +438,7 @@ class Qwen2Model(nn.Module): # Shiyu: Completed
         
         return hidden_states
 
-class Qwen2ForCausalLM(nn.Module, GenerationMixin): # Shiyu: Completed
+class Qwen2ForCausalLM(Qwen2PreTrainedModel, GenerationMixin): # Shiyu: Completed
     def __init__(self, config):
         super().__init__()
         self.config = config
