@@ -118,7 +118,7 @@ class AttentionModule(nn.Module):
           query_states,
           key_states,
           value_states,
-          causal=True, # weiran: causal=False for bi-directional attention
+          causal=False, # weiran: causal=False for bi-directional attention
           partition_spec=self.partition_spec,
         )
       case "default" | None:
@@ -191,7 +191,7 @@ class AttentionModule(nn.Module):
               key_states,
               value_states,
               dropout_p=self.config.attention_dropout if self.training else 0.0,
-              is_causal=True,  # weiran: causal=False for bi-directional attention
+              is_causal=False,  # weiran: causal=False for bi-directional attention
             )
         except (RuntimeError, NotImplementedError):
           # Flash attention not available, use default backend
@@ -201,7 +201,7 @@ class AttentionModule(nn.Module):
               key_states,
               value_states,
               dropout_p=self.config.attention_dropout if self.training else 0.0,
-              is_causal=True,  # weiran: causal=False for bi-directional attention
+              is_causal=False,  # weiran: causal=False for bi-directional attention
             )
 
       case _:
@@ -212,7 +212,7 @@ class AttentionModule(nn.Module):
             key_states,
             value_states,
             dropout_p=self.config.attention_dropout if self.training else 0.0,
-            is_causal=True,  # weiran: causal=False for bi-directional attention
+            is_causal=False,  # weiran: causal=False for bi-directional attention
           )
 
     if attn_output.size() != (bsz, num_heads, q_len, head_dim):
