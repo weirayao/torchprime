@@ -1,0 +1,130 @@
+global_batch_size: 32
+logging_steps: 1
+max_steps: 30
+training_mode: pretrain
+seed: 42
+profile_step: -1
+profile_dir: profile
+profile_duration: 100000
+output_dir: outputs
+checkpoint_load_dir: null
+checkpoint_load_step: null
+resume_from_checkpoint: false
+checkpoint_save_dir: gs://sfr-text-diffusion-model-research/checkpoints/pretrain_2nd_run/
+save_steps: 10
+steps_to_skip: 0
+all_data_files: null
+dataset_name: null
+is_resuming_epoch: false
+checkpoint_dir_for_midtrain: checkpoints/
+resume_for_midtrain: null
+continue_for_masked_midtrain: null
+optimizer:
+  learning_rate: 0.0002
+lr_scheduler:
+  type: linear
+  warmup_steps: 150
+ici_mesh:
+  data: 1
+  fsdp: 4
+  tensor: 2
+  expert: 1
+dcn_mesh:
+  data: 1
+  fsdp: 1
+  tensor: 1
+  expert: 1
+model:
+  prefix_probability: 0.5
+  is_encoder_decoder: false
+  truncate_probability: 0.5
+  block_masking_probability: 1
+  masking_scheduler:
+    schedule_type: linear
+    max_schedule_steps: 50
+  mask_block_sizes:
+  - - 2
+    - 4
+    - 8
+  - - 16
+    - 32
+    - 64
+  remat:
+    activation_checkpoint_layers:
+    - Qwen2DecoderLayer
+    scan_layers: model.layers
+    offload_tensors: []
+    optimization_barrier_layers:
+    - Qwen2DecoderLayer
+  model_class: flex.Qwen2ForCausalLM
+  attention_bias: false
+  attention_dropout: 0.0
+  bos_token_id: 151643
+  eos_token_id: 151643
+  pad_token_id: 151643
+  mask_token_id: 151665
+  tokenizer_name: Qwen/Qwen2.5-Coder-1.5B
+  head_dim: 128
+  hidden_act: silu
+  hidden_size: 1536
+  initializer_range: 0.02
+  intermediate_size: 8960
+  max_position_embeddings: 32768
+  max_window_layers: 28
+  num_attention_heads: 12
+  num_hidden_layers: 28
+  num_key_value_heads: 2
+  rms_norm_eps: 1.0e-06
+  rope_scaling: null
+  rope_theta: 1000000
+  sliding_window: 32768
+  tie_word_embeddings: true
+  torch_dtype: bfloat16
+  use_cache: true
+  use_sliding_window: false
+  vocab_size: 151936
+  attention_kernel: flash_attention
+  sharding:
+    model.embed_tokens.weight:
+    - fsdp
+    - tensor
+    model.layers.*.self_attn.q_proj.weight:
+    - fsdp
+    - tensor
+    model.layers.*.self_attn.k_proj.weight:
+    - tensor
+    - fsdp
+    model.layers.*.self_attn.v_proj.weight:
+    - tensor
+    - fsdp
+    model.layers.*.self_attn.o_proj.weight:
+    - fsdp
+    - tensor
+    model.layers.*.mlp.gate_proj.weight:
+    - fsdp
+    - tensor
+    model.layers.*.mlp.up_proj.weight:
+    - fsdp
+    - tensor
+    model.layers.*.mlp.down_proj.weight:
+    - tensor
+    - fsdp
+    lm_head.weight:
+    - fsdp
+    - tensor
+    model.layers.*:
+    - fsdp
+    - null
+    - tensor
+    lm_head:
+    - fsdp
+    - null
+    - tensor
+data:
+  block_size: 8192
+  cache_dir: null
+  dataset_name: gs://sfr-text-diffusion-model-research/data/test_data
+  samples_per_file: 400
+  dataset_config_name: null
+  gcs_dataset_names: null
+  weights: null
