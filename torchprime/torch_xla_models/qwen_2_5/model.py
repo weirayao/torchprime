@@ -4,7 +4,6 @@ import torch
 from torch import nn
 
 from transformers.activations import ACT2FN
-from transformers.generation import GenerationMixin
 from omegaconf import DictConfig
 from torchprime.torch_xla_models.flex.attention import AttentionModule
 from torchprime.layers.sequential import HomogeneousSequential
@@ -417,7 +416,7 @@ class Qwen2Model(nn.Module): # Shiyu: Completed
         
         return hidden_states
 
-class Qwen2ForCausalLM(nn.Module, GenerationMixin): # Shiyu: Completed
+class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
     def __init__(self, config):
         super().__init__()
         self.config = config

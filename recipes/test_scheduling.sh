@@ -14,10 +14,10 @@ python torchprime/torch_xla_models/train.py \
     optimizer.learning_rate=2e-4 \
     global_batch_size=32 \
     max_steps=30 \
-    checkpoint_load_dir=gs://sfr-text-diffusion-model-research/checkpoints/test_state_dict_2d/ \
+    checkpoint_load_dir=null \
     checkpoint_load_step=null \
     resume_from_checkpoint=false \
-    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/test_state_dict_2d/ \
+    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_2nd_run/ \
     save_steps=10 \
     logging_steps=1 \
     ici_mesh.fsdp=4 \

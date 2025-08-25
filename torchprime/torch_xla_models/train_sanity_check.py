@@ -682,7 +682,19 @@ def main(config: DictConfig):
   load_from_checkpoint = config.checkpoint_load_dir is not None and config.checkpoint_load_step is not None
   with set_default_dtype(torch.bfloat16), torch_xla.device():
     model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
-    
+  model = model.eval()
+  messages = [
+    {"role": "user", "content": "Write me a python code to print 'Hello, World!' and loop each character in the string."},
+  ]
+  inputs = tokenizer.apply_chat_template(
+    messages,
+    add_generation_prompt=True,
+    tokenize=True,
+    return_dict=True,
+    return_tensors="pt",
+  )
+  outputs = model.generate(**inputs, max_new_tokens=100)
+  logger.info(tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:]))
   logger.info(f"model.state_dict().keys() after loading: {model.state_dict().keys()}")
 
   n_params = sum([p.numel() for p in model.parameters()])
