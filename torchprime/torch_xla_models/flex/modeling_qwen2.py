@@ -447,9 +447,10 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         attention_mask: torch.FloatTensor | None = None,
         src_mask: torch.BoolTensor | None = None,
         training_mode: str = "pretrain",
+        **kwargs,
     ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:
         if not self.training:
-            model_output = self.model(input_ids=input_ids, attention_mask=attention_mask)   
+            model_output = self.model(input_ids=input_ids, attention_mask=attention_mask)  
             hidden_states = model_output
             logits = self.lm_head(hidden_states) # NOTE: we shift logits in generate()
             # logits = logits.float()[..., :-1, :].contiguous() # NOTE: we shift logits in inference_utils at inference time
@@ -462,13 +463,18 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         mask_token_id = self.mask_token_id
         loss_func = nn.CrossEntropyLoss(reduction="none")
         batch_size, seq_len = input_ids.shape     # input_ids: [batch_size, seq_len]
+        masking_schedule = kwargs.get("masking_schedule", None)
 
         if src_mask is not None: # SFT
             maskable_mask = ~src_mask
         else: # pretrain or midtrain
             maskable_mask = torch.ones_like(input_ids, dtype=torch.bool, device=input_ids.device)
-            prefix_probability = getattr(self.config, "prefix_probability", 0)
-            truncate_probability = getattr(self.config, "truncate_probability", 0)
+            if masking_schedule is not None:
+                prefix_probability = masking_schedule.get("prefix_probability", 0)
+                truncate_probability = masking_schedule.get("truncate_probability", 0)
+            else:
+                prefix_probability = getattr(self.config, "prefix_probability", 0)
+                truncate_probability = getattr(self.config, "truncate_probability", 0)
             # Generate random decisions for all batch items
             apply_prefix = torch.rand(batch_size, device=input_ids.device) < prefix_probability
             # Only apply truncation to rows that are NOT prefixed
@@ -484,9 +490,17 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         sigma = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
         dsigma = torch.reciprocal(sigma)
         # Sample mask block size
-        mask_block_sizes = getattr(self.config, "mask_block_sizes", None)
-        block_masking_probability = getattr(self.config, "block_masking_probability", 0)
-        if block_masking_probability > 0 and mask_block_sizes is not None:
+        # Use mask_block_sizes from masking_probs if provided, otherwise fall back to config
+        if masking_schedule is not None and "mask_block_sizes" in masking_schedule:
+            mask_block_sizes = masking_schedule["mask_block_sizes"]
+        else:
+            mask_block_sizes = getattr(self.config, "mask_block_sizes", None)
+        # Use masking_config if provided, otherwise fall back to config values
+        if masking_schedule is not None:
+            block_masking_probability = masking_schedule.get("block_masking_probability", 0)
+        else:
+            block_masking_probability = getattr(self.config, "block_masking_probability", 0)
+        if block_masking_probability > 0 and mask_block_sizes is not None and len(mask_block_sizes) > 0:
             mask_block_size = mask_block_sizes[torch.randint(0, len(mask_block_sizes), (1,)).item()]
         else:
             mask_block_size = 1

@@ -138,7 +138,7 @@ def shard_model_from_config(
   def shard_weight(param, name):
     name = _process_sharding_name(name)
     spec = config.get(name)
-    logger.info(f"sharding param {param} with name {name} and spec {spec}")
+    # logger.info(f"sharding param {param} with name {name} and spec {spec}")
     if spec is not None:
       seen_params.add(name)
       return shard_param(param, tuple(spec))
@@ -226,7 +226,7 @@ def shard_torch_xla_model_from_config(
   # living much longer than needed.
   def shard_param(tensor, spec: tuple[str, ...]):
     the_mesh = mesh if mesh is not None else xs.get_global_mesh()
-    logger.info(f"sharding param {tensor} with spec {spec} and mesh {the_mesh}")
+    # logger.info(f"sharding param {tensor} with spec {spec} and mesh {the_mesh}")
     assert the_mesh is not None, "No mesh found"
     return xs.mark_sharding(tensor, the_mesh, spec).global_tensor
 
