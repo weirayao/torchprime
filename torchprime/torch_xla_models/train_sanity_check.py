@@ -693,7 +693,7 @@ def main(config: DictConfig):
     return_dict=True,
     return_tensors="pt",
   )
-  outputs = model.generate(**inputs)
+  outputs = model.generate(**inputs, max_new_tokens=100)
   logger.info(tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:]))
   logger.info(f"model.state_dict().keys() after loading: {model.state_dict().keys()}")
 
