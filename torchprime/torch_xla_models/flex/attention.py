@@ -118,7 +118,7 @@ class AttentionModule(nn.Module):
           query_states,
           key_states,
           value_states,
-          causal=False, # weiran: causal=False for bi-directional attention
+          causal=True, # weiran: causal=False for bi-directional attention
           partition_spec=self.partition_spec,
         )
       case "default" | None:
