@@ -1,7 +1,7 @@
 export LIBTPU_INIT_ARGS="--xla_tpu_scoped_vmem_limit_kib=98304 --xla_enable_async_all_gather=true --xla_tpu_overlap_compute_collective_tc=true --xla_tpu_enable_async_collective_fusion_multiple_steps=true --xla_tpu_enable_async_collective_fusion=true --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true"
 export XLA_IR_DEBUG=1
 export XLA_HLO_DEBUG=1
-python torchprime/torch_xla_models/train.py \
+python torchprime/torch_xla_models/train_sanity_check.py \
     training_mode=pretrain \
     data=flex_v2 \
     model=flex-qwen2-1b \
