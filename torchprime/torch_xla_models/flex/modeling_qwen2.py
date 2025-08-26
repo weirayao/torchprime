@@ -4,6 +4,7 @@ import torch
 from torch import nn
 
 from transformers.activations import ACT2FN
+from transformers.generation.configuration_utils import GenerationConfig
 from omegaconf import DictConfig
 from torchprime.torch_xla_models.flex.attention import AttentionModule
 from torchprime.layers.sequential import HomogeneousSequential
@@ -171,6 +172,7 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
         return hidden_states
     hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
+
 
 class Qwen2Attention(nn.Module): # Shiyu: Completed
     """Multi-headed attention from 'Attention Is All You Need' paper"""
@@ -424,6 +426,7 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.mask_token_id = config.mask_token_id
+        self.generation_config = GenerationConfig(max_new_tokens=100)
 
         # # Initialize weights and apply final processing
         # self.post_init()
