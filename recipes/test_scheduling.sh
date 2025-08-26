@@ -1,9 +1,11 @@
 export LIBTPU_INIT_ARGS="--xla_tpu_scoped_vmem_limit_kib=98304 --xla_enable_async_all_gather=true --xla_tpu_overlap_compute_collective_tc=true --xla_tpu_enable_async_collective_fusion_multiple_steps=true --xla_tpu_enable_async_collective_fusion=true --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true"
 export XLA_IR_DEBUG=1
 export XLA_HLO_DEBUG=1
+export PT_XLA_DEBUG_LEVEL=2
+export HYDRA_FULL_ERROR=1
 python torchprime/torch_xla_models/train.py \
     training_mode=pretrain \
-    data=flex_v2 \
+    data=test_data \
     model=flex-qwen2-1b \
     model.block_masking_probability=0.05 \
     model.mask_block_sizes=[[2,4,8],[4,8,16],[8,16,32],[16,32,64]] \
@@ -21,7 +23,7 @@ python torchprime/torch_xla_models/train.py \
     checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen2_1_5b/ \
     save_steps=500 \
     logging_steps=1 \
-    ici_mesh.fsdp=4 \
+    ici_mesh.fsdp=128 \
     ici_mesh.tensor=2 \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \
