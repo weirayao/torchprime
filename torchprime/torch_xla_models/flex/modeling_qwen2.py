@@ -229,9 +229,9 @@ class Qwen2Attention(nn.Module): # Shiyu: Completed
 
         attn_output = self.attention_block(
             query_states, key_states, value_states, attention_mask
-        )
+        ) # bsz, num_heads, q_len, head_dim = 64, 12, 8192, 128
         attn_output = attn_output.transpose(1, 2).contiguous()
-        attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
+        attn_output = attn_output.reshape(bsz, q_len, self.hidden_size) # 64, 8192, 1536
         attn_output = self.o_proj(attn_output)
         return attn_output
 
