@@ -87,12 +87,27 @@ def make_gcs_pretokenized_dataset(
     os.makedirs(checkpoint_dir, exist_ok=True)
     with open(f"{checkpoint_dir}/data_files.json", "w") as f:
       json.dump(data_files, f, indent=4)
+
   def no_eos(example):
     # assume tokenized data is under "input_ids"
     return 151645 not in example["input_ids"]
-  logger.info(f"number of data samples before filtering: {len(data)}")
+  
+  # Print first few samples before filtering
+  logger.info("=== SAMPLES BEFORE FILTERING ===")
+  for i, sample in enumerate(data.take(5)):
+    logger.info(f"Sample {i+1} input_ids: {sample['input_ids']}")
+    logger.info(f"Sample {i+1} has EOS (151645): {151645 in sample['input_ids']}")
+    logger.info("---")
+  
+  # Apply filter
   data = data.filter(no_eos)
-  logger.info(f"number of data samples after filtering: {len(data)}")
+  
+  # Print first few samples after filtering
+  logger.info("=== SAMPLES AFTER FILTERING ===")
+  for i, sample in enumerate(data.take(5)):
+    logger.info(f"Sample {i+1} input_ids: {sample['input_ids']}")
+    logger.info(f"Sample {i+1} has EOS (151645): {151645 in sample['input_ids']}")
+    logger.info("---")
   data = data.shuffle(seed=seed, buffer_size=32768)
   return data
 
