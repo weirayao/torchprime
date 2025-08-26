@@ -619,7 +619,7 @@ class Trainer:
     
     return True
 
-  # @torch_xla.compile(full_graph=True)
+  @torch_xla.compile(full_graph=True)
   def train_step(self, batch):
     # Get current masking probabilities from scheduler
     masking_schedule = self.masking_scheduler.get_schedule()
