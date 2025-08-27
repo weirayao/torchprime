@@ -5,7 +5,7 @@ export PT_XLA_DEBUG_LEVEL=2
 export HYDRA_FULL_ERROR=1
 python torchprime/torch_xla_models/train.py \
     training_mode=pretrain \
-    data=test_data \
+    data=flex_v2 \
     model=flex-qwen2-1b \
     model.block_masking_probability=0.05 \
     model.mask_block_sizes=[[2,4,8],[4,8,16],[8,16,32],[16,32,64]] \
