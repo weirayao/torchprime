@@ -13,5 +13,5 @@ model.layers.*.mlp.down_proj.weight: [tensor, fsdp]
 lm_head.weight: [fsdp, tensor]
 
 # Activations
-model.layers.*: [fsdp, null, tensor]
-lm_head: [fsdp, null, tensor]
+model.layers.*: [data, null, tensor]
+lm_head: [data, null, tensor]
