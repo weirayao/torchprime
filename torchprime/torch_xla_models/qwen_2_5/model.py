@@ -5,7 +5,7 @@ from torch import nn
 
 from transformers.activations import ACT2FN
 from omegaconf import DictConfig
-from torchprime.torchprime.torch_xla_models.flex.attention_archive import AttentionModule
+from ..flex.attention_archive import AttentionModule
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.rope.rope import RopeScaling, default_rope_frequencies
 IS_TPU = not torch.cuda.is_available()

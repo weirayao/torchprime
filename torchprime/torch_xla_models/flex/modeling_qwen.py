@@ -16,7 +16,7 @@ from torchprime.rope.rope import RopeScaling, default_rope_frequencies
 IS_TPU = not torch.cuda.is_available()
 if IS_TPU:
   from torchprime.torch_xla_models import offloading
-from torchprime.torchprime.torch_xla_models.flex.attention_archive import AttentionModule
+from .attention_archive import AttentionModule
 
 logger = logging.get_logger(__name__)
 

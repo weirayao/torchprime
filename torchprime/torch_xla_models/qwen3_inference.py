@@ -12,7 +12,7 @@ from omegaconf import DictConfig
 from transformers import AutoTokenizer
 
 # Import the initialize_model_class function from train.py
-from torchprime.torchprime.torch_xla_models.train_archive import initialize_model_class, set_default_dtype
+from .train_archive import initialize_model_class, set_default_dtype
 
 # Initialize XLA runtime for TPU
 xr.use_spmd()

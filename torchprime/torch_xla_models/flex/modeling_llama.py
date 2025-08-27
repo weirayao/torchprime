@@ -28,7 +28,7 @@ from transformers.utils import logging
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.rope.rope import RopeScaling, llama3_rope_frequencies
 from torchprime.torch_xla_models import offloading
-from torchprime.torchprime.torch_xla_models.flex.attention_archive import AttentionModule
+from .attention_archive import AttentionModule
 
 logger = logging.get_logger(__name__)
 
