@@ -210,30 +210,36 @@ class Qwen2Attention(nn.Module): # Shiyu: Completed
     ) -> torch.FloatTensor:
         bsz, q_len, _ = hidden_states.size()
 
-        query_states = self.q_proj(hidden_states)
-        key_states = self.k_proj(hidden_states)
-        value_states = self.v_proj(hidden_states)
+        # projections (Q/K/V are column-parallel → outputs are sharded on last dim)
+        q = self.q_proj(hidden_states)   # [B, S, (num_heads*head_dim)/tp]
+        k = self.k_proj(hidden_states)   # [B, S, (num_kv*head_dim)/tp]
+        v = self.v_proj(hidden_states)   # [B, S, (num_kv*head_dim)/tp]
 
-        # Apply q_norm and k_norm to the head dimension
-        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim)
-        key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim)
-        value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim)
+        # infer LOCAL head counts from runtime shapes (works with/without TP)
+        h_local  = q.shape[-1] // self.head_dim
+        kv_local = k.shape[-1] // self.head_dim
+        assert h_local > 0 and kv_local > 0
+        assert q.shape[-1] == h_local * self.head_dim
+        assert k.shape[-1] == kv_local * self.head_dim
+        assert v.shape[-1] == kv_local * self.head_dim
 
-        # Transpose to get the right shape for attention
-        query_states = query_states.transpose(1, 2)
-        key_states = key_states.transpose(1, 2)
-        value_states = value_states.transpose(1, 2)
+        # [B, h_local, S, d]
+        q = q.view(bsz, q_len, h_local,  self.head_dim).transpose(1, 2)
+        k = k.view(bsz, q_len, kv_local, self.head_dim).transpose(1, 2)
+        v = v.view(bsz, q_len, kv_local, self.head_dim).transpose(1, 2)
 
+        # RoPE stays the same
         cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+        q, k = apply_rotary_pos_emb(q, k, cos, sin)
 
-        attn_output = self.attention_block(
-            query_states, key_states, value_states, attention_mask
-        ) # bsz, num_heads, q_len, head_dim = 64, 12, 8192, 128
-        attn_output = attn_output.transpose(1, 2).contiguous()
-        attn_output = attn_output.reshape(bsz, q_len, self.hidden_size) # 64, 8192, 1536
-        attn_output = self.o_proj(attn_output)
-        return attn_output
+        # run attention on LOCAL heads (no gather)
+        attn_out = self.attention_block(q, k, v, attention_mask)   # [B, h_local, S, d]
+
+        # flatten back to hidden/tp, NOT global hidden
+        attn_out = attn_out.transpose(1, 2).contiguous().view(bsz, q_len, h_local * self.head_dim)
+        # row-parallel O-proj will reduce-sum to global hidden size
+        attn_out = self.o_proj(attn_out)
+        return attn_out
 
 class Qwen2RMSNorm(nn.Module): # Shiyu: Completed
     def __init__(self, hidden_size, eps=1e-6):

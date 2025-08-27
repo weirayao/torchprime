@@ -107,10 +107,6 @@ class Trainer:
     # Set up SPMD mesh and shard the model
     mesh = get_mesh(self.config)
     xs.set_global_mesh(mesh)
-    # import math, torch_xla.runtime as xr
-    # assert math.prod(self.config.ici_mesh.values()) == xr.process_count(), (
-    #     f"Mesh product {self.config.ici_mesh} != process_count {xr.process_count()}"
-    # )
     logger.info(f"Logical mesh shape: {mesh.shape()}")
     logger.info(f"Logical mesh device assignments: {mesh.device_ids}")
 
