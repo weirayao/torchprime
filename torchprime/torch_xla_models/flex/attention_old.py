@@ -52,24 +52,18 @@ class AttentionModule(nn.Module):
     """Original TPU/XLA implementation"""
 
     if self.config.attention_kernel != "splash_attention":
-      # Use the actual tensors you received (LOCAL or GLOBAL, consistently)
-      qH = query_states.shape[1]  # number of Q heads currently present
-      kH = key_states.shape[1]    # number of KV heads currently present
-      assert qH % kH == 0, f"Q heads {qH} not divisible by KV heads {kH}"
-      rep = qH // kH
-      key_states   = repeat_kv(key_states, rep)
-      value_states = repeat_kv(value_states, rep)
+      num_key_value_groups = (
+        self.config.num_attention_heads // self.config.num_key_value_heads
+      )
+      key_states = repeat_kv(key_states, num_key_value_groups)
+      value_states = repeat_kv(value_states, num_key_value_groups)
 
     bsz, num_heads, q_len, head_dim = query_states.size()
     # TODO: q, k dim unintentionally changed after the apply_rotary_pos_emb. Use
     # v's dim temporarily to bypass shape assertion failure. Remove the
     # following line after resolving
     # https://github.com/AI-Hypercomputer/torchprime/issues/195.
-    hd_q = query_states.shape[-1]
-    hd_k = key_states.shape[-1]
-    hd_v = value_states.shape[-1]
-    assert hd_q == hd_k == hd_v, f"Head dims mismatch: q={hd_q} k={hd_k} v={hd_v}"
-    head_dim = hd_v
+    head_dim = value_states.shape[-1]
 
     kv_seq_len = key_states.shape[-2]
 
