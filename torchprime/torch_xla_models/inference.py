@@ -12,7 +12,7 @@ from datasets import Dataset
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 from transformers.tokenization_utils_base import BatchEncoding
 from datasets.distributed import split_dataset_by_node
-from torchprime.torch_xla_models.train import Trainer
+from torchprime.torchprime.torch_xla_models.train_archive import Trainer
 from torchprime.torch_xla_models.inference_utils import (
     GenerationConfig_,
     generate_,
