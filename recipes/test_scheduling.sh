@@ -15,7 +15,7 @@ python torchprime/torch_xla_models/train.py \
     model.masking_scheduler.max_schedule_steps=10000 \
     optimizer.learning_rate=8e-4 \
     lr_scheduler.warmup_steps=150 \
-    global_batch_size=4 \
+    global_batch_size=64 \
     max_steps=40000 \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
@@ -23,7 +23,7 @@ python torchprime/torch_xla_models/train.py \
     checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen2_1_5b/ \
     save_steps=500 \
     logging_steps=1 \
-    ici_mesh.fsdp=4 \
+    ici_mesh.fsdp=128 \
     ici_mesh.tensor=2 \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \
