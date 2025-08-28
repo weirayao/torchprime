@@ -114,15 +114,15 @@ class Trainer:
     minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
     self.minibatch = minibatch
     logger.info(f"Minibatch dataloading: {minibatch}")
-    if not minibatch:
+    # if not minibatch:
       # NOTE(haolin): when minibatch is False, this will be the batch size per worker
       # because
       # 1. per worker will load the self.global_batch_size samples in a step
       # 2. we did not use distributed sampler for IterableDataset, instead we split the dataset by workers
       # so the effective global batch size is the global batch size * number of workers
-      self.effective_global_batch_size = self.global_batch_size * xr.process_count()
-    else:
-      self.effective_global_batch_size = self.global_batch_size
+    #   self.effective_global_batch_size = self.global_batch_size * xr.process_count()
+    # else:
+    self.effective_global_batch_size = self.global_batch_size
 
     # TODO(https://github.com/AI-Hypercomputer/torchprime/issues/66): Test this for multislice
     self.input_sharding_spec = xs.ShardingSpec(
@@ -842,7 +842,8 @@ def main(config: DictConfig):
       )
     else:
       raise ValueError("No dataset provided")
-  if isinstance(data, IterableDataset):
+  minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
+  if isinstance(data, IterableDataset) and minibatch:
     try:
       logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
       data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
