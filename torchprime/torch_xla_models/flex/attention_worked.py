@@ -77,8 +77,8 @@ class AttentionModule(nn.Module):
     self.partition_spec = None
     segment_ids_partition_spec = None
     if xs.get_global_mesh() is not None:
-      self.partition_spec = ("fsdp", "tensor", None, None)
-      segment_ids_partition_spec = ("fsdp", None)
+      self.partition_spec = ("data", "tensor", None, None)
+      segment_ids_partition_spec = ("data", None)
 
     match self.config.attention_kernel:
       case "splash_attention":
