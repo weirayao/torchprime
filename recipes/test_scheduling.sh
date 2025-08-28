@@ -12,11 +12,11 @@ python torchprime/torch_xla_models/train.py \
     model.truncate_probability=0.05 \
     model.prefix_probability=0.05 \
     model.masking_scheduler.schedule_type=linear \
-    model.masking_scheduler.max_schedule_steps=680000 \
+    model.masking_scheduler.max_schedule_steps=34000 \
     optimizer.learning_rate=8e-4 \
-    lr_scheduler.warmup_steps=3500 \
-    global_batch_size=64 \
-    max_steps=2400000 \
+    lr_scheduler.warmup_steps=180 \
+    global_batch_size=1280 \
+    max_steps=120000 \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
     resume_from_checkpoint=false \
