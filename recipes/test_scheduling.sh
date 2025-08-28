@@ -1,8 +1,8 @@
 export LIBTPU_INIT_ARGS="--xla_tpu_scoped_vmem_limit_kib=98304 --xla_enable_async_all_gather=true --xla_tpu_overlap_compute_collective_tc=true --xla_tpu_enable_async_collective_fusion_multiple_steps=true --xla_tpu_enable_async_collective_fusion=true --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true"
 export XLA_IR_DEBUG=1
 export XLA_HLO_DEBUG=1
-export PT_XLA_DEBUG_LEVEL=2
-export HYDRA_FULL_ERROR=1
+# export PT_XLA_DEBUG_LEVEL=2
+# export HYDRA_FULL_ERROR=1
 python torchprime/torch_xla_models/train.py \
     training_mode=pretrain \
     data=flex_v2 \
