@@ -516,18 +516,22 @@ class Trainer:
         logger.info("DEBUG: 7")
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
           logger.info("DEBUG: 8")
-          loss = loss.detach().item()
+          # loss = loss.detach().item()
           logger.info(
-            f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
+            f"Epoch: {epoch}, step: {step}, "
             f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
           )
-          if math.isnan(loss):
-            raise ValueError(f"Loss is NaN at step {step}")
+          # logger.info(
+          #   f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
+          #   f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
+          # )
+          # if math.isnan(loss):
+          #   raise ValueError(f"Loss is NaN at step {step}")
           if is_main_process():
             wandb.log(
               {
-                "train/loss": loss,
-                "train/ppl": math.exp(loss),
+                # "train/loss": loss,
+                # "train/ppl": math.exp(loss),
                 "train/step_time": (trace_end_time - trace_start_time) * 1000,
                 "train/epoch": epoch,
                 "train/step": step,
