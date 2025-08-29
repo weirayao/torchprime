@@ -123,6 +123,7 @@ class AttentionModule(nn.Module):
         )
       case "default" | None:
         # Default attention implementation (no flash attention)
+        print(f"Default attention implementation")
         attn_weights = torch.matmul(
           query_states, key_states.transpose(2, 3)
         ) / math.sqrt(head_dim)
