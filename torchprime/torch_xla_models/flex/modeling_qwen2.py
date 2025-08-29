@@ -392,15 +392,19 @@ class Qwen2Model(nn.Module): # Shiyu: Completed
             torch.arange(seq_length, device=inputs_embeds.device).unsqueeze(0).float()
         )
 
-        # # Create a causal attention mask
+        # Create a causal attention mask
         # causal_mask = torch.triu(
         #     torch.full((seq_length, seq_length), float("-inf"), device=inputs_embeds.device), diagonal=1,
         # )
         # causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # Add batch and head dimension
+        causal_mask = torch.triu(
+            torch.full((2, 2), float("-inf"), device=inputs_embeds.device), diagonal=1,
+        )
+        causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)  # Add batch and head dimension
 
         # if attention_mask is not None:
         #     causal_mask = causal_mask * attention_mask[:, None, None, :]
-        causal_mask = None
+        # causal_mask = None
 
         hidden_states = inputs_embeds
 
