@@ -426,7 +426,7 @@ class Trainer:
       self._load_checkpoint()
     self.model.train()
     self.model.zero_grad()
-
+    logger.info("DEBUG: 1")
     # For now we assume that we wil never train for mor than one epoch
     max_step = self.config.max_steps
     train_loader = self._get_train_dataloader()
@@ -447,11 +447,11 @@ class Trainer:
       # Set wandb step to start_step if resuming from checkpoint
       if self.start_step > 0:
         wandb.log({}, step=self.start_step-1)  # Set the initial step counter
-
+    logger.info("DEBUG: 2")
     # Initialize epoch and step counters, accounting for checkpoint loading
     epoch = 0
     start_step = self.start_step
-
+    logger.info("DEBUG: 3")
     # Skip batches for partial file processing when resuming from checkpoint
     if self.config.checkpoint_load_step is not None and self.config.steps_to_skip == 0:
       logger.warning("steps_to_skip is 0, but checkpoint_load_step is not None. This will cause the trainer to start from the beginning of the dataset. Please check the logs to see if this is expected.")
@@ -496,6 +496,7 @@ class Trainer:
 
           # Recreate dataloader with the full dataset
           train_loader = self._get_train_dataloader()
+          logger.info("DEBUG: 4")
           xm.wait_device_ops()
           torch_xla.sync()
 
@@ -506,12 +507,15 @@ class Trainer:
       # Validate batch for SFT mode
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
+      logger.info("DEBUG: 5")
       loss = self.train_step(batch)
+      logger.info("DEBUG: 6")
       trace_end_time = timer()
 
       if step % self.config.logging_steps == 0:
-
+        logger.info("DEBUG: 7")
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
+          logger.info("DEBUG: 8")
           loss = loss.detach().item()
           logger.info(
             f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
@@ -532,13 +536,13 @@ class Trainer:
               },
               step=step  # Explicitly set the wandb global step
             )
-
+        logger.info("DEBUG: 9")
         xm.add_step_closure(
           step_closure,
           args=(epoch, step, loss, trace_start_time, trace_end_time),
           run_async=True,
         )
-
+        logger.info("DEBUG: 10")
       if step > self.start_step and step % self.config.save_steps == 0:
         # NOTE: currently we save the checkpoint synchronously
         xm.wait_device_ops()  # Wait for all XLA operations to complete
