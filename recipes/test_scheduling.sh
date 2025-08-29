@@ -23,8 +23,8 @@ python torchprime/torch_xla_models/train.py \
     checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen2_1_5b/ \
     save_steps=1000 \
     logging_steps=1 \
-    ici_mesh.fsdp=128 \
-    ici_mesh.tensor=2 \
+    ici_mesh.fsdp=256 \
+    ici_mesh.tensor=1 \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \
     model/remat=qwen2-scan
