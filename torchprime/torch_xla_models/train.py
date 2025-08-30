@@ -513,20 +513,20 @@ class Trainer:
       trace_end_time = timer()
 
       if step % self.config.logging_steps == 0:
-        # logger.info("DEBUG: 7")
+        logger.info("DEBUG: 7")
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
-          # logger.info("DEBUG: 8")
-          # loss = loss.detach().item()
-          logger.info(
-            f"Epoch: {epoch}, step: {step}, "
-            f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
-          )
+          logger.info("DEBUG: 8")
+          loss = loss.detach().item()
           # logger.info(
-          #   f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
+          #   f"Epoch: {epoch}, step: {step}, "
           #   f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
           # )
-          # if math.isnan(loss):
-          #   raise ValueError(f"Loss is NaN at step {step}")
+          logger.info(
+            f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
+            f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
+          )
+          if math.isnan(loss):
+            raise ValueError(f"Loss is NaN at step {step}")
           if is_main_process():
             wandb.log(
               {
@@ -540,13 +540,13 @@ class Trainer:
               },
               step=step  # Explicitly set the wandb global step
             )
-        # logger.info("DEBUG: 9")
+        logger.info("DEBUG: 9")
         xm.add_step_closure(
           step_closure,
           args=(epoch, step, loss, trace_start_time, trace_end_time),
           run_async=True,
         )
-        # logger.info("DEBUG: 10")
+        logger.info("DEBUG: 10")
       if step > self.start_step and step % self.config.save_steps == 0:
         # NOTE: currently we save the checkpoint synchronously
         xm.wait_device_ops()  # Wait for all XLA operations to complete
