@@ -279,19 +279,34 @@ class Trainer:
 
     num_replicas = xr.process_count()
     logger.info(f"Num replicas: {num_replicas}")
-
-    per_worker_batch_size = self.global_batch_size // num_replicas
     if isinstance(self.train_dataset, IterableDataset):
       # For IterableDataset, don't use DistributedSampler as it doesn't have len()
       sampler = None
       logger.info("Using IterableDataset without DistributedSampler")
     else:
-      sampler = torch.utils.data.DistributedSampler(
-        self.train_dataset,
-        num_replicas=num_replicas,
-        rank=xr.process_index(),
-        drop_last=True, # It's crucial to drop last to ensure all batches are even
-      )
+      # For regular Dataset, use DistributedSampler
+      if self.minibatch:
+        sampler = torch.utils.data.DistributedSampler(
+          self.train_dataset,
+          num_replicas=num_replicas,
+          rank=xr.process_index(),
+        )
+      else:
+        # Without minibatch, every process loads the global batch the same way.
+        sampler = torch.utils.data.DistributedSampler(
+          self.train_dataset,
+          num_replicas=1,
+          rank=0,
+        )
+      
+    assert self.global_batch_size is not None
+    if self.minibatch:
+      # Each process loads the per-host batch size.
+      batch_size = self.global_batch_size // num_replicas
+    else:
+      # Each process will load the global batch, then discard the unneeded parts.
+      batch_size = self.global_batch_size
+    
     # Choose appropriate data collator based on training mode
     if self.config.training_mode == "sft":
       # For SFT, we need to use the SFT data collator
@@ -310,9 +325,9 @@ class Trainer:
     dataloader = DataLoader(
       self.train_dataset,
       collate_fn=collate_fn,
-      batch_size=per_worker_batch_size, # <-- Use the smaller, per-worker batch size
+      batch_size=batch_size,
       sampler=sampler,
-      drop_last=True, # Sampler also has drop_last=True for safety
+      drop_last=True,
     )
     loader = pl.MpDeviceLoader(
       dataloader, self.device, input_sharding=self.input_sharding_spec
