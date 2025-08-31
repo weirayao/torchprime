@@ -513,7 +513,7 @@ class Trainer:
       trace_end_time = timer()
 
       if step % self.config.logging_steps == 0:
-        logger.info("DEBUG: 7")
+        # logger.info("DEBUG: 7")
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
           logger.info("DEBUG: 8")
           loss = loss.detach().item()
@@ -540,13 +540,13 @@ class Trainer:
               },
               step=step  # Explicitly set the wandb global step
             )
-        logger.info("DEBUG: 9")
+        # logger.info("DEBUG: 9")
         xm.add_step_closure(
           step_closure,
           args=(epoch, step, loss, trace_start_time, trace_end_time),
           run_async=True,
         )
-        logger.info("DEBUG: 10")
+        # logger.info("DEBUG: 10")
       if step > self.start_step and step % self.config.save_steps == 0:
         # NOTE: currently we save the checkpoint synchronously
         xm.wait_device_ops()  # Wait for all XLA operations to complete
