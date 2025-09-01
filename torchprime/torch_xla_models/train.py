@@ -278,7 +278,7 @@ class Trainer:
       raise ValueError("Trainer: training requires a train_dataset.")
 
     num_replicas = xr.process_count()
-    logger.info(f"Num replicas: {num_replicas}")
+    logger.info(f"Num replicas: {num_replicas}") # 64 for v5p-512
 
     per_worker_batch_size = self.global_batch_size // num_replicas
     if isinstance(self.train_dataset, IterableDataset):
@@ -835,8 +835,8 @@ def main(config: DictConfig):
       )
     else:
       raise ValueError("No dataset provided")
-  minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
-  if isinstance(data, IterableDataset) and minibatch:
+  # minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
+  if isinstance(data, IterableDataset):
     try:
       logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
       data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
