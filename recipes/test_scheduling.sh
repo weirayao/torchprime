@@ -13,14 +13,14 @@ python torchprime/torch_xla_models/train.py \
     model.prefix_probability=0.05 \
     model.masking_scheduler.schedule_type=linear \
     model.masking_scheduler.max_schedule_steps=11000 \
-    optimizer.learning_rate=8e-4 \
+    optimizer.learning_rate=4e-4 \
     lr_scheduler.warmup_steps=60 \
     global_batch_size=2048 \
     max_steps=38000 \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
     resume_from_checkpoint=false \
-    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen2_1_5b/ \
+    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen2_5_Coder_1_5b/ \
     save_steps=1000 \
     logging_steps=1 \
     ici_mesh.fsdp=64 \
