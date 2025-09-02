@@ -5,7 +5,7 @@ export XLA_HLO_DEBUG=1
 # export HYDRA_FULL_ERROR=1
 python torchprime/torch_xla_models/train.py \
     training_mode=pretrain \
-    data=validation \
+    data=flex_v2 \
     model=flex-qwen2-1b \
     model.block_masking_probability=0.05 \
     model.mask_block_sizes=[[2,4,8],[4,8,16],[8,16,32],[16,32,64]] \
@@ -15,15 +15,15 @@ python torchprime/torch_xla_models/train.py \
     model.masking_scheduler.max_schedule_steps=11000 \
     optimizer.learning_rate=4e-4 \
     lr_scheduler.warmup_steps=60 \
-    global_batch_size=2048 \
+    global_batch_size=4096 \
     max_steps=38000 \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
     resume_from_checkpoint=false \
     checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen2_5_Coder_1_5b/ \
-    save_steps=1000 \
+    save_steps=500 \
     logging_steps=1 \
-    ici_mesh.fsdp=64 \
+    ici_mesh.fsdp=128 \
     ici_mesh.tensor=2 \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \

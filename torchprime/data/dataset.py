@@ -5,7 +5,7 @@ import random
 import logging
 from itertools import chain
 from typing import Sequence
-import pyarrow.parquet as pq
+# import pyarrow.parquet as pq
 from glob import glob
 from dotenv import load_dotenv
 load_dotenv()
@@ -76,11 +76,11 @@ def make_gcs_pretokenized_dataset(
     random.shuffle(data_files)
   logger.info(f"data_files: {data_files}")
   logger.info(f"number of data_files: {len(data_files)}")
-  total_rows = 0
-  for f in data_files:
-    pf = pq.ParquetFile(f)
-    total_rows += pf.metadata.num_rows
-  print(f"length of data (rows across parquet): {total_rows}")
+  # total_rows = 0
+  # for f in data_files:
+  #   pf = pq.ParquetFile(f)
+  #   total_rows += pf.metadata.num_rows
+  # print(f"length of data (rows across parquet): {total_rows}")
   data = load_dataset(
     "parquet",
     data_files=data_files,
@@ -95,10 +95,8 @@ def make_gcs_pretokenized_dataset(
 
   def no_eos(example):
     # assume tokenized data is under "input_ids"
-    print(isinstance(example["input_ids"], list))
-    print(len(example["input_ids"]))
     return 151645 not in example["input_ids"]
-  data = data.filter(no_eos)
+  # data = data.filter(no_eos)
   data = data.shuffle(seed=seed, buffer_size=32768)
   return data
 
