@@ -500,7 +500,7 @@ class Trainer:
       if step % self.config.logging_steps == 0:
         # logger.info("DEBUG: 7")
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
-          logger.info("DEBUG: 8")
+          # logger.info("DEBUG: 8")
           loss = loss.detach().item()
           # logger.info(
           #   f"Epoch: {epoch}, step: {step}, "
