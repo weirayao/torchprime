@@ -90,9 +90,15 @@ def make_gcs_pretokenized_dataset(
 
   def no_eos(example):
     # assume tokenized data is under "input_ids"
+    print(isinstance(example["input_ids"], list))
+    print(len(example["input_ids"]))
     return 151645 not in example["input_ids"]
   # logger.info(f"number of data samples before filtering: {len(data)}")
   # data = data.filter(no_eos)
+  i = 0
+  for example in data:
+    i += 1
+  print(f"length of data: {i}")
   # logger.info(f"number of data samples after filtering: {len(data)}")
   data = data.shuffle(seed=seed, buffer_size=32768)
   return data
