@@ -12,11 +12,11 @@ python torchprime/torch_xla_models/train.py \
     model.truncate_probability=0.05 \
     model.prefix_probability=0.05 \
     model.masking_scheduler.schedule_type=linear \
-    model.masking_scheduler.max_schedule_steps=11000 \
+    model.masking_scheduler.max_schedule_steps=5400 \
     optimizer.learning_rate=4e-4 \
-    lr_scheduler.warmup_steps=60 \
+    lr_scheduler.warmup_steps=30 \
     global_batch_size=8192 \
-    max_steps=38000 \
+    max_steps=20000 \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
     resume_from_checkpoint=false \
@@ -26,6 +26,6 @@ python torchprime/torch_xla_models/train.py \
     ici_mesh.fsdp=128 \
     ici_mesh.tensor=2 \
     ici_mesh.data=1 \
-    ici_mesh.expert=1
+    ici_mesh.expert=1 \
     model/remat=qwen2-scan
 # fsdp * tensor * data * expert == num_devices
