@@ -13,7 +13,7 @@ python torchprime/torch_xla_models/train.py \
     model.prefix_probability=0.05 \
     model.masking_scheduler.schedule_type=linear \
     model.masking_scheduler.max_schedule_steps=11000 \
-    optimizer.learning_rate=8e-4 \
+    optimizer.learning_rate=1e-3 \
     lr_scheduler.warmup_steps=60 \
     global_batch_size=8192 \
     max_steps=38000 \
@@ -27,5 +27,5 @@ python torchprime/torch_xla_models/train.py \
     ici_mesh.tensor=2 \
     ici_mesh.data=1 \
     ici_mesh.expert=1
-    # model/remat=qwen2-scan
+    model/remat=qwen2-scan
 # fsdp * tensor * data * expert == num_devices
