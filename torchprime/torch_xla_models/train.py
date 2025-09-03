@@ -426,7 +426,7 @@ class Trainer:
       logger.info(f"    Resuming from step: {self.start_step}")
     if is_main_process():
       wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
-      wandb.init(project="text-diffusion-model-research-qwen2-1_5b-pretrain", name=self.config.model.model_class)
+      wandb.init(project="text-diffusion-model-research-qwen2_5-1_5b-pretrain", name=self.config.model.model_class)
       # Log the configuration to wandb
       wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
       # Set wandb step to start_step if resuming from checkpoint
