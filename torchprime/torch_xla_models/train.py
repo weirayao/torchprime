@@ -762,10 +762,11 @@ def main(config: DictConfig):
           # Calculate which files to skip based on checkpoint step and batch size
           samples_per_file = config.data.samples_per_file if hasattr(config.data, 'samples_per_file') and config.data.samples_per_file is not None else 5000
           minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
-          if minibatch:
-            effective_global_batch_size = config.global_batch_size
-          else:
-            effective_global_batch_size = config.global_batch_size * xr.process_count()
+          # if minibatch:
+          #   effective_global_batch_size = config.global_batch_size
+          # else:
+          #   effective_global_batch_size = config.global_batch_size * xr.process_count()
+          effective_global_batch_size = config.global_batch_size
           total_samples_processed = config.checkpoint_load_step * effective_global_batch_size
           files_to_skip, num_samples_processed_in_current_file = divmod(total_samples_processed, samples_per_file)
 
