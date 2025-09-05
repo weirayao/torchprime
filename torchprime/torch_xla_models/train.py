@@ -592,22 +592,20 @@ class Trainer:
       )
     else:
       # Pre-training mode (original behavior)
-              # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
+      # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
       # Create segment_ids by looking at EOS_TOKEN_ID positions
-      # Find all positions where EOS tokens occur
-      # EOS_TOKEN_ID = 151645
+      EOS_TOKEN_ID = 151645
+      eos_mask = torch.where(batch["input_ids"] == EOS_TOKEN_ID, 1, 0).long().to(input_ids.device)
+      # Compute cumulative sum of EOS tokens to get segment IDs
+      # Each EOS token increments the segment ID for subsequent tokens
+      segment_ids = eos_mask.cumsum(dim=1)
 
-      # eos_mask = torch.where(input_ids == EOS_TOKEN_ID, 1, 0).long().to(input_ids.device)
-
-      # # Compute cumulative sum of EOS tokens to get segment IDs
-      # # Each EOS token increments the segment ID for subsequent tokens
-      # segment_ids = eos_mask.cumsum(dim=1)
-
-      # # Shift segment_ids to the right by 1 position so tokens before first EOS are segment 0
-      # # and tokens after each EOS get incremented segment IDs
-      # segment_ids = torch.cat(
-      #     [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
-      # )
+      # Shift segment_ids to the right by 1 position so tokens before first EOS are segment 0
+      # and tokens after each EOS get incremented segment IDs
+      segment_ids = torch.cat(
+          [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
+      )
+      batch["segment_ids"] = segment_ids
 
 
       _logits, loss = self.model(
@@ -658,7 +656,6 @@ def main(config: DictConfig):
   with set_default_dtype(torch.bfloat16), torch_xla.device():
     model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
     
-  logger.info(f"model.state_dict().keys() after loading: {model.state_dict().keys()}")
 
   n_params = sum([p.numel() for p in model.parameters()])
   if is_main_process():
