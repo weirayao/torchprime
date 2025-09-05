@@ -4,10 +4,6 @@
 import os
 import torch
 import torch_xla
-import torch_xla.core.xla_model as xm
-import torch_xla.distributed.xla_multiprocessing as xmp
-import torch_xla.distributed.spmd as xs
-from torch_xla.experimental.custom_kernel import FlashAttention
 
 from omegaconf import OmegaConf
 from torchprime.torch_xla_models.flex.modeling_qwen2 import (
@@ -76,7 +72,6 @@ def test_attention_module(device):
     output_no_seg = attn_module(
         query_states, key_states, value_states, attention_mask=None, segment_ids=None
     )
-    xm.mark_step()
     time_no_seg = time.time() - start_time
     print(f"Time without segment_ids: {time_no_seg:.4f}s")
     print(f"Output shape: {output_no_seg.shape}")
@@ -91,7 +86,6 @@ def test_attention_module(device):
         attention_mask=None,
         segment_ids=segment_ids,
     )
-    xm.mark_step()
     time_with_seg = time.time() - start_time
     print(f"Time with segment_ids: {time_with_seg:.4f}s")
     print(f"Output shape: {output_with_seg.shape}")
