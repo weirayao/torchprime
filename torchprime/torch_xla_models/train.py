@@ -202,7 +202,7 @@ class Trainer:
     # self.optimizer = prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
     state_dict = {
       "model": self.model.state_dict(),
-      # "optimizer": self.optimizer.state_dict(),
+      "optimizer": self.optimizer.state_dict(),
       "scheduler": self.lr_scheduler.state_dict(),
       "masking_scheduler": self.masking_scheduler.state_dict(),
       "step": self.start_step,
@@ -220,7 +220,7 @@ class Trainer:
 
     self.model.load_state_dict(state_dict["model"])
     if self.config.resume_from_checkpoint:
-      # self.optimizer.load_state_dict(state_dict["optimizer"])
+      self.optimizer.load_state_dict(state_dict["optimizer"])
       self.lr_scheduler.load_state_dict(state_dict["scheduler"])
       if "masking_scheduler" in state_dict:
         self.masking_scheduler.load_state_dict(state_dict["masking_scheduler"])
@@ -727,7 +727,6 @@ def main(config: DictConfig):
           samples_per_file = config.data.samples_per_file if hasattr(config.data, 'samples_per_file') and config.data.samples_per_file is not None else 5000
           total_samples_processed = config.checkpoint_load_step * config.global_batch_size
           files_to_skip, num_samples_processed_in_current_file = divmod(total_samples_processed, samples_per_file)
-
           logger.info(f"Resuming from checkpoint step {config.checkpoint_load_step}")
           logger.info(f"Total samples processed: {total_samples_processed}")
           logger.info(f"Remaining samples in current file: {num_samples_processed_in_current_file}")
@@ -754,7 +753,7 @@ def main(config: DictConfig):
           files_to_skip = files_to_skip % len(all_data_files)
           logger.info(f"Files to skip: {files_to_skip}")
           remaining_files = all_data_files[files_to_skip:]
-
+          logger.info(f"Files to skip: {files_to_skip}")
           logger.info(f"Total data files: {len(all_data_files)}")
           logger.info(f"Remaining files after skipping: {len(remaining_files)}")
 
