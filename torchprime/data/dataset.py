@@ -79,6 +79,8 @@ def make_gcs_pretokenized_dataset(
     "parquet",
     data_files=data_files,
     streaming=False,
+    keep_in_memory=True,
+    num_proc=96,
     split="train",
   )
   if checkpoint_dir is not None and is_main_process():
