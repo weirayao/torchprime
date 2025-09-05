@@ -115,6 +115,8 @@ class AttentionModule(nn.Module):
         FlashAttention.DEFAULT_BLOCK_SIZES = default_block_sizes
 
         query_states /= math.sqrt(head_dim)
+        if segment_ids is not None:
+          segment_ids = segment_ids.int()
         attn_output = flash_attention(
           query_states,
           key_states,
