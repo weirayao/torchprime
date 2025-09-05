@@ -466,6 +466,27 @@ class Trainer:
       # Validate batch for SFT mode
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
+      else:
+        # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
+        # Create segment_ids by looking at EOS_TOKEN_ID positions
+        EOS_TOKEN_ID = 151645
+        eos_mask = torch.where(batch["input_ids"] == EOS_TOKEN_ID, 1, 0).int().to(batch["input_ids"].device)
+        
+        # Compute cumulative sum of EOS tokens to get segment IDs
+        # Each EOS token increments the segment ID for subsequent tokens
+        segment_ids = eos_mask.cumsum(dim=1)
+
+        # Shift segment_ids to the right by 1 position so tokens before first EOS are segment 0
+        # and tokens after each EOS get incremented segment IDs
+        segment_ids = torch.cat(
+            [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
+        )
+        batch["segment_ids"] = segment_ids
+        logger.info(f"input_ids: {batch['input_ids']}")
+        logger.info(f"eos_mask: {eos_mask}")
+        logger.info(f"segment_ids: {batch['segment_ids']}")
+        logger.info(f"text: {self.tokenizer.decode(batch['input_ids'], skip_special_tokens=False)}")
+
       loss = self.train_step(batch)
       trace_end_time = timer()
 
@@ -592,22 +613,6 @@ class Trainer:
       )
     else:
       # Pre-training mode (original behavior)
-      # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
-      # Create segment_ids by looking at EOS_TOKEN_ID positions
-      EOS_TOKEN_ID = 151645
-      eos_mask = torch.where(batch["input_ids"] == EOS_TOKEN_ID, 1, 0).int().to(batch["input_ids"].device)
-      # Compute cumulative sum of EOS tokens to get segment IDs
-      # Each EOS token increments the segment ID for subsequent tokens
-      segment_ids = eos_mask.cumsum(dim=1)
-
-      # Shift segment_ids to the right by 1 position so tokens before first EOS are segment 0
-      # and tokens after each EOS get incremented segment IDs
-      segment_ids = torch.cat(
-          [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
-      )
-      batch["segment_ids"] = segment_ids
-
-
       _logits, loss = self.model(
         **batch,
         masking_schedule=masking_schedule
