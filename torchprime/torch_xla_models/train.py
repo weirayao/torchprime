@@ -481,13 +481,11 @@ class Trainer:
         segment_ids = torch.cat(
             [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
         )
+        # NOTE: haolin
         # Convert to float to work around scan limitation with integer tensors
         # See: https://github.com/pytorch/xla/issues/8783
         segment_ids = segment_ids.float().requires_grad_(False)
         batch["segment_ids"] = segment_ids
-        logger.info(f"input_ids: {batch['input_ids']}")
-        logger.info(f"segment_ids: {batch['segment_ids']}")
-        logger.info(f"text: {self.tokenizer.batch_decode(batch['input_ids'], skip_special_tokens=False)}")
 
       loss = self.train_step(batch)
       trace_end_time = timer()
