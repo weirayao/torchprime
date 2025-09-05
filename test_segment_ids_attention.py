@@ -111,7 +111,7 @@ def test_model_forward(device):
     # Initialize model
     from torchprime.torch_xla_models.model_utils import initialize_model_class
 
-    model = initialize_model_class(config.model, load_from_hf=True)
+    model = initialize_model_class(config, load_from_hf=True)
     model = model.to(device)
     model.eval()
     print("Model loaded and moved to device")
