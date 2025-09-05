@@ -482,7 +482,7 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
             segment_ids = torch.cat(
                 [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
             )
-            segment_ids = segment_ids.requires_grad_(False)
+            segment_ids = segment_ids.requires_grad_(False).long().to(input_ids.device)
 
         if not self.training:
             model_output = self.model(input_ids=input_ids, attention_mask=attention_mask, segment_ids=None)
