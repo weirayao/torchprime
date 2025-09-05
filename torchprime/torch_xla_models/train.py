@@ -769,10 +769,8 @@ def main(config: DictConfig):
           effective_global_batch_size = config.global_batch_size
           total_samples_processed = config.checkpoint_load_step * effective_global_batch_size
           files_to_skip, num_samples_processed_in_current_file = divmod(total_samples_processed, samples_per_file)
-
           logger.info(f"Resuming from checkpoint step {config.checkpoint_load_step}")
           logger.info(f"Total samples processed: {total_samples_processed}")
-          logger.info(f"Files to skip: {files_to_skip}")
           logger.info(f"Remaining samples in current file: {num_samples_processed_in_current_file}")
 
           # Calculate additional steps to skip within the current file
@@ -794,8 +792,9 @@ def main(config: DictConfig):
           config.is_resuming_epoch = True
 
           # Skip the appropriate number of files for the current epoch
+          files_to_skip = files_to_skip % len(all_data_files)
           remaining_files = all_data_files[files_to_skip:]
-
+          logger.info(f"Files to skip: {files_to_skip}")
           logger.info(f"Total data files: {len(all_data_files)}")
           logger.info(f"Remaining files after skipping: {len(remaining_files)}")
 
