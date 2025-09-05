@@ -63,7 +63,7 @@ def make_gcs_pretokenized_dataset(
   data_files: list[str] = None,
   seed: int = 42,
   checkpoint_dir: str = None,
-) -> IterableDataset:
+) -> IterableDataset | Dataset:
   """
   Search for all parquet files in the given path and load them into a dataset.
   Shuffle the files first.
@@ -87,7 +87,10 @@ def make_gcs_pretokenized_dataset(
     with open(f"{checkpoint_dir}/data_files.json", "w") as f:
       json.dump(data_files, f, indent=4)
 
-  data = data.shuffle(seed=seed, buffer_size=32768)
+  if isinstance(data, IterableDataset):
+    data = data.shuffle(seed=seed, buffer_size=32768)
+  else:
+    data = data.shuffle(seed=seed)
   return data
 
 def make_gcs_dataset(
