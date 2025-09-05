@@ -2,7 +2,6 @@
 """Unit test to compare flash attention with and without segment_ids on TPU v5p-8"""
 
 import os
-import logging
 import torch
 import torch_xla
 
@@ -15,7 +14,6 @@ from torchprime.torch_xla_models.flex.attention import AttentionModule
 import numpy as np
 import time
 
-logger = logging.getLogger(__name__)
 
 def create_test_config():
     """Create a minimal config for testing"""
@@ -74,11 +72,11 @@ def test_attention_module(device):
         query_states, key_states, value_states, attention_mask=None, segment_ids=None
     )
     time_no_seg = time.time() - start_time
-    logger.info(f"Time without segment_ids: {time_no_seg:.4f}s")
-    logger.info(f"Output shape: {output_no_seg.shape}")
+    print(f"Time without segment_ids: {time_no_seg:.4f}s")
+    print(f"Output shape: {output_no_seg.shape}")
 
     # Test with segment_ids
-    logger.info("\nTesting attention WITH segment_ids...")
+    print("\nTesting attention WITH segment_ids...")
     start_time = time.time()
     output_with_seg = attn_module(
         query_states,
@@ -88,9 +86,9 @@ def test_attention_module(device):
         segment_ids=segment_ids,
     )
     time_with_seg = time.time() - start_time
-    logger.info(f"Time with segment_ids: {time_with_seg:.4f}s")
-    logger.info(f"Output shape: {output_with_seg.shape}")
-    logger.info(f"Diff: {torch.norm(output_with_seg - output_no_seg).item():.4f}")
+    print(f"Time with segment_ids: {time_with_seg:.4f}s")
+    print(f"Output shape: {output_with_seg.shape}")
+    print(f"Diff: {torch.norm(output_with_seg - output_no_seg).item():.4f}")
     # print(f"Output with segment_ids: {output_with_seg.detach().cpu()}")
     # print(f"Output without segment_ids: {output_no_seg.detach().cpu()}")
 
