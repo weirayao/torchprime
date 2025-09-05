@@ -56,7 +56,9 @@ def test_attention_module(device):
     head_dim = config.head_dim
 
     # Create query, key, value states
-    hidden_states = torch.randn(batch_size, num_heads, seq_len // 2, head_dim, device=device)
+    hidden_states = torch.randn(
+        batch_size, num_heads, seq_len // 2, head_dim, device=device
+    )
     query_states = torch.cat([hidden_states, hidden_states.clone()], dim=2)
     key_states = query_states.clone()
     value_states = query_states.clone()
@@ -90,14 +92,87 @@ def test_attention_module(device):
     print(f"Time with segment_ids: {time_with_seg:.4f}s")
     print(f"Output shape: {output_with_seg.shape}")
     print(f"Diff: {torch.norm(output_with_seg - output_no_seg).item():.4f}")
-    print(f"Diff first half: {torch.norm(output_with_seg[:, :, :seq_len // 2, :] - output_no_seg[:, :, :seq_len // 2, :]).item():.4f}")
+    print(
+        f"Diff first half: {torch.norm(output_with_seg[:, :, :seq_len // 2, :] - output_no_seg[:, :, :seq_len // 2, :]).item():.4f}"
+    )
     # print(f"Output with segment_ids: {output_with_seg.detach().cpu()}")
     # print(f"Output without segment_ids: {output_no_seg.detach().cpu()}")
+
+
+def test_model_forward(device):
+    """Test Qwen2ForCausalLM with and without segment_ids"""
+    print(f"\n=== Testing Qwen2ForCausalLM on device: {device} ===")
+
+    # Load model config
+    config_path = "torchprime/torch_xla_models/configs/model/flex-qwen2-1b.yaml"
+    config = OmegaConf.load(config_path)
+    print(f"Loaded config from {config_path}")
+
+    # Initialize model
+    from torchprime.torch_xla_models.model_utils import initialize_model_class
+
+    model = initialize_model_class(config.model, load_from_hf=True)
+    model = model.to(device)
+    model.eval()
+    print("Model loaded and moved to device")
+
+    # Create dummy inputs
+    batch_size = 2
+    seq_len = 6
+
+    # Create input_ids like [[1,2,3,4,5,6],[1,2,3,1,2,3]]
+    input_ids = torch.tensor(
+        [[1, 2, 3, 4, 5, 6], [1, 2, 3, 1, 2, 3]], dtype=torch.long, device=device
+    )
+
+    # Create segment_ids where first half is segment 0, second half is segment 1
+    segment_ids = torch.zeros(batch_size, seq_len, dtype=torch.long, device=device)
+    segment_ids[:, seq_len // 2 :] = 1
+
+    print(f"\nInput IDs shape: {input_ids.shape}")
+    print(f"Input IDs: {input_ids}")
+    print(f"Segment IDs: {segment_ids}")
+
+    # Test without segment_ids
+    print("\n=== Testing model WITHOUT segment_ids ===")
+    with torch.no_grad():
+        logits_no_seg, _ = model(input_ids=input_ids)
+    print(f"Logits shape: {logits_no_seg.shape}")
+
+    # Test with segment_ids
+    print("\n=== Testing model WITH segment_ids ===")
+    with torch.no_grad():
+        logits_with_seg, _ = model(input_ids=input_ids, segment_ids=segment_ids)
+    print(f"Logits shape: {logits_with_seg.shape}")
+
+    # Compare norms of logits for each row
+    print("\n=== Comparing logits norms ===")
+    for i in range(batch_size):
+        norm_no_seg = torch.norm(
+            logits_no_seg[i], dim=-1
+        )  # Norm across vocab dimension
+        norm_with_seg = torch.norm(logits_with_seg[i], dim=-1)
+
+        print(f"\nRow {i}:")
+        print(f"  Without segment_ids - norm per position: {norm_no_seg.cpu().numpy()}")
+        print(
+            f"  With segment_ids    - norm per position: {norm_with_seg.cpu().numpy()}"
+        )
+        print(f"  Difference in norms: {(norm_with_seg - norm_no_seg).cpu().numpy()}")
+
+        # Also compute overall difference in logits
+        diff = torch.norm(logits_with_seg[i] - logits_no_seg[i])
+        print(f"  Overall logits difference (L2 norm): {diff.item():.6f}")
+
+    # Also compare overall logits
+    total_diff = torch.norm(logits_with_seg - logits_no_seg)
+    print(f"\nTotal logits difference (L2 norm): {total_diff.item():.6f}")
 
 
 def main():
     device = torch_xla.device()
     test_attention_module(device)
+    test_model_forward(device)
 
 
 if __name__ == "__main__":
