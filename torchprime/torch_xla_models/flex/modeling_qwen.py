@@ -179,7 +179,7 @@ class Qwen3Attention(nn.Module):
     position_embeddings: Tuple[torch.Tensor, torch.Tensor],
     attention_mask: torch.Tensor | None = None,
     position_ids: torch.LongTensor | None = None,
-    segment_ids: torch.LongTensor | None = None,
+    segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
   ) -> torch.FloatTensor:
     bsz, q_len, _ = hidden_states.size()
 
@@ -272,7 +272,7 @@ class Qwen3DecoderLayer(nn.Module):
     attention_mask: torch.Tensor | None = None,
     position_ids: torch.Tensor | None = None,
     position_embeddings: tuple[torch.Tensor, torch.Tensor]| None = None,  # necessary, but kept here for BC
-    segment_ids: torch.LongTensor | None = None,
+    segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
   ) -> torch.Tensor:
     """
     Args:
@@ -349,7 +349,7 @@ class Qwen3Model(nn.Module):
     self,
     input_ids: torch.LongTensor,
     attention_mask: torch.FloatTensor | None = None,
-    segment_ids: torch.LongTensor | None = None,
+    segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
   ) -> torch.Tensor:
     # convert input ids to embeddings
     inputs_embeds = self.embed_tokens(input_ids)
@@ -421,7 +421,7 @@ class Qwen3ForCausalLM(nn.Module):
     labels: torch.LongTensor | None = None,
     attention_mask: torch.FloatTensor | None = None,
     src_mask: torch.BoolTensor | None = None,
-    segment_ids: torch.LongTensor | None = None,
+    segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
     training_mode: str = "pretrain",
     **kwargs,
   ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:

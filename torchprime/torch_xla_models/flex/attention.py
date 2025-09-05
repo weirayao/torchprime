@@ -48,7 +48,7 @@ class AttentionModule(nn.Module):
     key_states: torch.Tensor,
     value_states: torch.Tensor,
     attention_mask: torch.Tensor | None = None,
-    segment_ids: torch.LongTensor | None = None,
+    segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
   ):
     """Original TPU/XLA implementation"""
 
@@ -161,7 +161,7 @@ class AttentionModule(nn.Module):
     key_states: torch.Tensor,
     value_states: torch.Tensor,
     attention_mask: torch.Tensor | None = None,
-    segment_ids: torch.LongTensor | None = None,
+    segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
   ):
     """GPU-optimized PyTorch implementation"""
     if self.config.attention_kernel != "splash_attention":
@@ -232,7 +232,7 @@ class AttentionModule(nn.Module):
     key_states: torch.Tensor,
     value_states: torch.Tensor,
     attention_mask: torch.Tensor | None = None,
-    segment_ids: torch.LongTensor | None = None,
+    segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
   ):
     if IS_TPU:
       return self._forward_tpu(query_states, key_states, value_states, attention_mask, segment_ids=segment_ids)
