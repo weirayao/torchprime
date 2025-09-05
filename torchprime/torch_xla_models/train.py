@@ -199,10 +199,10 @@ class Trainer:
     if not tracked_steps:
       logger.warning("No checkpoint steps found. Starting from scratch.")
       return
-    self.optimizer = prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
+    # self.optimizer = prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
     state_dict = {
       "model": self.model.state_dict(),
-      "optimizer": self.optimizer.state_dict(),
+      # "optimizer": self.optimizer.state_dict(), # NOTE: torch_xla has problem loading optimizer state dict with 2d sharding
       "scheduler": self.lr_scheduler.state_dict(),
       "masking_scheduler": self.masking_scheduler.state_dict(),
       "step": self.start_step,
@@ -220,7 +220,7 @@ class Trainer:
 
     self.model.load_state_dict(state_dict["model"])
     if self.config.resume_from_checkpoint:
-      self.optimizer.load_state_dict(state_dict["optimizer"])
+      # self.optimizer.load_state_dict(state_dict["optimizer"])
       self.lr_scheduler.load_state_dict(state_dict["scheduler"])
       if "masking_scheduler" in state_dict:
         self.masking_scheduler.load_state_dict(state_dict["masking_scheduler"])
