@@ -483,9 +483,8 @@ class Trainer:
         )
         batch["segment_ids"] = segment_ids
         logger.info(f"input_ids: {batch['input_ids']}")
-        logger.info(f"eos_mask: {eos_mask}")
         logger.info(f"segment_ids: {batch['segment_ids']}")
-        logger.info(f"text: {self.tokenizer.decode(batch['input_ids'], skip_special_tokens=False)}")
+        logger.info(f"text: {self.tokenizer.batch_decode(batch['input_ids'], skip_special_tokens=False)}")
 
       loss = self.train_step(batch)
       trace_end_time = timer()
