@@ -18,8 +18,6 @@ from torchprime.torch_xla_models.flex.attention import AttentionModule
 
 import numpy as np
 import time
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 
 
 def create_test_config():
