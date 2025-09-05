@@ -57,7 +57,7 @@ def test_attention_module(device):
 
     # Create query, key, value states
     hidden_states = torch.randn(batch_size, num_heads, seq_len // 2, head_dim, device=device)
-    query_states = torch.cat([hidden_states, hidden_states.clone()], dim=1)
+    query_states = torch.cat([hidden_states, hidden_states.clone()], dim=2)
     key_states = query_states.clone()
     value_states = query_states.clone()
 
