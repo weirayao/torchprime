@@ -14,8 +14,6 @@ if IS_TPU:
     from torchprime.torch_xla_models import offloading
 
 
-EOS_TOKEN_ID = 151645
-
 
 def prefix_input_ids(input_ids, maskable_mask, apply_prefix):
     """Apply prefix to input_ids based on configured probability. Return a masksable mask such that the prefix is not masked."""
@@ -467,22 +465,6 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         training_mode: str = "pretrain",
         **kwargs,
     ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:
-        # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
-        if training_mode == "pretrain" and segment_ids is None:
-            # Create segment_ids by looking at EOS_TOKEN_ID positions
-            # Find all positions where EOS tokens occur
-            eos_mask = torch.where(input_ids == EOS_TOKEN_ID, 1, 0).long().to(input_ids.device)
-
-            # Compute cumulative sum of EOS tokens to get segment IDs
-            # Each EOS token increments the segment ID for subsequent tokens
-            segment_ids = eos_mask.cumsum(dim=1)
-
-            # Shift segment_ids to the right by 1 position so tokens before first EOS are segment 0
-            # and tokens after each EOS get incremented segment IDs
-            segment_ids = torch.cat(
-                [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
-            )
-
         if not self.training:
             model_output = self.model(input_ids=input_ids, attention_mask=attention_mask, segment_ids=None)
             hidden_states = model_output
