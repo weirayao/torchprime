@@ -25,7 +25,7 @@ from transformers import AutoTokenizer
 from transformers.utils import check_min_version
 
 from torchprime.utils.retry import retry
-from .train_archive import Trainer, initialize_model_class
+from torchprime.torch_xla_models.train import Trainer, initialize_model_class
 from torchprime.torch_xla_models.model_utils import save_sharded_safetensors_by_layer
 
 MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)

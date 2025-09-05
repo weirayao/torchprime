@@ -114,15 +114,6 @@ class Trainer:
     minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
     self.minibatch = minibatch
     logger.info(f"Minibatch dataloading: {minibatch}")
-    # if not minibatch:
-      # NOTE(haolin): when minibatch is False, this will be the batch size per worker
-      # because
-      # 1. per worker will load the self.global_batch_size samples in a step
-      # 2. we did not use distributed sampler for IterableDataset, instead we split the dataset by workers
-      # so the effective global batch size is the global batch size * number of workers
-    #   self.effective_global_batch_size = self.global_batch_size * xr.process_count()
-    # else:
-    self.effective_global_batch_size = self.global_batch_size
 
     # TODO(https://github.com/AI-Hypercomputer/torchprime/issues/66): Test this for multislice
     self.input_sharding_spec = xs.ShardingSpec(
@@ -146,8 +137,7 @@ class Trainer:
     model = self._add_checkpoint_offload_scan_model(model)
     model = self._add_optimization_barrier_model(model)
     self.model = model
-    # self.hf_model = load_hf_model(self.config.model)
-    # logger.info(f"model.state_dict().keys() after sharding and trainer init: {model.state_dict().keys()}")
+
     # Set up optimizers
     self.optimizer = Adafactor(
       params=model.parameters(),
@@ -155,9 +145,6 @@ class Trainer:
       relative_step=False,
       scale_parameter=False,
     )
-
-    # TODO: this OOMs the TPU.
-    # self._prime_optimizer()
 
     self.lr_scheduler = get_scheduler(
       name=self.config.lr_scheduler.type,
@@ -205,13 +192,6 @@ class Trainer:
     # Execute all initialization work queued so far before starting training.
     torch_xla.sync()
 
-  def _prime_optimizer(self):
-    for group in self.optimizer.param_groups:
-      for p in group["params"]:
-        p.grad = torch.zeros_like(p)
-        p.grad.requires_grad_(False)
-    self.optimizer.step()
-    torch_xla.sync()
 
   def _load_checkpoint(self):
     """Load optimizer, scheduler, and training state from checkpoint."""
@@ -411,8 +391,6 @@ class Trainer:
       self._load_checkpoint()
     self.model.train()
     self.model.zero_grad()
-    # logger.info("DEBUG: 1")
-    # For now we assume that we wil never train for mor than one epoch
     max_step = self.config.max_steps
     train_loader = self._get_train_dataloader()
     train_iterator = iter(train_loader)
@@ -421,7 +399,6 @@ class Trainer:
     logger.info("Starting training")
     logger.info(f"    Max step: {max_step}")
     logger.info(f"    Global batch size: {self.global_batch_size}")
-    logger.info(f"    Effective global batch size: {self.effective_global_batch_size}")
     if hasattr(self, 'start_step') and self.start_step > 0:
       logger.info(f"    Resuming from step: {self.start_step}")
     if is_main_process():
@@ -432,11 +409,9 @@ class Trainer:
       # Set wandb step to start_step if resuming from checkpoint
       if self.start_step > 0:
         wandb.log({}, step=self.start_step-1)  # Set the initial step counter
-    # logger.info("DEBUG: 2")
     # Initialize epoch and step counters, accounting for checkpoint loading
     epoch = 0
     start_step = self.start_step
-    # logger.info("DEBUG: 3")
     # Skip batches for partial file processing when resuming from checkpoint
     if self.config.checkpoint_load_step is not None and self.config.steps_to_skip == 0:
       logger.warning("steps_to_skip is 0, but checkpoint_load_step is not None. This will cause the trainer to start from the beginning of the dataset. Please check the logs to see if this is expected.")
@@ -481,7 +456,6 @@ class Trainer:
 
           # Recreate dataloader with the full dataset
           train_loader = self._get_train_dataloader()
-          # logger.info("DEBUG: 4")
           xm.wait_device_ops()
           torch_xla.sync()
 
@@ -492,20 +466,12 @@ class Trainer:
       # Validate batch for SFT mode
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
-      # logger.info("DEBUG: 5")
       loss = self.train_step(batch)
-      # logger.info("DEBUG: 6")
       trace_end_time = timer()
 
       if step % self.config.logging_steps == 0:
-        # logger.info("DEBUG: 7")
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
-          # logger.info("DEBUG: 8")
           loss = loss.detach().item()
-          # logger.info(
-          #   f"Epoch: {epoch}, step: {step}, "
-          #   f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
-          # )
           logger.info(
             f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
             f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
@@ -521,17 +487,15 @@ class Trainer:
                 "train/epoch": epoch,
                 "train/step": step,
                 "train/lr": self.lr_scheduler.get_last_lr()[0],
-                "train/total_tokens": self.config.data.block_size * (step + 1) * self.effective_global_batch_size,
+                "train/total_tokens": self.config.data.block_size * (step + 1) * self.global_batch_size,
               },
               step=step  # Explicitly set the wandb global step
             )
-        # logger.info("DEBUG: 9")
         xm.add_step_closure(
           step_closure,
           args=(epoch, step, loss, trace_start_time, trace_end_time),
           run_async=True,
         )
-        # logger.info("DEBUG: 10")
       if step > self.start_step and step % self.config.save_steps == 0:
         # NOTE: currently we save the checkpoint synchronously
         xm.wait_device_ops()  # Wait for all XLA operations to complete
@@ -761,21 +725,15 @@ def main(config: DictConfig):
           logger.info(f"Resuming from checkpoint {config.checkpoint_load_step}, will recompute the data files to skip")
           # Calculate which files to skip based on checkpoint step and batch size
           samples_per_file = config.data.samples_per_file if hasattr(config.data, 'samples_per_file') and config.data.samples_per_file is not None else 5000
-          minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
-          if minibatch:
-            effective_global_batch_size = config.global_batch_size
-          else:
-            effective_global_batch_size = config.global_batch_size * xr.process_count()
-          total_samples_processed = config.checkpoint_load_step * effective_global_batch_size
+          total_samples_processed = config.checkpoint_load_step * config.global_batch_size
           files_to_skip, num_samples_processed_in_current_file = divmod(total_samples_processed, samples_per_file)
 
           logger.info(f"Resuming from checkpoint step {config.checkpoint_load_step}")
           logger.info(f"Total samples processed: {total_samples_processed}")
-          logger.info(f"Files to skip: {files_to_skip}")
           logger.info(f"Remaining samples in current file: {num_samples_processed_in_current_file}")
 
           # Calculate additional steps to skip within the current file
-          steps_to_skip = num_samples_processed_in_current_file // effective_global_batch_size
+          steps_to_skip = num_samples_processed_in_current_file // config.global_batch_size
           logger.info(f"Additional steps to skip in current file: {steps_to_skip}")
           config.steps_to_skip = steps_to_skip
 
@@ -793,6 +751,8 @@ def main(config: DictConfig):
           config.is_resuming_epoch = True
 
           # Skip the appropriate number of files for the current epoch
+          files_to_skip = files_to_skip % len(all_data_files)
+          logger.info(f"Files to skip: {files_to_skip}")
           remaining_files = all_data_files[files_to_skip:]
 
           logger.info(f"Total data files: {len(all_data_files)}")
@@ -835,7 +795,6 @@ def main(config: DictConfig):
       )
     else:
       raise ValueError("No dataset provided")
-  # minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
   if isinstance(data, IterableDataset):
     try:
       logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")

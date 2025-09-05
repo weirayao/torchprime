@@ -48,6 +48,7 @@ class AttentionModule(nn.Module):
     key_states: torch.Tensor,
     value_states: torch.Tensor,
     attention_mask: torch.Tensor | None = None,
+    segment_ids: torch.LongTensor | None = None,
   ):
     """Original TPU/XLA implementation"""
 
@@ -119,11 +120,12 @@ class AttentionModule(nn.Module):
           key_states,
           value_states,
           causal=False, # weiran: causal=False for bi-directional attention
+          q_segment_ids=segment_ids,
+          kv_segment_ids=segment_ids,
           partition_spec=self.partition_spec,
         )
       case "default" | None:
         # Default attention implementation (no flash attention)
-        print(f"Default attention implementation")
         attn_weights = torch.matmul(
           query_states, key_states.transpose(2, 3)
         ) / math.sqrt(head_dim)
@@ -159,6 +161,7 @@ class AttentionModule(nn.Module):
     key_states: torch.Tensor,
     value_states: torch.Tensor,
     attention_mask: torch.Tensor | None = None,
+    segment_ids: torch.LongTensor | None = None,
   ):
     """GPU-optimized PyTorch implementation"""
     if self.config.attention_kernel != "splash_attention":
@@ -229,8 +232,9 @@ class AttentionModule(nn.Module):
     key_states: torch.Tensor,
     value_states: torch.Tensor,
     attention_mask: torch.Tensor | None = None,
+    segment_ids: torch.LongTensor | None = None,
   ):
     if IS_TPU:
-      return self._forward_tpu(query_states, key_states, value_states, attention_mask)
+      return self._forward_tpu(query_states, key_states, value_states, attention_mask, segment_ids=segment_ids)
     else:
-      return self._forward_gpu(query_states, key_states, value_states, attention_mask)
+      return self._forward_gpu(query_states, key_states, value_states, attention_mask, segment_ids=segment_ids)
