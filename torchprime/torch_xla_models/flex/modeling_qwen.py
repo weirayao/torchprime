@@ -179,6 +179,7 @@ class Qwen3Attention(nn.Module):
     position_embeddings: Tuple[torch.Tensor, torch.Tensor],
     attention_mask: torch.Tensor | None = None,
     position_ids: torch.LongTensor | None = None,
+    segment_ids: torch.LongTensor | None = None,
   ) -> torch.FloatTensor:
     bsz, q_len, _ = hidden_states.size()
 
@@ -204,7 +205,7 @@ class Qwen3Attention(nn.Module):
     query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
     attn_output = self.attention_block(
-      query_states, key_states, value_states, attention_mask
+      query_states, key_states, value_states, attention_mask, segment_ids=segment_ids
     )
     attn_output = attn_output.transpose(1, 2).contiguous()
     attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
@@ -271,6 +272,7 @@ class Qwen3DecoderLayer(nn.Module):
     attention_mask: torch.Tensor | None = None,
     position_ids: torch.Tensor | None = None,
     position_embeddings: tuple[torch.Tensor, torch.Tensor]| None = None,  # necessary, but kept here for BC
+    segment_ids: torch.LongTensor | None = None,
   ) -> torch.Tensor:
     """
     Args:
@@ -295,6 +297,7 @@ class Qwen3DecoderLayer(nn.Module):
       attention_mask=attention_mask,
       position_ids=position_ids,
       position_embeddings=position_embeddings,
+      segment_ids=segment_ids,
     )
     hidden_states = residual + hidden_states
 
@@ -346,6 +349,7 @@ class Qwen3Model(nn.Module):
     self,
     input_ids: torch.LongTensor,
     attention_mask: torch.FloatTensor | None = None,
+    segment_ids: torch.LongTensor | None = None,
   ) -> torch.Tensor:
     # convert input ids to embeddings
     inputs_embeds = self.embed_tokens(input_ids)
@@ -379,6 +383,7 @@ class Qwen3Model(nn.Module):
       attention_mask=causal_mask,
       position_ids=position_ids,
       position_embeddings=position_embeddings,
+      segment_ids=segment_ids,
     )
 
     hidden_states = self.norm(hidden_states)
@@ -394,6 +399,7 @@ class Qwen3ForCausalLM(nn.Module):
     self.vocab_size = config.vocab_size
     self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
     self.mask_token_id = config.mask_token_id
+    self.eos_token_id = config.eos_token_id
 
     # Initialize weights and apply final processing
     self.apply(self._init_weights)
@@ -415,6 +421,7 @@ class Qwen3ForCausalLM(nn.Module):
     labels: torch.LongTensor | None = None,
     attention_mask: torch.FloatTensor | None = None,
     src_mask: torch.BoolTensor | None = None,
+    segment_ids: torch.LongTensor | None = None,
     training_mode: str = "pretrain",
     **kwargs,
   ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:
@@ -428,6 +435,21 @@ class Qwen3ForCausalLM(nn.Module):
 
     if training_mode == "sft" and src_mask is None:
       raise ValueError("SFT mode requires a non-null src_mask")
+
+    if training_mode == "pretrain" and segment_ids is None:
+      # Create segment_ids by looking at EOS_TOKEN_ID positions
+      # Find all positions where EOS tokens occur
+      eos_mask = input_ids == self.eos_token_id
+
+      # Compute cumulative sum of EOS tokens to get segment IDs
+      # Each EOS token increments the segment ID for subsequent tokens
+      segment_ids = eos_mask.cumsum(dim=1)
+
+      # Shift segment_ids to the right by 1 position so tokens before first EOS are segment 0
+      # and tokens after each EOS get incremented segment IDs
+      segment_ids = torch.cat(
+          [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
+      )
 
     # weiran: diffullama
     sampling_eps = 1e-3
@@ -491,7 +513,7 @@ class Qwen3ForCausalLM(nn.Module):
     )
     loss_mask = noisy_input_ids == mask_token_id
 
-    hidden_states = self.model(input_ids=noisy_input_ids, attention_mask=attention_mask)
+    hidden_states = self.model(input_ids=noisy_input_ids, attention_mask=attention_mask, segment_ids=segment_ids)
     # hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
     logits = self.lm_head(hidden_states)
     logits = logits.float()

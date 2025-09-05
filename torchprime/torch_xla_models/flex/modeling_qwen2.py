@@ -445,7 +445,7 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         # # Initialize weights and apply final processing
         # self.post_init()
         self.apply(self._init_weights)
-        
+
     def _init_weights(self, module):
         std = getattr(self.config, "initializer_range", 0.02)
         if isinstance(module, nn.Linear):
@@ -471,19 +471,18 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         if training_mode == "pretrain" and segment_ids is None:
             # Create segment_ids by looking at EOS_TOKEN_ID positions
             # Find all positions where EOS tokens occur
-            eos_mask = (input_ids == EOS_TOKEN_ID)
-            
+            eos_mask = input_ids == EOS_TOKEN_ID # haolin: hardcode EOS_TOKEN_ID as data is processed by Qwen3 tokenizer
+
             # Compute cumulative sum of EOS tokens to get segment IDs
             # Each EOS token increments the segment ID for subsequent tokens
             segment_ids = eos_mask.cumsum(dim=1)
-            
+
             # Shift segment_ids to the right by 1 position so tokens before first EOS are segment 0
             # and tokens after each EOS get incremented segment IDs
-            segment_ids = torch.cat([
-                torch.zeros_like(segment_ids[:, :1]),
-                segment_ids[:, :-1]
-            ], dim=1)
-        
+            segment_ids = torch.cat(
+                [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
+            )
+
         if not self.training:
             model_output = self.model(input_ids=input_ids, attention_mask=attention_mask, segment_ids=None)
             hidden_states = model_output
@@ -548,7 +547,7 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
             mask_block_size=mask_block_size
         )
         loss_mask = noisy_input_ids == mask_token_id
-        
+
         hidden_states = self.model(input_ids=noisy_input_ids, attention_mask=attention_mask, segment_ids=segment_ids)
         # hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
         logits = self.lm_head(hidden_states)
@@ -571,11 +570,3 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         # https://github.com/ML-GSAI/SMDM/blob/main/pretrain/train_mdm_rl.py#L281-L283
         loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
         return logits, loss
-
-
-# class Qwen2ForSequenceClassification(GenericForSequenceClassification, Qwen2PreTrainedModel):
-#     pass
-
-
-# class Qwen2ForTokenClassification(GenericForTokenClassification, Qwen2PreTrainedModel):
-#     pass
