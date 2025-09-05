@@ -13,7 +13,7 @@ python torchprime/torch_xla_models/train.py \
     model.prefix_probability=0.05 \
     model.masking_scheduler.schedule_type=linear \
     model.masking_scheduler.max_schedule_steps=2500 \
-    optimizer.learning_rate=5e-4 \
+    optimizer.learning_rate=2e-4 \
     lr_scheduler.warmup_steps=250 \
     global_batch_size=8192 \
     max_steps=25000 \
