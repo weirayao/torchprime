@@ -91,6 +91,7 @@ def test_attention_module(device):
     time_with_seg = time.time() - start_time
     logger.info(f"Time with segment_ids: {time_with_seg:.4f}s")
     logger.info(f"Output shape: {output_with_seg.shape}")
+    logger.info(f"Diff: {torch.norm(output_with_seg - output_no_seg).item():.4f}")
     # print(f"Output with segment_ids: {output_with_seg.detach().cpu()}")
     # print(f"Output without segment_ids: {output_no_seg.detach().cpu()}")
 
