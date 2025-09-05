@@ -146,7 +146,6 @@ def test_model_forward(device):
     # Compare norms of logits for each row
     print("\n=== Comparing logits norms ===")
     for i in range(batch_size):
-        print(f"  Difference in norms: {(norm_with_seg - norm_no_seg).cpu().numpy()}")
 
         # Also compute overall difference in logits
         diff = torch.norm(logits_with_seg[i] - logits_no_seg[i])
