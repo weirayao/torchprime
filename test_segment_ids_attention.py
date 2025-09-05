@@ -56,9 +56,10 @@ def test_attention_module(device):
     head_dim = config.head_dim
 
     # Create query, key, value states
-    query_states = torch.randn(batch_size, num_heads, seq_len, head_dim, device=device)
-    key_states = torch.randn(batch_size, num_heads, seq_len, head_dim, device=device)
-    value_states = torch.randn(batch_size, num_heads, seq_len, head_dim, device=device)
+    hidden_states = torch.randn(batch_size, num_heads, seq_len // 2, head_dim, device=device)
+    query_states = torch.cat([hidden_states, hidden_states.clone()], dim=1)
+    key_states = query_states.clone()
+    value_states = query_states.clone()
 
     # Create segment_ids
     segment_ids = torch.zeros(batch_size, seq_len, dtype=torch.long, device=device)
@@ -89,6 +90,7 @@ def test_attention_module(device):
     print(f"Time with segment_ids: {time_with_seg:.4f}s")
     print(f"Output shape: {output_with_seg.shape}")
     print(f"Diff: {torch.norm(output_with_seg - output_no_seg).item():.4f}")
+    print(f"Diff first half: {torch.norm(output_with_seg[:, :, :seq_len // 2] - output_no_seg[:, :, :seq_len // 2]).item():.4f}")
     # print(f"Output with segment_ids: {output_with_seg.detach().cpu()}")
     # print(f"Output without segment_ids: {output_no_seg.detach().cpu()}")
 
