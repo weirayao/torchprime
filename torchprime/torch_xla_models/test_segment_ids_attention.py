@@ -113,7 +113,7 @@ def test_model_forward(device):
 
     model = initialize_model_class(config, load_from_hf=True)
     model = model.to(device)
-    model.eval()
+    model.train()
     print("Model loaded and moved to device")
 
     # Create dummy inputs
@@ -133,34 +133,24 @@ def test_model_forward(device):
 
     # Test without segment_ids
     print("\n=== Testing model WITHOUT segment_ids ===")
-    with torch.no_grad():
-        logits_no_seg, _ = model(input_ids=input_ids)
+    logits_no_seg, _ = model(input_ids=input_ids)
+    logits_no_seg = logits_no_seg.detach().cpu()
     print(f"Logits shape: {logits_no_seg.shape}")
 
     # Test with segment_ids
     print("\n=== Testing model WITH segment_ids ===")
-    with torch.no_grad():
-        logits_with_seg, _ = model(input_ids=input_ids, segment_ids=segment_ids)
+    logits_with_seg, _ = model(input_ids=input_ids, segment_ids=segment_ids)
+    logits_with_seg = logits_with_seg.detach().cpu()
     print(f"Logits shape: {logits_with_seg.shape}")
 
     # Compare norms of logits for each row
     print("\n=== Comparing logits norms ===")
     for i in range(batch_size):
-        norm_no_seg = torch.norm(
-            logits_no_seg[i], dim=-1
-        )  # Norm across vocab dimension
-        norm_with_seg = torch.norm(logits_with_seg[i], dim=-1)
-
-        print(f"\nRow {i}:")
-        print(f"  Without segment_ids - norm per position: {norm_no_seg.cpu().numpy()}")
-        print(
-            f"  With segment_ids    - norm per position: {norm_with_seg.cpu().numpy()}"
-        )
         print(f"  Difference in norms: {(norm_with_seg - norm_no_seg).cpu().numpy()}")
 
         # Also compute overall difference in logits
         diff = torch.norm(logits_with_seg[i] - logits_no_seg[i])
-        print(f"  Overall logits difference (L2 norm): {diff.item():.6f}")
+        print(f"  Logits difference (L2 norm): {diff.item():.6f}")
 
     # Also compare overall logits
     total_diff = torch.norm(logits_with_seg - logits_no_seg)
