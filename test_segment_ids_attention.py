@@ -90,7 +90,7 @@ def test_attention_module(device):
     print(f"Time with segment_ids: {time_with_seg:.4f}s")
     print(f"Output shape: {output_with_seg.shape}")
     print(f"Diff: {torch.norm(output_with_seg - output_no_seg).item():.4f}")
-    print(f"Diff first half: {torch.norm(output_with_seg[:, :, :seq_len // 2] - output_no_seg[:, :, :seq_len // 2]).item():.4f}")
+    print(f"Diff first half: {torch.norm(output_with_seg[:, :, :seq_len // 2, :] - output_no_seg[:, :, :seq_len // 2, :]).item():.4f}")
     # print(f"Output with segment_ids: {output_with_seg.detach().cpu()}")
     # print(f"Output without segment_ids: {output_no_seg.detach().cpu()}")
 
