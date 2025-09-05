@@ -68,7 +68,7 @@ def test_attention_module(device):
     segment_ids[:, seq_len // 2 :] = 1
 
     # Test without segment_ids
-    logger.info("\nTesting attention WITHOUT segment_ids...")
+    print("\nTesting attention WITHOUT segment_ids...")
     start_time = time.time()
     output_no_seg = attn_module(
         query_states, key_states, value_states, attention_mask=None, segment_ids=None
