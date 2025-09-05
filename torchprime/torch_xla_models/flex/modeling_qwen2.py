@@ -471,8 +471,7 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         if training_mode == "pretrain" and segment_ids is None:
             # Create segment_ids by looking at EOS_TOKEN_ID positions
             # Find all positions where EOS tokens occur
-            eos_mask = torch.zeros_like(input_ids, dtype=torch.long, device=input_ids.device)
-            eos_mask[input_ids == EOS_TOKEN_ID] = 1  # haolin: hardcode EOS_TOKEN_ID as data is processed by Qwen3 tokenizer
+            eos_mask = torch.where(input_ids == EOS_TOKEN_ID, 1, 0).long().to(input_ids.device)
 
             # Compute cumulative sum of EOS tokens to get segment IDs
             # Each EOS token increments the segment ID for subsequent tokens
