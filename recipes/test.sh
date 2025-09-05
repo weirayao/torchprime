@@ -4,7 +4,7 @@ export XLA_HLO_DEBUG=1
 python torchprime/torch_xla_models/train.py \
     training_mode=pretrain \
     data=test_data \
-    model=model=flex-qwen2-1b \
+    model=flex-qwen2-1b \
     model.block_masking_probability=0.05 \
     model.mask_block_sizes=[[2,4,8],[16,32,64]] \
     model.truncate_probability=0.05 \
