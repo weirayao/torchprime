@@ -118,12 +118,10 @@ def test_model_forward(device):
 
     # Create dummy inputs
     batch_size = 2
-    seq_len = 6
+    seq_len = 256
 
     # Create input_ids like [[1,2,3,4,5,6],[1,2,3,1,2,3]]
-    input_ids = torch.tensor(
-        [[1, 2, 3, 4, 5, 6], [1, 2, 3, 1, 2, 3]], dtype=torch.long, device=device
-    )
+    input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_len), device=device)
 
     # Create segment_ids where first half is segment 0, second half is segment 1
     segment_ids = torch.zeros(batch_size, seq_len, dtype=torch.long, device=device)
