@@ -89,16 +89,8 @@ def test_attention_module(device):
     time_with_seg = time.time() - start_time
     print(f"Time with segment_ids: {time_with_seg:.4f}s")
     print(f"Output shape: {output_with_seg.shape}")
-
-    # Compare outputs
-    diff = torch.abs(output_no_seg - output_with_seg)
-    print(f"\nMax difference between outputs: {diff.max().item():.6f}")
-    print(f"Mean difference between outputs: {diff.mean().item():.6f}")
-
-    # The outputs should be different because segment_ids restricts attention
-    print(
-        f"\nOutputs are {'DIFFERENT' if diff.max().item() > 1e-5 else 'SIMILAR'} (as expected with segment masking)"
-    )
+    print(f"Output with segment_ids: {output_with_seg.detach().cpu()}")
+    print(f"Output without segment_ids: {output_no_seg.detach().cpu()}")
 
 
 def main():
