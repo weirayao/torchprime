@@ -467,6 +467,10 @@ class Trainer:
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
       else:
+        batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
+        if "attention_mask" in batch:
+          batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
+
         # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
         # Create segment_ids by looking at EOS_TOKEN_ID positions
         EOS_TOKEN_ID = 151645
