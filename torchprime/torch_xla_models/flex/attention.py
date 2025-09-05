@@ -116,7 +116,7 @@ class AttentionModule(nn.Module):
 
         query_states /= math.sqrt(head_dim)
         if segment_ids is not None:
-          segment_ids = segment_ids.int()
+          segment_ids = segment_ids.int() # NOTE: haolin: bypass the scan limitation with integer tensors
         attn_output = flash_attention(
           query_states,
           key_states,

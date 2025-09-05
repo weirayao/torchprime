@@ -16,12 +16,12 @@ python torchprime/torch_xla_models/train.py \
     optimizer.learning_rate=1e-5 \
     lr_scheduler.warmup_steps=30 \
     global_batch_size=32 \
-    max_steps=20000 \
+    max_steps=100 \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
     resume_from_checkpoint=false \
     checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen2_5_Coder_1_5b_test/ \
-    save_steps=500 \
+    save_steps=50 \
     logging_steps=1 \
     ici_mesh.fsdp=4 \
     ici_mesh.tensor=2 \

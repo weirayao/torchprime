@@ -199,7 +199,7 @@ class Trainer:
     if not tracked_steps:
       logger.warning("No checkpoint steps found. Starting from scratch.")
       return
-    # self.optimizer = prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
+    self.optimizer = prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
     state_dict = {
       "model": self.model.state_dict(),
       "optimizer": self.optimizer.state_dict(),
