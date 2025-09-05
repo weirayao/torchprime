@@ -96,38 +96,38 @@ def test_attention_module(device):
         f"Diff first half: {torch.norm(output_with_seg[:, :, :seq_len // 2, :] - output_no_seg[:, :, :seq_len // 2, :]).item():.4f}"
     )
 
-    print("Now test with flex attention")
-    config.attention_kernel = "flex_attention"
-    attn_module_flex = AttentionModule(config).to(device)
+    print("Now test with default attention")
+    config.attention_kernel = "default"
+    attn_module_default = AttentionModule(config).to(device)
     start_time = time.time()
-    output_no_seg_flex = attn_module_flex(
+    output_no_seg_default = attn_module_default(
         query_states,
         key_states,
         value_states,
         attention_mask=None,
         segment_ids=None,
     )
-    time_no_seg_flex = time.time() - start_time
-    print(f"Flex attention time without segment_ids: {time_no_seg_flex:.4f}s")
-    print(f"Output shape: {output_no_seg_flex.shape}")
+    time_no_seg_default = time.time() - start_time
+    print(f"Default attention time without segment_ids: {time_no_seg_default:.4f}s")
+    print(f"Output shape: {output_no_seg_default.shape}")
     start_time = time.time()
-    output_with_seg_flex = attn_module_flex(
+    output_with_seg_default = attn_module_default(
         query_states,
         key_states,
         value_states,
         attention_mask=None,
         segment_ids=segment_ids,
     )
-    time_with_seg_flex = time.time() - start_time
-    print(f"Flex attention time with segment_ids: {time_with_seg_flex:.4f}s")
-    print(f"Output shape: {output_with_seg_flex.shape}")
-    print(f"Diff: {torch.norm(output_with_seg_flex - output_no_seg_flex).item():.4f}")
+    time_with_seg_default = time.time() - start_time
+    print(f"Default attention time with segment_ids: {time_with_seg_default:.4f}s")
+    print(f"Output shape: {output_with_seg_default.shape}")
+    print(f"Diff: {torch.norm(output_with_seg_default - output_no_seg_default).item():.4f}")
     print(
-        f"Diff first half: {torch.norm(output_with_seg_flex[:, :, :seq_len // 2, :] - output_no_seg_flex[:, :, :seq_len // 2, :]).item():.4f}"
+        f"Diff first half: {torch.norm(output_with_seg_default[:, :, :seq_len // 2, :] - output_no_seg_default[:, :, :seq_len // 2, :]).item():.4f}"
     )
 
-    print(f"Diff between flex attention and attention module: {torch.norm(output_with_seg_flex - output_with_seg).item():.4f}")
-    print(f"Diff between flex attention and attention module without segment_ids: {torch.norm(output_no_seg_flex - output_no_seg).item():.4f}")
+    print(f"Diff between default attention and attention module: {torch.norm(output_with_seg_default - output_with_seg).item():.4f}")
+    print(f"Diff between default attention and attention module without segment_ids: {torch.norm(output_no_seg_default - output_no_seg).item():.4f}")
     # print(f"Output with segment_ids: {output_with_seg.detach().cpu()}")
     # print(f"Output without segment_ids: {output_no_seg.detach().cpu()}")
 
@@ -192,7 +192,7 @@ def test_model_forward(device):
 def main():
     device = torch_xla.device()
     test_attention_module(device)
-    test_model_forward(device)
+    # test_model_forward(device)
 
 
 if __name__ == "__main__":

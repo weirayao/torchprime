@@ -160,6 +160,26 @@ class AttentionModule(nn.Module):
             f"Attention weights should be of size {(bsz, num_heads, q_len, kv_seq_len)}, but is"
             f" {attn_weights.size()}"
           )
+        
+        # Create document mask from segment_ids if provided
+        if segment_ids is not None:
+          # segment_ids shape: [batch_size, seq_len]
+          # Create document mask where tokens can only attend within the same segment
+          # Expand segment_ids for query and key positions
+          query_segment_ids = segment_ids.unsqueeze(2)  # [batch_size, seq_len, 1]
+          key_segment_ids = segment_ids.unsqueeze(1)    # [batch_size, 1, seq_len]
+          
+          # Create mask: True where segments match, False otherwise
+          document_mask = (query_segment_ids == key_segment_ids)  # [batch_size, seq_len, seq_len]
+          
+          # Convert to attention mask format (0 for allowed, -inf for masked)
+          document_mask = document_mask.unsqueeze(1)  # [batch_size, 1, seq_len, seq_len]
+          document_mask = document_mask.to(attn_weights.dtype)
+          document_mask = (1.0 - document_mask) * torch.finfo(attn_weights.dtype).min
+          
+          # Apply document mask
+          attn_weights = attn_weights + document_mask
+
         if attention_mask is not None:  # no matter the length, we just slice it
           causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
           attn_weights = attn_weights + causal_mask
