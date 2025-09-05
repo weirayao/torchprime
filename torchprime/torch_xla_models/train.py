@@ -481,6 +481,7 @@ class Trainer:
         segment_ids = torch.cat(
             [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
         )
+        segment_ids = segment_ids.requires_grad_(False)
         batch["segment_ids"] = segment_ids
         logger.info(f"input_ids: {batch['input_ids']}")
         logger.info(f"segment_ids: {batch['segment_ids']}")
