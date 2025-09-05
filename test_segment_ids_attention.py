@@ -89,8 +89,8 @@ def test_attention_module(device):
     time_with_seg = time.time() - start_time
     print(f"Time with segment_ids: {time_with_seg:.4f}s")
     print(f"Output shape: {output_with_seg.shape}")
-    print(f"Output with segment_ids: {output_with_seg.detach().cpu()}")
-    print(f"Output without segment_ids: {output_no_seg.detach().cpu()}")
+    # print(f"Output with segment_ids: {output_with_seg.detach().cpu()}")
+    # print(f"Output without segment_ids: {output_no_seg.detach().cpu()}")
 
 
 def main():
