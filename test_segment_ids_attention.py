@@ -9,7 +9,6 @@ import torch_xla
 from omegaconf import OmegaConf
 from torchprime.torch_xla_models.flex.modeling_qwen2 import (
     Qwen2ForCausalLM,
-    EOS_TOKEN_ID,
 )
 from torchprime.torch_xla_models.flex.attention import AttentionModule
 
