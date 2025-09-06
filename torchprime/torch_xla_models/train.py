@@ -82,7 +82,7 @@ def is_main_process():
   """Check if this is the main process (rank 0)."""
   return xr.process_index() == 0
 
-def chunking_collate_fn(batch: List[torch.Tensor]) -> torch.Tensor:
+def chunking_collate_fn(batch):
   """
   Collator that chunks long sequences into multiple shorter ones
   without losing any data.
