@@ -15,7 +15,7 @@ from datasets.distributed import split_dataset_by_node
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 from transformers.tokenization_utils_base import BatchEncoding
 from tqdm import tqdm
-from .train_archive import (
+from torchprime.torch_xla_models.train import (
     initialize_model_class,
     set_default_dtype,
     Trainer,

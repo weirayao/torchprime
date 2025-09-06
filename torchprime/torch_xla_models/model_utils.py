@@ -179,7 +179,6 @@ def initialize_model_class(model_config, load_from_hf=True):
     print(f"Error: Function '{model_class_name}' not found in module '{module_name}'")
     sys.exit(1)
   model = model_class(model_config)
-  logger.info(f"model.state_dict().keys() before loading: {model.state_dict().keys()}")
   # Load pretrained weights from HuggingFace model
   if load_from_hf:
     hf_model = load_hf_model(model_config)

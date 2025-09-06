@@ -48,6 +48,7 @@ class AttentionModule(nn.Module):
     key_states: torch.Tensor,
     value_states: torch.Tensor,
     attention_mask: torch.Tensor | None = None,
+    segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
   ):
     """Original TPU/XLA implementation"""
 
@@ -66,6 +67,9 @@ class AttentionModule(nn.Module):
     head_dim = value_states.shape[-1]
 
     kv_seq_len = key_states.shape[-2]
+
+    if segment_ids is not None:
+      segment_ids = segment_ids.int() # NOTE: haolin: bypass the scan limitation with integer tensors
 
     # Non FA path doesn't deal with 2D sharding.
     self.partition_spec = None
@@ -119,11 +123,12 @@ class AttentionModule(nn.Module):
           key_states,
           value_states,
           causal=False, # weiran: causal=False for bi-directional attention
+          q_segment_ids=segment_ids,
+          kv_segment_ids=segment_ids,
           partition_spec=self.partition_spec,
         )
       case "default" | None:
         # Default attention implementation (no flash attention)
-        print(f"Default attention implementation")
         attn_weights = torch.matmul(
           query_states, key_states.transpose(2, 3)
         ) / math.sqrt(head_dim)
@@ -132,9 +137,30 @@ class AttentionModule(nn.Module):
             f"Attention weights should be of size {(bsz, num_heads, q_len, kv_seq_len)}, but is"
             f" {attn_weights.size()}"
           )
-        if attention_mask is not None:  # no matter the length, we just slice it
-          causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
-          attn_weights = attn_weights + causal_mask
+        
+        # Create document mask from segment_ids if provided
+        if segment_ids is not None:
+          # segment_ids shape: [batch_size, seq_len]
+          # Create document mask where tokens can only attend within the same segment
+          # Expand segment_ids for query and key positions
+          query_segment_ids = segment_ids.unsqueeze(2)  # [batch_size, seq_len, 1]
+          key_segment_ids = segment_ids.unsqueeze(1)    # [batch_size, 1, seq_len]
+          
+          # Create mask: True where segments match, False otherwise
+          document_mask = (query_segment_ids == key_segment_ids)  # [batch_size, seq_len, seq_len]
+          
+          # Convert to attention mask format (0 for allowed, -inf for masked)
+          document_mask = document_mask.unsqueeze(1)  # [batch_size, 1, seq_len, seq_len]
+          document_mask = document_mask.to(attn_weights.dtype)
+          document_mask = (1.0 - document_mask) * torch.finfo(attn_weights.dtype).min
+          # Apply document mask
+          attn_weights = attn_weights + document_mask
+
+        # haolin: disable causal mask
+        # if attention_mask is not None:  # no matter the length, we just slice it
+        #   causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
+        #   attn_weights = attn_weights + causal_mask
+
         # upcast attention to fp32
         attn_weights = nn.functional.softmax(
           attn_weights, dim=-1, dtype=torch.float32
@@ -159,6 +185,7 @@ class AttentionModule(nn.Module):
     key_states: torch.Tensor,
     value_states: torch.Tensor,
     attention_mask: torch.Tensor | None = None,
+    segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
   ):
     """GPU-optimized PyTorch implementation"""
     if self.config.attention_kernel != "splash_attention":
@@ -229,8 +256,9 @@ class AttentionModule(nn.Module):
     key_states: torch.Tensor,
     value_states: torch.Tensor,
     attention_mask: torch.Tensor | None = None,
+    segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
   ):
     if IS_TPU:
-      return self._forward_tpu(query_states, key_states, value_states, attention_mask)
+      return self._forward_tpu(query_states, key_states, value_states, attention_mask, segment_ids=segment_ids)
     else:
-      return self._forward_gpu(query_states, key_states, value_states, attention_mask)
+      return self._forward_gpu(query_states, key_states, value_states, attention_mask, segment_ids=segment_ids)

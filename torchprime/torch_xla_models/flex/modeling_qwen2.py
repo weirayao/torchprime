@@ -1,4 +1,4 @@
-from typing import Callable, Optional, Tuple, Union
+from typing import Tuple
 
 import torch
 from torch import nn
@@ -6,12 +6,14 @@ from torch import nn
 from transformers.activations import ACT2FN
 from transformers.generation.configuration_utils import GenerationConfig
 from omegaconf import DictConfig
-from .attention import AttentionModule
+from torchprime.torch_xla_models.flex.attention import AttentionModule
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.rope.rope import RopeScaling, default_rope_frequencies
 IS_TPU = not torch.cuda.is_available()
 if IS_TPU:
     from torchprime.torch_xla_models import offloading
+
+
 
 def prefix_input_ids(input_ids, maskable_mask, apply_prefix):
     """Apply prefix to input_ids based on configured probability. Return a masksable mask such that the prefix is not masked."""
@@ -207,6 +209,7 @@ class Qwen2Attention(nn.Module): # Shiyu: Completed
         position_embeddings: Tuple[torch.Tensor, torch.Tensor],
         attention_mask: torch.Tensor | None = None,
         position_ids: torch.LongTensor | None = None,
+        segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
     ) -> torch.FloatTensor:
         bsz, q_len, _ = hidden_states.size()
 
@@ -228,7 +231,7 @@ class Qwen2Attention(nn.Module): # Shiyu: Completed
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         attn_output = self.attention_block(
-            query_states, key_states, value_states, attention_mask
+            query_states, key_states, value_states, attention_mask, segment_ids=segment_ids
         ) # bsz, num_heads, q_len, head_dim = 64, 12, 8192, 128
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.reshape(bsz, q_len, self.hidden_size) # 64, 8192, 1536
@@ -275,6 +278,7 @@ class Qwen2DecoderLayer(nn.Module): # Shiyu: Completed
         attention_mask: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         position_embeddings: tuple[torch.Tensor, torch.Tensor]| None = None,  # necessary, but kept here for BC
+        segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
     ) -> torch.Tensor:
         """
         Args:
@@ -299,6 +303,7 @@ class Qwen2DecoderLayer(nn.Module): # Shiyu: Completed
             attention_mask=attention_mask,
             position_ids=position_ids,
             position_embeddings=position_embeddings,
+            segment_ids=segment_ids,
         )
         hidden_states = residual + hidden_states
 
@@ -380,6 +385,7 @@ class Qwen2Model(nn.Module): # Shiyu: Completed
         self,
         input_ids: torch.LongTensor,
         attention_mask: torch.FloatTensor | None = None,
+        segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
     ) -> torch.Tensor:
         # convert input ids to embeddings
         inputs_embeds = self.embed_tokens(input_ids)
@@ -417,6 +423,7 @@ class Qwen2Model(nn.Module): # Shiyu: Completed
             attention_mask=causal_mask,
             position_ids=position_ids,
             position_embeddings=position_embeddings,
+            segment_ids=segment_ids,
         )
 
         hidden_states = self.norm(hidden_states)
@@ -436,7 +443,7 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         # # Initialize weights and apply final processing
         # self.post_init()
         self.apply(self._init_weights)
-        
+
     def _init_weights(self, module):
         std = getattr(self.config, "initializer_range", 0.02)
         if isinstance(module, nn.Linear):
@@ -454,19 +461,20 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         labels: torch.LongTensor | None = None,
         attention_mask: torch.FloatTensor | None = None,
         src_mask: torch.BoolTensor | None = None,
+        segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
         training_mode: str = "pretrain",
         **kwargs,
     ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:
         if not self.training:
-            model_output = self.model(input_ids=input_ids, attention_mask=attention_mask)  
+            model_output = self.model(input_ids=input_ids, attention_mask=attention_mask, segment_ids=segment_ids)
             hidden_states = model_output
             logits = self.lm_head(hidden_states) # NOTE: we shift logits in generate()
             # logits = logits.float()[..., :-1, :].contiguous() # NOTE: we shift logits in inference_utils at inference time
             return logits, None
-        
+
         if training_mode == "sft" and src_mask is None:
             raise ValueError("SFT mode requires a non-null src_mask")
-        
+
         sampling_eps = 1e-3
         mask_token_id = self.mask_token_id
         loss_func = nn.CrossEntropyLoss(reduction="none")
@@ -521,8 +529,8 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
             mask_block_size=mask_block_size
         )
         loss_mask = noisy_input_ids == mask_token_id
-        
-        hidden_states = self.model(input_ids=noisy_input_ids, attention_mask=attention_mask)
+
+        hidden_states = self.model(input_ids=noisy_input_ids, attention_mask=attention_mask, segment_ids=segment_ids)
         # hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
         logits = self.lm_head(hidden_states)
         logits = logits.float()
@@ -544,11 +552,3 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         # https://github.com/ML-GSAI/SMDM/blob/main/pretrain/train_mdm_rl.py#L281-L283
         loss = (dsigma[:, None] * loss).sum() / (input_ids.shape[0] * input_ids.shape[1])
         return logits, loss
-
-
-# class Qwen2ForSequenceClassification(GenericForSequenceClassification, Qwen2PreTrainedModel):
-#     pass
-
-
-# class Qwen2ForTokenClassification(GenericForTokenClassification, Qwen2PreTrainedModel):
-#     pass
