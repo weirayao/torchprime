@@ -99,7 +99,7 @@ def chunking_collate_fn(batch):
 
   # 1. Stack the list of individual tensors into a single tensor.
   # If `per_worker_batch_size` is B, this creates a tensor of shape [B, 8192].
-  stacked_sequences = torch.stack(batch)
+  stacked_sequences = torch.stack(batch["input_ids"])
 
   # Get the batch size from the stacked tensor
   batch_size = stacked_sequences.size(0)
@@ -112,7 +112,7 @@ def chunking_collate_fn(batch):
   # The transformation is: [B, 8192] -> [B * 4, 2048]
   chunked_batch = stacked_sequences.view(batch_size * num_chunks, target_len)
   
-  return chunked_batch
+  return {"input_ids": chunked_batch}
 
 
 MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
