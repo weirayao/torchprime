@@ -619,10 +619,8 @@ class Trainer:
       # Pre-training mode (original behavior)
       _logits, loss = self.model(
         input_ids=batch["input_ids"],
-        # attention_mask=batch["attention_mask"],
-        # src_mask=batch["src_mask"],
-        # segment_ids=batch["segment_ids"],
-        # masking_schedule=masking_schedule
+        **batch,
+        masking_schedule=masking_schedule
       )
     loss.backward()
     self.optimizer.step()
