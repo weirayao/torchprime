@@ -58,13 +58,17 @@ def test_attention_module(device):
     head_dim = config.head_dim
 
     # Create query, key, value states
-    query_states = torch.randn(
-        batch_size, num_query_heads, seq_len, head_dim, device=device
+    query_states_zeros = torch.zeros(
+        batch_size, num_query_heads, seq_len // 2, head_dim, device=device
     )
+    query_states_ones = torch.ones(
+        batch_size, num_query_heads, seq_len // 2, head_dim, device=device
+    )
+    query_states = torch.cat([query_states_zeros, query_states_ones], dim=2)
     key_states = torch.randn(
         batch_size, num_key_value_heads, seq_len, head_dim, device=device
     )
-    value_states = torch.ones_like(key_states) * 10
+    value_states = torch.ones_like(key_states) * 3
 
     # Create segment_ids
     segment_ids = torch.zeros(batch_size, seq_len, dtype=torch.long, device=device)
@@ -215,7 +219,7 @@ def test_model_forward(device):
 def main():
     device = torch_xla.device()
     test_attention_module(device)
-    # test_model_forward(device)
+    test_model_forward(device)
 
 
 if __name__ == "__main__":
