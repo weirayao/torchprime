@@ -179,7 +179,7 @@ def test_model_forward(device):
     config.attention_kernel = "default"
     model_default = initialize_model_class(config, load_from_hf=True)
     model_default = model_default.to(device)
-    model_default.train()
+    model_default.eval()
     print("Model loaded and moved to device")
     print("\n=== Testing model WITH segment_ids ===")
     logits_with_seg_default, _ = model_default(input_ids=input_ids_a, segment_ids=segment_ids)

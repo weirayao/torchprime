@@ -537,11 +537,11 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         # logits: [bs, seq_len, vocab_size]
         # Shifted logits and labels
         # logits: [bs, seq_len-1, vocab_size]
-        # logits = logits[..., :-1, :].contiguous()
+        logits = logits[..., :-1, :].contiguous()
         # weiran: if the shifted token is not masked in the original input, the loss is 0
         # loss_mask: [bs, seq_len-1]
-        # loss_mask = loss_mask[..., 1:].contiguous()
-        # target_ids = input_ids[..., 1:].contiguous()
+        loss_mask = loss_mask[..., 1:].contiguous()
+        target_ids = input_ids[..., 1:].contiguous()
         # loss: [bs, seq_len-1]
         loss = loss_func(
         logits.reshape(-1, logits.shape[-1]), target_ids.reshape(-1)).reshape(target_ids.shape[0],-1)
