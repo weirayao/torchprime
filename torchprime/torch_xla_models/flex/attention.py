@@ -71,6 +71,7 @@ class AttentionModule(nn.Module):
 
     if segment_ids is not None:
       segment_ids = segment_ids.int() # NOTE: haolin: bypass the scan limitation with integer tensors
+      print(f"segment_ids shape: {segment_ids.shape}")
 
     # Non FA path doesn't deal with 2D sharding.
     self.partition_spec = None
