@@ -31,5 +31,5 @@ use_cache: true
 use_sliding_window: false
 vocab_size: 151936
 # choose attention_kernel from: [flash_attention, splash_attention, null]
-attention_kernel: flash_attention
+attention_kernel: eager
 # attention_kernel: null
