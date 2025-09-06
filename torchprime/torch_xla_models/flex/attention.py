@@ -16,8 +16,6 @@ if IS_TPU:
     SplashAttentionConfig,
     splash_attention,
   )
-  from torch.nn.attention.flex_attention import flex_attention, create_block_mask
-  flex_attention = torch.compile(flex_attention)
 else:
   # GPU environment - use PyTorch's native SDPA flash attention
   from torch.nn.functional import scaled_dot_product_attention
@@ -128,27 +126,6 @@ class AttentionModule(nn.Module):
           q_segment_ids=segment_ids,
           kv_segment_ids=segment_ids,
           partition_spec=self.partition_spec,
-        )
-      case "flex_attention":
-        if segment_ids is not None:
-          def document_mask(b, h, q_idx, kv_idx):
-            return segment_ids[q_idx] == segment_ids[kv_idx]
-
-          block_mask = create_block_mask(
-            mask_mod=document_mask,
-            B=bsz,
-            H=num_heads,
-            Q_LEN=q_len,
-            KV_LEN=kv_seq_len,
-            device=query_states.device,
-          )
-        else:
-          block_mask = None
-        attn_output = flex_attention(
-          query_states,
-          key_states,
-          value_states,
-          block_mask=block_mask,
         )
       case "default" | None:
         # Default attention implementation (no flash attention)

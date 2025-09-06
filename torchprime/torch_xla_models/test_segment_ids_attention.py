@@ -123,9 +123,9 @@ def test_attention_module(device):
     print(f"Output shape: {output_with_seg_default.shape}")
 
     print(f"Diff between with segment_ids and without segment_ids (flash): {torch.norm(output_with_seg - output_no_seg).item():.4f}")
-    print(f"Diff between with segment_ids and without segment_ids (default): {torch.norm(output_with_seg_default - output_no_seg_default).item():.4f}")
-    print(f"Diff between default attention and flash attention with segment_ids: {torch.norm(output_with_seg_default - output_with_seg).item():.4f}")
-    print(f"Diff between default attention and flash attention without segment_ids: {torch.norm(output_no_seg_default - output_no_seg).item():.4f}")
+    print(f"Diff between with segment_ids and without segment_ids (eager): {torch.norm(output_with_seg_default - output_no_seg_default).item():.4f}")
+    print(f"Diff between eager attention and flash attention with segment_ids: {torch.norm(output_with_seg_default - output_with_seg).item():.4f}")
+    print(f"Diff between eager attention and flash attention without segment_ids: {torch.norm(output_no_seg_default - output_no_seg).item():.4f}")
 
 
 def test_model_forward(device):
@@ -193,10 +193,10 @@ def test_model_forward(device):
     print(f"Logits shape: {logits_no_seg_default.shape}")
 
     print("\n=== Comparing logits norms ===")
-    print(f"Diff between default attention and attention module: {torch.norm(logits_with_seg_default - logits_with_seg).item():.4f}")
-    print(f"Diff between default attention and attention module without segment_ids: {torch.norm(logits_no_seg_default - logits_no_seg).item():.4f}")
+    print(f"Diff between eager attention and attention module: {torch.norm(logits_with_seg_default - logits_with_seg).item():.4f}")
+    print(f"Diff between eager attention and attention module without segment_ids: {torch.norm(logits_no_seg_default - logits_no_seg).item():.4f}")
 
-    print(f"Diff between segment_ids and no segment_ids (default): {torch.norm(logits_with_seg_default - logits_no_seg_default).item():.4f}")
+    print(f"Diff between segment_ids and no segment_ids (eager): {torch.norm(logits_with_seg_default - logits_no_seg_default).item():.4f}")
     print(f"Diff between segment_ids and no segment_ids (flash): {torch.norm(logits_with_seg - logits_no_seg).item():.4f}")
 
 
