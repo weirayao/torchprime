@@ -490,7 +490,7 @@ class Trainer:
         # Convert to float to work around scan limitation with integer tensors
         # See: https://github.com/pytorch/xla/issues/8783
         segment_ids = segment_ids.float().requires_grad_(False)
-        # batch["segment_ids"] = segment_ids
+        batch["segment_ids"] = segment_ids
 
       loss = self.train_step(batch)
       trace_end_time = timer()
