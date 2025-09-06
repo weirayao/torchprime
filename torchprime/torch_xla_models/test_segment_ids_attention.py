@@ -121,6 +121,13 @@ def test_attention_module(device):
     print(f"Default attention time with segment_ids: {time_with_seg_default:.4f}s")
     print(f"Output shape: {output_with_seg_default.shape}")
 
+    print("=== Outputs ===")
+    print(f"Output with segment_ids (flash): {output_with_seg}")
+    print(f"Output with segment_ids (eager): {output_with_seg_default}")
+    print(f"Output without segment_ids (flash): {output_no_seg}")
+    print(f"Output without segment_ids (eager): {output_no_seg_default}")
+
+    print("=== Diffs ===")
     print(f"Diff between with segment_ids and without segment_ids (flash): {torch.norm(output_with_seg - output_no_seg).item():.4f}")
     print(f"Diff between with segment_ids and without segment_ids (eager): {torch.norm(output_with_seg_default - output_no_seg_default).item():.4f}")
     print(f"Diff between eager attention and flash attention with segment_ids: {torch.norm(output_with_seg_default - output_with_seg).item():.4f}")
@@ -146,7 +153,7 @@ def test_model_forward(device):
 
     # Create dummy inputs
     batch_size = 1
-    seq_len = 8
+    seq_len = 128
 
     # Create input_ids like [[1,2,3,4,5,6],[1,2,3,1,2,3]]
     input_ids_a = torch.randint(0, config.vocab_size, (batch_size, seq_len), device=device)
@@ -190,6 +197,12 @@ def test_model_forward(device):
     logits_no_seg_default, _ = model_default(input_ids=input_ids_b)
     logits_no_seg_default = logits_no_seg_default.detach().cpu()
     print(f"Logits shape: {logits_no_seg_default.shape}")
+
+    print("=== Logits ===")
+    print(f"Logits with segment_ids (flash): {logits_with_seg}")
+    print(f"Logits with segment_ids (eager): {logits_with_seg_default}")
+    print(f"Logits without segment_ids (flash): {logits_no_seg}")
+    print(f"Logits without segment_ids (eager): {logits_no_seg_default}")
 
     print("\n=== Comparing logits norms ===")
     print(f"Diff between eager attention and attention module: {torch.norm(logits_with_seg_default - logits_with_seg).item():.4f}")

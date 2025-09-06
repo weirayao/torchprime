@@ -165,7 +165,6 @@ class AttentionModule(nn.Module):
         attn_weights = nn.functional.softmax(
           attn_weights, dim=-1, dtype=torch.float32
         ).to(query_states.dtype)
-        print(f"attn_weights at batch 0, head 0: {attn_weights[0,0,:,:]}")
         attn_weights = nn.functional.dropout(
           attn_weights, p=self.config.attention_dropout, training=self.training
         )
