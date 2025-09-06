@@ -146,29 +146,32 @@ def test_model_forward(device):
     print("Model loaded and moved to device")
 
     # Create dummy inputs
-    batch_size = 2
+    batch_size = 1
     seq_len = 256
 
     # Create input_ids like [[1,2,3,4,5,6],[1,2,3,1,2,3]]
-    input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_len), device=device)
+    input_ids_a = torch.randint(0, config.vocab_size, (batch_size, seq_len), device=device)
+    input_ids_b = input_ids_a[:, :seq_len // 2]
+
     # Create segment_ids where first half is segment 0, second half is segment 1
     segment_ids = torch.zeros(batch_size, seq_len, dtype=torch.long, device=device)
     segment_ids[:, seq_len // 2 :] = 1
 
-    print(f"\nInput IDs shape: {input_ids.shape}")
-    print(f"Input IDs: {input_ids}")
+    print(f"\nInput IDs shape: {input_ids_a.shape}")
+    print(f"Input IDs: {input_ids_a}")
     print(f"Segment IDs: {segment_ids}")
 
     # Test without segment_ids
     print("\n=== Testing model WITHOUT segment_ids ===")
-    logits_no_seg, _ = model(input_ids=input_ids)
+    logits_no_seg, _ = model(input_ids=input_ids_b)
     logits_no_seg = logits_no_seg.detach().cpu()
     print(f"Logits shape: {logits_no_seg.shape}")
 
     # Test with segment_ids
     print("\n=== Testing model WITH segment_ids ===")
-    logits_with_seg, _ = model(input_ids=input_ids, segment_ids=segment_ids)
+    logits_with_seg, _ = model(input_ids=input_ids_a, segment_ids=segment_ids)
     logits_with_seg = logits_with_seg.detach().cpu()
+    logits_with_seg = logits_with_seg[:, :seq_len // 2, :]
     print(f"Logits shape: {logits_with_seg.shape}")
 
 
@@ -179,12 +182,13 @@ def test_model_forward(device):
     model_default.train()
     print("Model loaded and moved to device")
     print("\n=== Testing model WITH segment_ids ===")
-    logits_with_seg_default, _ = model_default(input_ids=input_ids, segment_ids=segment_ids)
+    logits_with_seg_default, _ = model_default(input_ids=input_ids_a, segment_ids=segment_ids)
     logits_with_seg_default = logits_with_seg_default.detach().cpu()
+    logits_with_seg_default = logits_with_seg_default[:, :seq_len // 2, :]
     print(f"Logits shape: {logits_with_seg_default.shape}")
 
     print("\n=== Testing model WITHOUT segment_ids ===")
-    logits_no_seg_default, _ = model_default(input_ids=input_ids)
+    logits_no_seg_default, _ = model_default(input_ids=input_ids_b)
     logits_no_seg_default = logits_no_seg_default.detach().cpu()
     print(f"Logits shape: {logits_no_seg_default.shape}")
 
