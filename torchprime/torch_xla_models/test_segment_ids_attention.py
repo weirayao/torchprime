@@ -237,7 +237,7 @@ def test_model_forward(device):
 def main():
     device = torch_xla.device()
     test_attention_module(device)
-    # test_model_forward(device)
+    test_model_forward(device)
 
 
 if __name__ == "__main__":
