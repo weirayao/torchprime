@@ -209,11 +209,11 @@ def test_model_forward(device):
     print(f"Logits without segment_ids (eager): {logits_no_seg_default}")
 
     print("\n=== Comparing logits norms ===")
-    print(f"Diff between eager attention and attention module: {torch.norm(logits_with_seg_default - logits_with_seg).item():.4f}")
-    print(f"Diff between eager attention and attention module without segment_ids: {torch.norm(logits_no_seg_default - logits_no_seg).item():.4f}")
+    print(f"Diff between eager attention and attention module: {torch.norm(logits_with_seg_default - logits_with_seg)/torch.norm(logits_with_seg).item():.4f}")
+    print(f"Diff between eager attention and attention module without segment_ids: {torch.norm(logits_no_seg_default - logits_no_seg)/torch.norm(logits_no_seg).item():.4f}")
 
-    print(f"Diff between segment_ids and no segment_ids (eager): {torch.norm(logits_with_seg_default - logits_no_seg_default).item():.4f}")
-    print(f"Diff between segment_ids and no segment_ids (flash): {torch.norm(logits_with_seg - logits_no_seg).item():.4f}")
+    print(f"Diff between segment_ids and no segment_ids (eager): {torch.norm(logits_with_seg_default - logits_no_seg_default)/torch.norm(logits_no_seg_default).item():.4f}")
+    print(f"Diff between segment_ids and no segment_ids (flash): {torch.norm(logits_with_seg - logits_no_seg)/torch.norm(logits_no_seg).item():.4f}")
 
 
 def main():
