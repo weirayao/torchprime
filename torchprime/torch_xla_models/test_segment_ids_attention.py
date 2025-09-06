@@ -159,7 +159,7 @@ def test_model_forward(device):
     print(f"\n=== Testing Qwen2ForCausalLM on device: {device} ===")
 
     # Load model config
-    config_path = "torchprime/torch_xla_models/configs/model/qwen3-1b.yaml"
+    config_path = "torchprime/torch_xla_models/configs/model/qwen-3-1b.yaml"
     config = OmegaConf.load(config_path)
     print(f"Loaded config from {config_path}")
 
