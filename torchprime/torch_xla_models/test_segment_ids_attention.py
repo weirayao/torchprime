@@ -95,10 +95,6 @@ def test_attention_module(device):
     time_with_seg = time.time() - start_time
     print(f"Time with segment_ids: {time_with_seg:.4f}s")
     print(f"Output shape: {output_with_seg.shape}")
-    print(f"Diff: {torch.norm(output_with_seg - output_no_seg).item():.4f}")
-    print(
-        f"Diff first half: {torch.norm(output_with_seg[:, :, :seq_len // 2, :] - output_no_seg[:, :, :seq_len // 2, :]).item():.4f}"
-    )
 
     print("Now test with default attention")
     config.attention_kernel = "default"
@@ -125,15 +121,11 @@ def test_attention_module(device):
     time_with_seg_default = time.time() - start_time
     print(f"Default attention time with segment_ids: {time_with_seg_default:.4f}s")
     print(f"Output shape: {output_with_seg_default.shape}")
-    print(f"Diff: {torch.norm(output_with_seg_default - output_no_seg_default).item():.4f}")
-    print(
-        f"Diff first half: {torch.norm(output_with_seg_default[:, :, :seq_len // 2, :] - output_no_seg_default[:, :, :seq_len // 2, :]).item():.4f}"
-    )
 
-    print(f"Diff between default attention and attention module: {torch.norm(output_with_seg_default - output_with_seg).item():.4f}")
-    print(f"Diff between default attention and attention module without segment_ids: {torch.norm(output_no_seg_default - output_no_seg).item():.4f}")
-    # print(f"Output with segment_ids: {output_with_seg.detach().cpu()}")
-    # print(f"Output without segment_ids: {output_no_seg.detach().cpu()}")
+    print(f"Diff between with segment_ids and without segment_ids (flash): {torch.norm(output_with_seg - output_no_seg).item():.4f}")
+    print(f"Diff between with segment_ids and without segment_ids (default): {torch.norm(output_with_seg_default - output_no_seg_default).item():.4f}")
+    print(f"Diff between default attention and flash attention with segment_ids: {torch.norm(output_with_seg_default - output_with_seg).item():.4f}")
+    print(f"Diff between default attention and flash attention without segment_ids: {torch.norm(output_no_seg_default - output_no_seg).item():.4f}")
 
 
 def test_model_forward(device):

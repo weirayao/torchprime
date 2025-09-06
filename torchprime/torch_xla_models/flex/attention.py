@@ -192,6 +192,7 @@ class AttentionModule(nn.Module):
         attn_weights = nn.functional.dropout(
           attn_weights, p=self.config.attention_dropout, training=self.training
         )
+        print(f"attn_weights at batch 0, head 0: {attn_weights[0,0,:,:]}")
         attn_output = torch.matmul(attn_weights, value_states)
       case _:
         raise NotImplementedError(f"Attention kernel {self.config.attention_kernel} is not supported yet")
