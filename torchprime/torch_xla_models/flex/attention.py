@@ -75,7 +75,7 @@ class AttentionModule(nn.Module):
     self.partition_spec = None
     segment_ids_partition_spec = None
     if xs.get_global_mesh() is not None:
-      self.partition_spec = ("data", "tensor", None, None)
+      self.partition_spec = (("data", "fsdp"), "tensor", None, None)
       segment_ids_partition_spec = (("data", "fsdp"), None)
 
     match self.config.attention_kernel:
