@@ -176,9 +176,10 @@ class AttentionModule(nn.Module):
           document_mask = document_mask.unsqueeze(1)  # [batch_size, 1, seq_len, seq_len]
           document_mask = document_mask.to(attn_weights.dtype)
           document_mask = (1.0 - document_mask) * torch.finfo(attn_weights.dtype).min
-          
+          print(f"document_mask at batch 0, head 0: {document_mask[0,0,:,:]}")
           # Apply document mask
           attn_weights = attn_weights + document_mask
+          print(f"attn_weights at batch 0, head 0: {attn_weights[0,0,:,:]}")
 
         # haolin: disable causal mask
         # if attention_mask is not None:  # no matter the length, we just slice it
