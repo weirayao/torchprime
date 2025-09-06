@@ -70,8 +70,8 @@ class AttentionModule(nn.Module):
 
     kv_seq_len = key_states.shape[-2]
 
-    # if segment_ids is not None:
-    #   segment_ids = segment_ids.int() # NOTE: haolin: bypass the scan limitation with integer tensors
+    if segment_ids is not None:
+      segment_ids = segment_ids.int() # NOTE: haolin: bypass the scan limitation with integer tensors
 
     # Non FA path doesn't deal with 2D sharding.
     self.partition_spec = None

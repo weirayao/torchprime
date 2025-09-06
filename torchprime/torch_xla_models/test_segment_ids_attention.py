@@ -22,7 +22,7 @@ def create_test_config():
         "hidden_size": 1536,
         "num_hidden_layers": 2,  # Small for testing
         "num_attention_heads": 12,
-        "num_key_value_heads": 12,
+        "num_key_value_heads": 2,
         "head_dim": 128,
         "intermediate_size": 8960,
         "hidden_act": "silu",
@@ -52,16 +52,20 @@ def test_attention_module(device):
     # Create test inputs
     batch_size = 2
     seq_len = 256
-    num_heads = config.num_attention_heads
+    num_query_heads = config.num_attention_heads
+    num_key_value_heads = config.num_key_value_heads
     head_dim = config.head_dim
 
     # Create query, key, value states
-    hidden_states = torch.randn(
-        batch_size, num_heads, seq_len // 2, head_dim, device=device
+    query_states = torch.randn(
+        batch_size, num_query_heads, seq_len // 2, head_dim, device=device
     )
-    query_states = torch.cat([hidden_states, hidden_states.clone()], dim=2)
-    key_states = query_states.clone()
-    value_states = query_states.clone()
+    key_states = torch.randn(
+        batch_size, num_key_value_heads, seq_len // 2, head_dim, device=device
+    )
+    query_states = torch.cat([query_states, query_states.clone()], dim=2)
+    key_states = torch.cat([key_states, key_states.clone()], dim=2)
+    value_states = key_states.clone()
 
     # Create segment_ids
     segment_ids = torch.zeros(batch_size, seq_len, dtype=torch.long, device=device)
@@ -155,7 +159,6 @@ def test_model_forward(device):
 
     # Create input_ids like [[1,2,3,4,5,6],[1,2,3,1,2,3]]
     input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_len), device=device)
-
     # Create segment_ids where first half is segment 0, second half is segment 1
     segment_ids = torch.zeros(batch_size, seq_len, dtype=torch.long, device=device)
     segment_ids[:, seq_len // 2 :] = 1
@@ -176,23 +179,35 @@ def test_model_forward(device):
     logits_with_seg = logits_with_seg.detach().cpu()
     print(f"Logits shape: {logits_with_seg.shape}")
 
-    # Compare norms of logits for each row
+
+    print("Now test with default attention")
+    config.attention_kernel = "default"
+    model_default = initialize_model_class(config, load_from_hf=True)
+    model_default = model_default.to(device)
+    model_default.train()
+    print("Model loaded and moved to device")
+    print("\n=== Testing model WITH segment_ids ===")
+    logits_with_seg_default, _ = model_default(input_ids=input_ids, segment_ids=segment_ids)
+    logits_with_seg_default = logits_with_seg_default.detach().cpu()
+    print(f"Logits shape: {logits_with_seg_default.shape}")
+
+    print("\n=== Testing model WITHOUT segment_ids ===")
+    logits_no_seg_default, _ = model_default(input_ids=input_ids)
+    logits_no_seg_default = logits_no_seg_default.detach().cpu()
+    print(f"Logits shape: {logits_no_seg_default.shape}")
+
     print("\n=== Comparing logits norms ===")
-    for i in range(batch_size):
+    print(f"Diff between default attention and attention module: {torch.norm(logits_with_seg_default - logits_with_seg).item():.4f}")
+    print(f"Diff between default attention and attention module without segment_ids: {torch.norm(logits_no_seg_default - logits_no_seg).item():.4f}")
 
-        # Also compute overall difference in logits
-        diff = torch.norm(logits_with_seg[i] - logits_no_seg[i])
-        print(f"  Logits difference (L2 norm): {diff.item():.6f}")
-
-    # Also compare overall logits
-    total_diff = torch.norm(logits_with_seg - logits_no_seg)
-    print(f"\nTotal logits difference (L2 norm): {total_diff.item():.6f}")
+    print(f"Diff between segment_ids and no segment_ids (default): {torch.norm(logits_with_seg_default - logits_no_seg_default).item():.4f}")
+    print(f"Diff between segment_ids and no segment_ids (flash): {torch.norm(logits_with_seg - logits_no_seg).item():.4f}")
 
 
 def main():
     device = torch_xla.device()
     test_attention_module(device)
-    # test_model_forward(device)
+    test_model_forward(device)
 
 
 if __name__ == "__main__":
