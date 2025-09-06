@@ -82,38 +82,6 @@ def is_main_process():
   """Check if this is the main process (rank 0)."""
   return xr.process_index() == 0
 
-def chunking_collate_fn(batch):
-  """
-  Collator that chunks long sequences into multiple shorter ones
-  without losing any data.
-
-  Args:
-      batch: A list of tensors from the dataset, each of shape [8192].
-
-  Returns:
-      A single tensor of shape [batch_size * 4, 2048].
-  """
-  # Define sequence lengths for clarity
-  original_len = 8192
-  target_len = 2048
-
-  batch = default_data_collator(batch)
-  # 1. Stack the list of individual tensors into a single tensor.
-  # If `per_worker_batch_size` is B, this creates a tensor of shape [B, 8192].
-
-  # Get the batch size from the stacked tensor
-  batch_size = batch["input_ids"].size(0)
-  
-  # Calculate how many chunks each sequence will be split into (e.g., 4)
-  num_chunks = original_len // target_len
-
-  # 2. Reshape the tensor to create the chunks.
-  # The .view() method is highly efficient as it doesn't copy memory.
-  # The transformation is: [B, 8192] -> [B * 4, 2048]
-  batch["input_ids"] = batch["input_ids"].view(batch_size * num_chunks, target_len)
-  
-  return batch
-
 
 MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
 
@@ -293,11 +261,7 @@ class Trainer:
     num_replicas = xr.process_count()
     logger.info(f"Num replicas: {num_replicas}") # 64 for v5p-512
 
-    # haolin (test)
-    orginal_len = 8192
-    target_len = 2048
-    num_chunks = orginal_len // target_len
-    per_worker_batch_size = self.global_batch_size // num_replicas // num_chunks
+    per_worker_batch_size = self.global_batch_size // num_replicas
     if isinstance(self.train_dataset, IterableDataset):
       # For IterableDataset, don't use DistributedSampler as it doesn't have len()
       sampler = None
@@ -322,7 +286,7 @@ class Trainer:
       )
     else:
       # For pre-training, use default data collator
-      collate_fn = chunking_collate_fn
+      collate_fn = default_data_collator
     
     dataloader = DataLoader(
       self.train_dataset,
