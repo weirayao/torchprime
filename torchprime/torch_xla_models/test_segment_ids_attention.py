@@ -52,7 +52,7 @@ def test_attention_module(device):
 
     # Create test inputs
     batch_size = 2
-    seq_len = 8
+    seq_len = 128
     num_query_heads = config.num_attention_heads
     num_key_value_heads = config.num_key_value_heads
     head_dim = config.head_dim
@@ -71,29 +71,29 @@ def test_attention_module(device):
     # Create two segments per sequence
     segment_ids[:, seq_len // 2 :] = 1
 
-    # # Test without segment_ids
-    # print("\nTesting attention WITHOUT segment_ids...")
-    # start_time = time.time()
-    # output_no_seg = attn_module(
-    #     query_states, key_states, value_states, attention_mask=None, segment_ids=None
-    # )
-    # time_no_seg = time.time() - start_time
-    # print(f"Time without segment_ids: {time_no_seg:.4f}s")
-    # print(f"Output shape: {output_no_seg.shape}")
+    # Test without segment_ids
+    print("\nTesting attention WITHOUT segment_ids...")
+    start_time = time.time()
+    output_no_seg = attn_module(
+        query_states, key_states, value_states, attention_mask=None, segment_ids=None
+    )
+    time_no_seg = time.time() - start_time
+    print(f"Time without segment_ids: {time_no_seg:.4f}s")
+    print(f"Output shape: {output_no_seg.shape}")
 
-    # # Test with segment_ids
-    # print("\nTesting attention WITH segment_ids...")
-    # start_time = time.time()
-    # output_with_seg = attn_module(
-    #     query_states,
-    #     key_states,
-    #     value_states,
-    #     attention_mask=None,
-    #     segment_ids=segment_ids,
-    # )
-    # time_with_seg = time.time() - start_time
-    # print(f"Time with segment_ids: {time_with_seg:.4f}s")
-    # print(f"Output shape: {output_with_seg.shape}")
+    # Test with segment_ids
+    print("\nTesting attention WITH segment_ids...")
+    start_time = time.time()
+    output_with_seg = attn_module(
+        query_states,
+        key_states,
+        value_states,
+        attention_mask=None,
+        segment_ids=segment_ids,
+    )
+    time_with_seg = time.time() - start_time
+    print(f"Time with segment_ids: {time_with_seg:.4f}s")
+    print(f"Output shape: {output_with_seg.shape}")
 
     print("Now test with default attention")
     config.attention_kernel = "default"
@@ -121,10 +121,10 @@ def test_attention_module(device):
     print(f"Default attention time with segment_ids: {time_with_seg_default:.4f}s")
     print(f"Output shape: {output_with_seg_default.shape}")
 
-    # print(f"Diff between with segment_ids and without segment_ids (flash): {torch.norm(output_with_seg - output_no_seg).item():.4f}")
+    print(f"Diff between with segment_ids and without segment_ids (flash): {torch.norm(output_with_seg - output_no_seg).item():.4f}")
     print(f"Diff between with segment_ids and without segment_ids (eager): {torch.norm(output_with_seg_default - output_no_seg_default).item():.4f}")
-    # print(f"Diff between eager attention and flash attention with segment_ids: {torch.norm(output_with_seg_default - output_with_seg).item():.4f}")
-    # print(f"Diff between eager attention and flash attention without segment_ids: {torch.norm(output_no_seg_default - output_no_seg).item():.4f}")
+    print(f"Diff between eager attention and flash attention with segment_ids: {torch.norm(output_with_seg_default - output_with_seg).item():.4f}")
+    print(f"Diff between eager attention and flash attention without segment_ids: {torch.norm(output_no_seg_default - output_no_seg).item():.4f}")
 
 
 def test_model_forward(device):
