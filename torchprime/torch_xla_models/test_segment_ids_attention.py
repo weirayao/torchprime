@@ -63,7 +63,7 @@ def test_attention_module(device):
 
     # Initialize attention module
     attn_module = AttentionModule(config).to(device)
-    attn_module.forward = with_jax_high_precision(attn_module.forward)
+    # attn_module.forward = with_jax_high_precision(attn_module.forward)
 
     # Create test inputs
     batch_size = 2
@@ -76,10 +76,6 @@ def test_attention_module(device):
     query_states_zeros = torch.zeros(
         batch_size, num_query_heads, seq_len // 2, head_dim, device=device
     )
-    query_states_ones = torch.ones(
-        batch_size, num_query_heads, seq_len // 2, head_dim, device=device
-    )
-    query_states = torch.cat([query_states_zeros, query_states_ones], dim=2)
     key_states = torch.randn(
         batch_size, num_key_value_heads, seq_len, head_dim, device=device
     )
@@ -117,7 +113,7 @@ def test_attention_module(device):
     print("Now test with default attention")
     config.attention_kernel = "default"
     attn_module_default = AttentionModule(config).to(device)
-    attn_module_default.forward = with_jax_high_precision(attn_module_default.forward)
+    # attn_module_default.forward = with_jax_high_precision(attn_module_default.forward)
     start_time = time.time()
     output_no_seg_default = attn_module_default.forward(
         query_states,
