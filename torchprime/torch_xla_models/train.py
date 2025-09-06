@@ -471,25 +471,25 @@ class Trainer:
         if "attention_mask" in batch:
           batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
 
-        # # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
-        # # Create segment_ids by looking at EOS_TOKEN_ID positions
-        # EOS_TOKEN_ID = 151645
-        # eos_mask = torch.where(batch["input_ids"] == EOS_TOKEN_ID, 1, 0).int().to(batch["input_ids"].device)
+        # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
+        # Create segment_ids by looking at EOS_TOKEN_ID positions
+        EOS_TOKEN_ID = 151645
+        eos_mask = torch.where(batch["input_ids"] == EOS_TOKEN_ID, 1, 0).int().to(batch["input_ids"].device)
         
-        # # Compute cumulative sum of EOS tokens to get segment IDs
-        # # Each EOS token increments the segment ID for subsequent tokens
-        # segment_ids = eos_mask.cumsum(dim=1)
+        # Compute cumulative sum of EOS tokens to get segment IDs
+        # Each EOS token increments the segment ID for subsequent tokens
+        segment_ids = eos_mask.cumsum(dim=1)
 
-        # # Shift segment_ids to the right by 1 position so tokens before first EOS are segment 0
-        # # and tokens after each EOS get incremented segment IDs
-        # segment_ids = torch.cat(
-        #     [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
-        # )
-        # # NOTE: haolin
-        # # Convert to float to work around scan limitation with integer tensors
-        # # See: https://github.com/pytorch/xla/issues/8783
-        # segment_ids = segment_ids.float().requires_grad_(False)
-        # batch["segment_ids"] = segment_ids
+        # Shift segment_ids to the right by 1 position so tokens before first EOS are segment 0
+        # and tokens after each EOS get incremented segment IDs
+        segment_ids = torch.cat(
+            [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
+        )
+        # NOTE: haolin
+        # Convert to float to work around scan limitation with integer tensors
+        # See: https://github.com/pytorch/xla/issues/8783
+        segment_ids = segment_ids.float().requires_grad_(False)
+        batch["segment_ids"] = segment_ids
 
       loss = self.train_step(batch)
       trace_end_time = timer()
@@ -618,8 +618,11 @@ class Trainer:
     else:
       # Pre-training mode (original behavior)
       _logits, loss = self.model(
-        **batch,
-        masking_schedule=masking_schedule
+        input_ids=batch["input_ids"],
+        # attention_mask=batch["attention_mask"],
+        # src_mask=batch["src_mask"],
+        # segment_ids=batch["segment_ids"],
+        # masking_schedule=masking_schedule
       )
     loss.backward()
     self.optimizer.step()
