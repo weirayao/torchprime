@@ -60,7 +60,6 @@ class AttentionModule(nn.Module):
       value_states = repeat_kv(value_states, num_key_value_groups)
 
     bsz, num_heads, q_len, head_dim = query_states.size()
-    print(f"attention bsz, num_heads, q_len, head_dim: {bsz}, {num_heads}, {q_len}, {head_dim}")
     # TODO: q, k dim unintentionally changed after the apply_rotary_pos_emb. Use
     # v's dim temporarily to bypass shape assertion failure. Remove the
     # following line after resolving
@@ -71,7 +70,6 @@ class AttentionModule(nn.Module):
 
     if segment_ids is not None:
       segment_ids = segment_ids.int() # NOTE: haolin: bypass the scan limitation with integer tensors
-      print(f"segment_ids shape: {segment_ids.shape}")
 
     # Non FA path doesn't deal with 2D sharding.
     self.partition_spec = None
@@ -120,8 +118,6 @@ class AttentionModule(nn.Module):
         FlashAttention.DEFAULT_BLOCK_SIZES = default_block_sizes
 
         query_states /= math.sqrt(head_dim)
-        print(f"DEBUG: Before flash_attention - query_states shape: {query_states.shape}, key_states shape: {key_states.shape}, value_states shape: {value_states.shape}")
-        print(f"DEBUG: partition_spec: {self.partition_spec}")
         attn_output = flash_attention(
           query_states,
           key_states,
@@ -129,9 +125,8 @@ class AttentionModule(nn.Module):
           causal=False, # weiran: causal=False for bi-directional attention
           q_segment_ids=segment_ids,
           kv_segment_ids=segment_ids,
-          partition_spec=None,  # DEBUG: Temporarily disable partition spec
+          partition_spec=self.partition_spec,
         )
-        print(f"DEBUG: After flash_attention - attn_output shape: {attn_output.shape}, expected shape: ({bsz}, {num_heads}, {q_len}, {head_dim})")
       case "default" | None:
         # Default attention implementation (no flash attention)
         attn_weights = torch.matmul(

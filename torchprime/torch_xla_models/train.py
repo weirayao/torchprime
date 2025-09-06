@@ -82,6 +82,39 @@ def is_main_process():
   """Check if this is the main process (rank 0)."""
   return xr.process_index() == 0
 
+def chunking_collate_fn(batch: List[torch.Tensor]) -> torch.Tensor:
+  """
+  Collator that chunks long sequences into multiple shorter ones
+  without losing any data.
+
+  Args:
+      batch: A list of tensors from the dataset, each of shape [8192].
+
+  Returns:
+      A single tensor of shape [batch_size * 4, 2048].
+  """
+  # Define sequence lengths for clarity
+  original_len = 8192
+  target_len = 2048
+
+  # 1. Stack the list of individual tensors into a single tensor.
+  # If `per_worker_batch_size` is B, this creates a tensor of shape [B, 8192].
+  stacked_sequences = torch.stack(batch)
+
+  # Get the batch size from the stacked tensor
+  batch_size = stacked_sequences.size(0)
+  
+  # Calculate how many chunks each sequence will be split into (e.g., 4)
+  num_chunks = original_len // target_len
+
+  # 2. Reshape the tensor to create the chunks.
+  # The .view() method is highly efficient as it doesn't copy memory.
+  # The transformation is: [B, 8192] -> [B * 4, 2048]
+  chunked_batch = stacked_sequences.view(batch_size * num_chunks, target_len)
+  
+  return chunked_batch
+
+
 MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
 
 class Trainer:
@@ -285,7 +318,7 @@ class Trainer:
       )
     else:
       # For pre-training, use default data collator
-      collate_fn = default_data_collator
+      collate_fn = chunking_collate_fn
     
     dataloader = DataLoader(
       self.train_dataset,
@@ -467,9 +500,9 @@ class Trainer:
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
       else:
-        batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
-        if "attention_mask" in batch:
-          batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
+        # batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
+        # if "attention_mask" in batch:
+        #   batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
 
         # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
         # Create segment_ids by looking at EOS_TOKEN_ID positions
