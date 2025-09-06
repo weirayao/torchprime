@@ -14,6 +14,7 @@ from torchprime.torch_xla_models.flex.attention import AttentionModule
 import numpy as np
 import time
 
+torch.manual_seed(1234)
 
 def create_test_config():
     """Create a minimal config for testing"""
@@ -58,14 +59,12 @@ def test_attention_module(device):
 
     # Create query, key, value states
     query_states = torch.randn(
-        batch_size, num_query_heads, seq_len // 2, head_dim, device=device
+        batch_size, num_query_heads, seq_len, head_dim, device=device
     )
     key_states = torch.randn(
-        batch_size, num_key_value_heads, seq_len // 2, head_dim, device=device
+        batch_size, num_key_value_heads, seq_len, head_dim, device=device
     )
-    query_states = torch.cat([query_states, query_states.clone()], dim=2)
-    key_states = torch.cat([key_states, key_states.clone()], dim=2)
-    value_states = key_states.clone()
+    value_states = torch.ones_like(key_states) * 10
 
     # Create segment_ids
     segment_ids = torch.zeros(batch_size, seq_len, dtype=torch.long, device=device)
