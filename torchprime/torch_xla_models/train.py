@@ -97,12 +97,12 @@ def chunking_collate_fn(batch):
   original_len = 8192
   target_len = 2048
 
+  batch = default_data_collator(batch)
   # 1. Stack the list of individual tensors into a single tensor.
   # If `per_worker_batch_size` is B, this creates a tensor of shape [B, 8192].
-  stacked_sequences = torch.stack(batch["input_ids"])
 
   # Get the batch size from the stacked tensor
-  batch_size = stacked_sequences.size(0)
+  batch_size = batch["input_ids"].size(0)
   
   # Calculate how many chunks each sequence will be split into (e.g., 4)
   num_chunks = original_len // target_len
@@ -110,9 +110,9 @@ def chunking_collate_fn(batch):
   # 2. Reshape the tensor to create the chunks.
   # The .view() method is highly efficient as it doesn't copy memory.
   # The transformation is: [B, 8192] -> [B * 4, 2048]
-  chunked_batch = stacked_sequences.view(batch_size * num_chunks, target_len)
+  batch["input_ids"] = batch["input_ids"].view(batch_size * num_chunks, target_len)
   
-  return {"input_ids": chunked_batch}
+  return batch
 
 
 MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
@@ -293,7 +293,11 @@ class Trainer:
     num_replicas = xr.process_count()
     logger.info(f"Num replicas: {num_replicas}") # 64 for v5p-512
 
-    per_worker_batch_size = self.global_batch_size // num_replicas
+    # haolin (test)
+    orginal_len = 8192
+    target_len = 2048
+    num_chunks = orginal_len // target_len
+    per_worker_batch_size = self.global_batch_size // num_replicas // num_chunks
     if isinstance(self.train_dataset, IterableDataset):
       # For IterableDataset, don't use DistributedSampler as it doesn't have len()
       sampler = None
