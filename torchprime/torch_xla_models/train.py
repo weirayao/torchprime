@@ -618,7 +618,6 @@ class Trainer:
     else:
       # Pre-training mode (original behavior)
       _logits, loss = self.model(
-        input_ids=batch["input_ids"],
         **batch,
         masking_schedule=masking_schedule
       )
