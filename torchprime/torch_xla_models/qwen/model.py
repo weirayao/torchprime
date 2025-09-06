@@ -14,7 +14,7 @@ from transformers.utils import logging
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.rope.rope import RopeScaling, default_rope_frequencies
 from torchprime.torch_xla_models import offloading
-from torchprime.torch_xla_models.attention import AttentionModule
+from torchprime.torch_xla_models.flex.attention import AttentionModule
 from torchprime.torch_xla_models.loss import cross_entropy_loss
 
 logger = logging.get_logger(__name__)
