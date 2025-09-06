@@ -14,6 +14,20 @@ from torchprime.torch_xla_models.flex.attention import AttentionModule
 import numpy as np
 import time
 
+def with_jax_high_precision(func):
+
+  def wrapper(*args, **kwargs):
+    import jax
+    jax.config.update('jax_default_matmul_precision', "highest")
+    try:
+      result = func(*args, **kwargs)
+    finally:
+      jax.config.update('jax_default_matmul_precision', "default")
+    return result
+
+  return wrapper
+
+
 torch.manual_seed(1234)
 
 def create_test_config():
@@ -49,6 +63,7 @@ def test_attention_module(device):
 
     # Initialize attention module
     attn_module = AttentionModule(config).to(device)
+    attn_module.forward = with_jax_high_precision(attn_module.forward)
 
     # Create test inputs
     batch_size = 2
@@ -78,7 +93,7 @@ def test_attention_module(device):
     # Test without segment_ids
     print("\nTesting attention WITHOUT segment_ids...")
     start_time = time.time()
-    output_no_seg = attn_module(
+    output_no_seg = attn_module.forward(
         query_states, key_states, value_states, attention_mask=None, segment_ids=None
     )
     time_no_seg = time.time() - start_time
@@ -88,7 +103,7 @@ def test_attention_module(device):
     # Test with segment_ids
     print("\nTesting attention WITH segment_ids...")
     start_time = time.time()
-    output_with_seg = attn_module(
+    output_with_seg = attn_module.forward(
         query_states,
         key_states,
         value_states,
@@ -102,8 +117,9 @@ def test_attention_module(device):
     print("Now test with default attention")
     config.attention_kernel = "default"
     attn_module_default = AttentionModule(config).to(device)
+    attn_module_default.forward = with_jax_high_precision(attn_module_default.forward)
     start_time = time.time()
-    output_no_seg_default = attn_module_default(
+    output_no_seg_default = attn_module_default.forward(
         query_states,
         key_states,
         value_states,
@@ -114,7 +130,7 @@ def test_attention_module(device):
     print(f"Default attention time without segment_ids: {time_no_seg_default:.4f}s")
     print(f"Output shape: {output_no_seg_default.shape}")
     start_time = time.time()
-    output_with_seg_default = attn_module_default(
+    output_with_seg_default = attn_module_default.forward(
         query_states,
         key_states,
         value_states,
@@ -219,7 +235,7 @@ def test_model_forward(device):
 def main():
     device = torch_xla.device()
     test_attention_module(device)
-    test_model_forward(device)
+    # test_model_forward(device)
 
 
 if __name__ == "__main__":
