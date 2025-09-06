@@ -3,10 +3,10 @@ export XLA_IR_DEBUG=1
 export XLA_HLO_DEBUG=1
 python torchprime/torch_xla_models/train.py \
     training_mode=pretrain \
-    data=wikitext \
+    data=test_data \
     model=llama-3-8b \
     optimizer.learning_rate=2e-4 \
-    global_batch_size=8192 \
+    global_batch_size=1024 \
     max_steps=30 \
     checkpoint_load_dir= \
     checkpoint_load_step=null \
