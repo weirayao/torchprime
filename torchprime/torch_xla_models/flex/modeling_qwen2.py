@@ -212,7 +212,6 @@ class Qwen2Attention(nn.Module): # Shiyu: Completed
         segment_ids: torch.Tensor | None = None,  # Should be int32 for TPU compatibility
     ) -> torch.FloatTensor:
         bsz, q_len, _ = hidden_states.size()
-        print(f"attention bsz, q_len: {bsz}, {q_len}")
 
         query_states = self.q_proj(hidden_states)
         key_states = self.k_proj(hidden_states)
@@ -227,7 +226,6 @@ class Qwen2Attention(nn.Module): # Shiyu: Completed
         query_states = query_states.transpose(1, 2)
         key_states = key_states.transpose(1, 2)
         value_states = value_states.transpose(1, 2)
-        print(f"query_states shape: {query_states.shape}, key_states shape: {key_states.shape}, value_states shape: {value_states.shape}")
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -415,7 +413,6 @@ class Qwen2Model(nn.Module): # Shiyu: Completed
         # causal_mask = None
 
         hidden_states = inputs_embeds
-        print(f"hidden states shape: {hidden_states.shape}")
 
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
@@ -482,7 +479,6 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         mask_token_id = self.mask_token_id
         loss_func = nn.CrossEntropyLoss(reduction="none")
         batch_size, seq_len = input_ids.shape     # input_ids: [batch_size, seq_len]
-        print(f"input_ids shape: {input_ids.shape}")
         masking_schedule = kwargs.get("masking_schedule", None)
 
         if src_mask is not None: # SFT
