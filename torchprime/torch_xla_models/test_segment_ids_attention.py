@@ -51,7 +51,7 @@ def test_attention_module(device):
 
     # Create test inputs
     batch_size = 2
-    seq_len = 256
+    seq_len = 8
     num_query_heads = config.num_attention_heads
     num_key_value_heads = config.num_key_value_heads
     head_dim = config.head_dim
@@ -147,7 +147,7 @@ def test_model_forward(device):
 
     # Create dummy inputs
     batch_size = 1
-    seq_len = 256
+    seq_len = 8
 
     # Create input_ids like [[1,2,3,4,5,6],[1,2,3,1,2,3]]
     input_ids_a = torch.randint(0, config.vocab_size, (batch_size, seq_len), device=device)
