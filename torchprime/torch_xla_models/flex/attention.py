@@ -60,6 +60,7 @@ class AttentionModule(nn.Module):
       value_states = repeat_kv(value_states, num_key_value_groups)
 
     bsz, num_heads, q_len, head_dim = query_states.size()
+    print(f"attention bsz, num_heads, q_len, head_dim: {bsz}, {num_heads}, {q_len}, {head_dim}")
     # TODO: q, k dim unintentionally changed after the apply_rotary_pos_emb. Use
     # v's dim temporarily to bypass shape assertion failure. Remove the
     # following line after resolving
