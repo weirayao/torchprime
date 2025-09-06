@@ -178,6 +178,7 @@ class Qwen3Attention(nn.Module):
     position_embeddings: Tuple[torch.Tensor, torch.Tensor],
     attention_mask: torch.Tensor | None = None,
     position_ids: torch.LongTensor | None = None,
+    segment_ids: torch.Tensor | None = None,
   ) -> torch.FloatTensor:
     bsz, q_len, _ = hidden_states.size()
 
@@ -203,7 +204,7 @@ class Qwen3Attention(nn.Module):
     query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
     attn_output = self.attention_block(
-      query_states, key_states, value_states, attention_mask
+      query_states, key_states, value_states, attention_mask, segment_ids=segment_ids
     )
     attn_output = attn_output.transpose(1, 2).contiguous()
     attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
@@ -269,6 +270,7 @@ class Qwen3DecoderLayer(nn.Module):
     hidden_states: torch.Tensor,
     attention_mask: torch.Tensor | None = None,
     position_ids: torch.Tensor | None = None,
+    segment_ids: torch.Tensor | None = None,
     position_embeddings: tuple[torch.Tensor, torch.Tensor]
     | None = None,  # necessary, but kept here for BC
   ) -> torch.Tensor:
@@ -295,6 +297,7 @@ class Qwen3DecoderLayer(nn.Module):
       attention_mask=attention_mask,
       position_ids=position_ids,
       position_embeddings=position_embeddings,
+      segment_ids=segment_ids,
     )
     hidden_states = residual + hidden_states
 
@@ -347,6 +350,7 @@ class Qwen3Model(nn.Module):
     self,
     input_ids: torch.LongTensor,
     attention_mask: torch.FloatTensor | None = None,
+    segment_ids: torch.Tensor | None = None,
   ) -> torch.Tensor:
     # convert input ids to embeddings
     inputs_embeds = self.embed_tokens(input_ids)
@@ -380,6 +384,7 @@ class Qwen3Model(nn.Module):
       attention_mask=causal_mask,
       position_ids=position_ids,
       position_embeddings=position_embeddings,
+      segment_ids=segment_ids,
     )
 
     hidden_states = self.norm(hidden_states)
@@ -414,8 +419,9 @@ class Qwen3ForCausalLM(nn.Module):
     input_ids: torch.LongTensor,
     labels: torch.LongTensor | None = None,
     attention_mask: torch.FloatTensor | None = None,
+    segment_ids: torch.Tensor | None = None,
   ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:
-    hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask)
+    hidden_states = self.model(input_ids=input_ids, attention_mask=attention_mask, segment_ids=segment_ids)
     logits = self.lm_head(hidden_states)
     logits = logits.float()
     if labels is None:

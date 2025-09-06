@@ -159,7 +159,7 @@ def test_model_forward(device):
     print(f"\n=== Testing Qwen2ForCausalLM on device: {device} ===")
 
     # Load model config
-    config_path = "torchprime/torch_xla_models/configs/model/flex-qwen2-1b.yaml"
+    config_path = "torchprime/torch_xla_models/configs/model/qwen3-1b.yaml"
     config = OmegaConf.load(config_path)
     print(f"Loaded config from {config_path}")
 
@@ -177,7 +177,7 @@ def test_model_forward(device):
     seq_len = 128
 
     # Create input_ids like [[1,2,3,4,5,6],[1,2,3,1,2,3]]
-    input_ids_a = torch.randint(0, config.vocab_size, (batch_size, seq_len), device=device)
+    input_ids_a = torch.stack([torch.arange(seq_len, device=device) for _ in range(batch_size)])
     input_ids_b = input_ids_a[:, :seq_len // 2]
 
     # Create segment_ids where first half is segment 0, second half is segment 1
