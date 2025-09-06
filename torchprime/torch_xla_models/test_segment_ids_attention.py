@@ -63,7 +63,7 @@ def test_attention_module(device):
 
     # Initialize attention module
     attn_module = AttentionModule(config).to(device)
-    # attn_module.forward = with_jax_high_precision(attn_module.forward)
+    attn_module.forward = with_jax_high_precision(attn_module.forward)
 
     # Create test inputs
     batch_size = 2
@@ -93,7 +93,7 @@ def test_attention_module(device):
     # Test without segment_ids
     print("\nTesting attention WITHOUT segment_ids...")
     start_time = time.time()
-    output_no_seg = attn_module.forward(
+    output_no_seg = attn_module(
         query_states, key_states, value_states, attention_mask=None, segment_ids=None
     )
     time_no_seg = time.time() - start_time
@@ -103,7 +103,7 @@ def test_attention_module(device):
     # Test with segment_ids
     print("\nTesting attention WITH segment_ids...")
     start_time = time.time()
-    output_with_seg = attn_module.forward(
+    output_with_seg = attn_module(
         query_states,
         key_states,
         value_states,
@@ -117,9 +117,9 @@ def test_attention_module(device):
     print("Now test with default attention")
     config.attention_kernel = "default"
     attn_module_default = AttentionModule(config).to(device)
-    # attn_module_default.forward = with_jax_high_precision(attn_module_default.forward)
+    attn_module_default.forward = with_jax_high_precision(attn_module_default.forward)
     start_time = time.time()
-    output_no_seg_default = attn_module_default.forward(
+    output_no_seg_default = attn_module_default(
         query_states,
         key_states,
         value_states,
@@ -130,7 +130,7 @@ def test_attention_module(device):
     print(f"Default attention time without segment_ids: {time_no_seg_default:.4f}s")
     print(f"Output shape: {output_no_seg_default.shape}")
     start_time = time.time()
-    output_with_seg_default = attn_module_default.forward(
+    output_with_seg_default = attn_module_default(
         query_states,
         key_states,
         value_states,
@@ -168,6 +168,7 @@ def test_model_forward(device):
 
     model = initialize_model_class(config, load_from_hf=True)
     model = model.to(device)
+    model.forward = with_jax_high_precision(model.forward)
     model.eval()
     print("Model loaded and moved to device")
 
@@ -189,13 +190,13 @@ def test_model_forward(device):
 
     # Test without segment_ids
     print("\n=== Testing model WITHOUT segment_ids ===")
-    logits_no_seg, _ = model(input_ids=input_ids_b)
+    logits_no_seg, _ = model.forward(input_ids=input_ids_b)
     logits_no_seg = logits_no_seg.detach().cpu()
     print(f"Logits shape: {logits_no_seg.shape}")
 
     # Test with segment_ids
     print("\n=== Testing model WITH segment_ids ===")
-    logits_with_seg, _ = model(input_ids=input_ids_a, segment_ids=segment_ids)
+    logits_with_seg, _ = model.forward(input_ids=input_ids_a, segment_ids=segment_ids)
     logits_with_seg = logits_with_seg.detach().cpu()
     logits_with_seg = logits_with_seg[:, :seq_len // 2, :]
     print(f"Logits shape: {logits_with_seg.shape}")
@@ -205,16 +206,17 @@ def test_model_forward(device):
     config.attention_kernel = "default"
     model_default = initialize_model_class(config, load_from_hf=True)
     model_default = model_default.to(device)
+    model_default.forward = with_jax_high_precision(model_default.forward)
     model_default.eval()
     print("Model loaded and moved to device")
     print("\n=== Testing model WITH segment_ids ===")
-    logits_with_seg_default, _ = model_default(input_ids=input_ids_a, segment_ids=segment_ids)
+    logits_with_seg_default, _ = model_default.forward(input_ids=input_ids_a, segment_ids=segment_ids)
     logits_with_seg_default = logits_with_seg_default.detach().cpu()
     logits_with_seg_default = logits_with_seg_default[:, :seq_len // 2, :]
     print(f"Logits shape: {logits_with_seg_default.shape}")
 
     print("\n=== Testing model WITHOUT segment_ids ===")
-    logits_no_seg_default, _ = model_default(input_ids=input_ids_b)
+    logits_no_seg_default, _ = model_default.forward(input_ids=input_ids_b)
     logits_no_seg_default = logits_no_seg_default.detach().cpu()
     print(f"Logits shape: {logits_no_seg_default.shape}")
 
