@@ -120,6 +120,8 @@ class AttentionModule(nn.Module):
         FlashAttention.DEFAULT_BLOCK_SIZES = default_block_sizes
 
         query_states /= math.sqrt(head_dim)
+        print(f"DEBUG: Before flash_attention - query_states shape: {query_states.shape}, key_states shape: {key_states.shape}, value_states shape: {value_states.shape}")
+        print(f"DEBUG: partition_spec: {self.partition_spec}")
         attn_output = flash_attention(
           query_states,
           key_states,
@@ -127,8 +129,9 @@ class AttentionModule(nn.Module):
           causal=False, # weiran: causal=False for bi-directional attention
           q_segment_ids=segment_ids,
           kv_segment_ids=segment_ids,
-          partition_spec=self.partition_spec,
+          partition_spec=None,  # DEBUG: Temporarily disable partition spec
         )
+        print(f"DEBUG: After flash_attention - attn_output shape: {attn_output.shape}, expected shape: ({bsz}, {num_heads}, {q_len}, {head_dim})")
       case "default" | None:
         # Default attention implementation (no flash attention)
         attn_weights = torch.matmul(
