@@ -76,6 +76,10 @@ def test_attention_module(device):
     query_states_zeros = torch.zeros(
         batch_size, num_query_heads, seq_len // 2, head_dim, device=device
     )
+    query_states_ones = torch.ones(
+        batch_size, num_query_heads, seq_len // 2, head_dim, device=device
+    )
+    query_states = torch.cat([query_states_zeros, query_states_ones], dim=2)
     key_states = torch.randn(
         batch_size, num_key_value_heads, seq_len, head_dim, device=device
     )
