@@ -142,7 +142,7 @@ def test_model_forward(device):
 
     model = initialize_model_class(config, load_from_hf=True)
     model = model.to(device)
-    model.train()
+    model.eval()
     print("Model loaded and moved to device")
 
     # Create dummy inputs
@@ -171,7 +171,7 @@ def test_model_forward(device):
     print("\n=== Testing model WITH segment_ids ===")
     logits_with_seg, _ = model(input_ids=input_ids_a, segment_ids=segment_ids)
     logits_with_seg = logits_with_seg.detach().cpu()
-    logits_with_seg = logits_with_seg[:, :127, :]
+    logits_with_seg = logits_with_seg[:, :seq_len // 2, :]
     print(f"Logits shape: {logits_with_seg.shape}")
 
 
@@ -184,7 +184,7 @@ def test_model_forward(device):
     print("\n=== Testing model WITH segment_ids ===")
     logits_with_seg_default, _ = model_default(input_ids=input_ids_a, segment_ids=segment_ids)
     logits_with_seg_default = logits_with_seg_default.detach().cpu()
-    logits_with_seg_default = logits_with_seg_default[:, :127, :]
+    logits_with_seg_default = logits_with_seg_default[:, :seq_len // 2, :]
     print(f"Logits shape: {logits_with_seg_default.shape}")
 
     print("\n=== Testing model WITHOUT segment_ids ===")

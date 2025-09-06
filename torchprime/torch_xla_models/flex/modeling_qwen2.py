@@ -466,7 +466,7 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         **kwargs,
     ) -> tuple[torch.FloatTensor, torch.FloatTensor | None]:
         if not self.training:
-            model_output = self.model(input_ids=input_ids, attention_mask=attention_mask, segment_ids=None)
+            model_output = self.model(input_ids=input_ids, attention_mask=attention_mask, segment_ids=segment_ids)
             hidden_states = model_output
             logits = self.lm_head(hidden_states) # NOTE: we shift logits in generate()
             # logits = logits.float()[..., :-1, :].contiguous() # NOTE: we shift logits in inference_utils at inference time
@@ -537,11 +537,11 @@ class Qwen2ForCausalLM(nn.Module): # Shiyu: Completed
         # logits: [bs, seq_len, vocab_size]
         # Shifted logits and labels
         # logits: [bs, seq_len-1, vocab_size]
-        logits = logits[..., :-1, :].contiguous()
+        # logits = logits[..., :-1, :].contiguous()
         # weiran: if the shifted token is not masked in the original input, the loss is 0
         # loss_mask: [bs, seq_len-1]
-        loss_mask = loss_mask[..., 1:].contiguous()
-        target_ids = input_ids[..., 1:].contiguous()
+        # loss_mask = loss_mask[..., 1:].contiguous()
+        # target_ids = input_ids[..., 1:].contiguous()
         # loss: [bs, seq_len-1]
         loss = loss_func(
         logits.reshape(-1, logits.shape[-1]), target_ids.reshape(-1)).reshape(target_ids.shape[0],-1)
