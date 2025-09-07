@@ -300,10 +300,10 @@ class Trainer:
       dataloader = wds.WebLoader(
         self.train_dataset,
         collate_fn=webdataset_collate_fn,
-        batch_size = per_worker_batch_size,
-        num_workers=96,
+        batch_size=per_worker_batch_size,
+        num_workers=32,
         persistent_workers=True,
-        prefetch_factor=96,
+        prefetch_factor=32,
         pin_memory=False,
         drop_last=True,
       )
@@ -507,9 +507,8 @@ class Trainer:
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
       else:
-        if is_main_process():
-          logger.info(f"DEBUG step: {step}, input_ids shape: {batch['input_ids'].shape}")
-          logger.info(f"First 100 elements of input_ids: {batch['input_ids'][0, :100]}")
+        logger.info(f"DEBUG step: {step}, input_ids shape on worker {xr.process_index()}: {batch['input_ids'].shape}")
+        logger.info(f"First 100 elements of input_ids on worker {xr.process_index()}: {batch['input_ids'][0, :100]}")
         batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
         if "attention_mask" in batch:
           batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
