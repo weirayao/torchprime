@@ -12,7 +12,7 @@ python torchprime/torch_xla_models/train.py \
     model.masking_scheduler.schedule_type=linear \
     model.masking_scheduler.max_schedule_steps=10 \
     optimizer.learning_rate=2e-4 \
-    global_batch_size=32 \
+    global_batch_size=64 \
     max_steps=50 \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \

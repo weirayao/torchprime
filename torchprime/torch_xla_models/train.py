@@ -46,7 +46,7 @@ from transformers.utils import check_min_version
 from transformers import PreTrainedTokenizerBase
 
 from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset
-from torchprime.data.webdataset import make_webdataset
+from torchprime.data.webdataset import make_webdataset, webdataset_collate_fn
 from torchprime.torch_xla_models.sft_data_collator import SFTDataCollator, create_sft_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
@@ -299,10 +299,11 @@ class Trainer:
     if isinstance(self.train_dataset, wds.WebDataset):
       dataloader = wds.WebLoader(
         self.train_dataset,
-        collate_fn=collate_fn,
-        num_workers=32,
+        collate_fn=webdataset_collate_fn,
+        batch_size = per_worker_batch_size,
+        num_workers=96,
         persistent_workers=True,
-        prefetch_factor=32,
+        prefetch_factor=96,
         pin_memory=False,
         drop_last=True,
       )
@@ -451,6 +452,7 @@ class Trainer:
           next(train_iterator)
 
     for step in range(start_step, max_step):
+      data_load_start_time = timer()
       try:
         batch = next(train_iterator)
       except StopIteration:
@@ -470,7 +472,6 @@ class Trainer:
             self.train_dataset = retry(
               lambda: make_webdataset(
                 self.config.data.dataset_name,
-                per_replica_batch=self.config.global_batch_size // xr.process_count(),
                 shard_urls=self.config.all_data_files,
                 seed=self.config.seed,
                 checkpoint_dir=None
@@ -500,7 +501,7 @@ class Trainer:
 
         train_iterator = iter(train_loader)
         batch = next(train_iterator)
-
+      data_load_end_time = timer()
       trace_start_time = timer()
       # Validate batch for SFT mode
       if self.config.training_mode == "sft":
@@ -537,7 +538,7 @@ class Trainer:
       trace_end_time = timer()
 
       if step % self.config.logging_steps == 0:
-        def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
+        def step_closure(epoch, step, loss, trace_start_time, trace_end_time, data_load_start_time, data_load_end_time):
           loss = loss.detach().item()
           if math.isnan(loss):
             raise ValueError(f"Loss is NaN at step {step}")
@@ -545,12 +546,14 @@ class Trainer:
             logger.info(
               f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
               f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
+              f"data load time: {(data_load_end_time - data_load_start_time) * 1000:0.2f} ms"
             )
             wandb.log(
               {
                 "train/loss": loss,
                 "train/ppl": math.exp(loss),
                 "train/step_time": (trace_end_time - trace_start_time) * 1000,
+                "train/data_load_time": (data_load_end_time - data_load_start_time) * 1000,
                 "train/epoch": epoch,
                 "train/step": step,
                 "train/lr": self.lr_scheduler.get_last_lr()[0],
@@ -560,7 +563,7 @@ class Trainer:
             )
         xm.add_step_closure(
           step_closure,
-          args=(epoch, step, loss, trace_start_time, trace_end_time),
+          args=(epoch, step, loss, trace_start_time, trace_end_time, data_load_start_time, data_load_end_time),
           run_async=True,
         )
       if step > self.start_step and step % self.config.save_steps == 0:
@@ -778,23 +781,21 @@ def main(config: DictConfig):
       gcs_prefix = "gs://sfr-text-diffusion-model-research/"
       if dataset_name.startswith(gcs_prefix):
         checkpoint_save_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_save_dir.split(gcs_prefix)[1])
-        per_replica_batch = config.global_batch_size // xr.process_count()  
         use_webdataset = hasattr(config.data, 'use_webdataset') and config.data.use_webdataset
         dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
         if not config.resume_from_checkpoint:
           if is_main_process():
             logger.info(f"Training from scratch, loading all data files from {dataset_name}")
           if use_webdataset:
-            if is_main_process():
-              logger.info(f"Buliding webdataset using {config.data.dataset_name}, per replica batch size {per_replica_batch}")
-            data = retry(
-              lambda: make_webdataset(
-                config.data.dataset_name,
-                per_replica_batch=per_replica_batch,
-                seed=config.seed,
-                checkpoint_dir=checkpoint_save_dir
-              )
-            )
+             if is_main_process():
+               logger.info(f"Building webdataset using {config.data.dataset_name}")
+             data = retry(
+               lambda: make_webdataset(
+                 config.data.dataset_name,
+                 seed=config.seed,
+                 checkpoint_dir=checkpoint_save_dir
+               )
+             )
           else:
             data = retry(
               lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_save_dir)
@@ -845,11 +846,10 @@ def main(config: DictConfig):
           # Load dataset starting from the appropriate files
           if use_webdataset:
             if is_main_process():
-              logger.info(f"Buliding webdataset using {config.data.dataset_name}, per replica batch size {per_replica_batch}, loading remaining {len(remaining_files)} files from {remaining_files}")
+              logger.info(f"Building webdataset using {config.data.dataset_name}, loading remaining {len(remaining_files)} files from {remaining_files}")
             data = retry(
               lambda: make_webdataset(
                 config.data.dataset_name,
-                per_replica_batch=per_replica_batch,
                 shard_urls=remaining_files,
                 seed=config.seed,
                 checkpoint_dir=None

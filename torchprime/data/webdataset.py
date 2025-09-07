@@ -63,25 +63,23 @@ def split_by_datloader_worker(urls):
         return urls
 
 
-def collate_fn(batch):
-    """Convert WebDataset batch format to standard PyTorch format."""
-    # batch is a list of tuples, each tuple contains (input_ids numpy array,)
-    # Convert numpy arrays to tensors and stack
-    if isinstance(batch[0], tuple):
-        arrays = [item[0] for item in batch]
-    else:
-        arrays = batch
-
-    # Stack numpy arrays first, then convert to tensor (more efficient)
-    stacked = np.stack(arrays)
-    input_ids = torch.from_numpy(stacked).long()
-
+def webdataset_collate_fn(batch):
+    """Collate function for WebDataset samples.
+    
+    When using to_tuple("npy"), WebDataset returns tuples of (numpy_array,).
+    DataLoader passes a list of these tuples to the collate function.
+    """
+    # Extract numpy arrays from tuples
+    arrays = [item[0] if isinstance(item, tuple) else item for item in batch]
+    
+    # Stack into a batch tensor
+    input_ids = torch.from_numpy(np.stack(arrays)).long()
+    
     return {"input_ids": input_ids}
 
 
 def make_webdataset(
     path: str,
-    per_replica_batch: int,
     shard_urls: list[str] = None,
     sample_shuffle=65536,  # sample-level shuffle buffer
     checkpoint_dir: str = None,
@@ -92,7 +90,7 @@ def make_webdataset(
     - shuffles shards and splits them by node and by worker
     - reads samples from tar
     - shuffles samples
-    - returns pre-batched samples
+    - returns individual samples for DataLoader to batch
     """
     # Pipeline definition
     random.seed(seed)
@@ -120,8 +118,6 @@ def make_webdataset(
 
     dataset = dataset.decode(numpy_decoder)
     dataset = dataset.to_tuple("npy")
-    dataset = dataset.batched(per_replica_batch, collation_fn=collate_fn, partial=False)
-
     return dataset
 
 
