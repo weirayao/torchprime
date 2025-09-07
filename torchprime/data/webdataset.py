@@ -120,7 +120,7 @@ def make_webdataset(
 
     dataset = dataset.decode(numpy_decoder)
     dataset = dataset.to_tuple("npy")
-    dataset = dataset.batched(per_replica_batch, collate_fn=collate_fn, partial=False)
+    dataset = dataset.batched(per_replica_batch, collation_fn=collate_fn, partial=False)
 
     return dataset
 
