@@ -263,7 +263,8 @@ class Trainer:
       raise ValueError("Trainer: training requires a train_dataset.")
 
     num_replicas = xr.process_count()
-    logger.info(f"Num replicas: {num_replicas}") # 64 for v5p-512
+    if is_main_process():
+      logger.info(f"Num replicas: {num_replicas}") # 64 for v5p-512
 
     per_worker_batch_size = self.global_batch_size // num_replicas
     if isinstance(self.train_dataset, IterableDataset):
@@ -480,9 +481,9 @@ class Trainer:
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
       else:
-        batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
-        if "attention_mask" in batch:
-          batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
+        # batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
+        # if "attention_mask" in batch:
+        #   batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
 
         # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
         # Create segment_ids by looking at EOS_TOKEN_ID positions
