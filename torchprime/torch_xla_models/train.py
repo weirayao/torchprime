@@ -25,6 +25,7 @@ import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
 import transformers
 import wandb
+import webdataset as wds
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, IterableDataset
@@ -45,6 +46,7 @@ from transformers.utils import check_min_version
 from transformers import PreTrainedTokenizerBase
 
 from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset
+from torchprime.data.webdataset import make_webdataset
 from torchprime.torch_xla_models.sft_data_collator import SFTDataCollator, create_sft_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
@@ -267,11 +269,11 @@ class Trainer:
       logger.info(f"Num replicas: {num_replicas}") # 64 for v5p-512
 
     per_worker_batch_size = self.global_batch_size // num_replicas
-    if isinstance(self.train_dataset, IterableDataset):
+    if isinstance(self.train_dataset, IterableDataset) or isinstance(self.train_dataset, wds.WebDataset):
       # For IterableDataset, don't use DistributedSampler as it doesn't have len()
       sampler = None
       if is_main_process():
-        logger.info("Using IterableDataset without DistributedSampler")
+        logger.info("Using IterableDataset or WebDataset without DistributedSampler")
     else:
       sampler = torch.utils.data.DistributedSampler(
         self.train_dataset,
@@ -293,14 +295,25 @@ class Trainer:
     else:
       # For pre-training, use default data collator
       collate_fn = default_data_collator
-    
-    dataloader = DataLoader(
-      self.train_dataset,
-      collate_fn=collate_fn,
-      batch_size=per_worker_batch_size, # <-- Use the smaller, per-worker batch size
-      sampler=sampler,
-      drop_last=True, # Sampler also has drop_last=True for safety
-    )
+
+    if isinstance(self.train_dataset, wds.WebDataset):
+      dataloader = wds.WebLoader(
+        self.train_dataset,
+        collate_fn=collate_fn,
+        num_workers=32,
+        persistent_workers=True,
+        prefetch_factor=32,
+        pin_memory=False,
+        drop_last=True,
+      )
+    else:
+      dataloader = DataLoader(
+        self.train_dataset,
+        collate_fn=collate_fn,
+        batch_size=per_worker_batch_size, # <-- Use the smaller, per-worker batch size
+        sampler=sampler,
+        drop_last=True, # Sampler also has drop_last=True for safety
+      )
     loader = pl.MpDeviceLoader(
       dataloader, self.device, input_sharding=self.input_sharding_spec
     )
@@ -452,15 +465,27 @@ class Trainer:
           self.config.is_resuming_epoch = False
 
           # Recreate dataset with all files
-          self.train_dataset = retry(
-            lambda: make_gcs_pretokenized_dataset(
-              self.config.dataset_name,
-              data_files=self.config.all_data_files,
-              seed=self.config.seed,
-              checkpoint_dir=None
+          use_webdataset = hasattr(self.config.data, 'use_webdataset') and self.config.data.use_webdataset
+          if use_webdataset:
+            self.train_dataset = retry(
+              lambda: make_webdataset(
+                self.config.data.dataset_name,
+                per_replica_batch=self.config.global_batch_size // xr.process_count(),
+                shard_urls=self.config.all_data_files,
+                seed=self.config.seed,
+                checkpoint_dir=None
+              )
             )
-          )
-          if isinstance(self.train_dataset, IterableDataset):
+          else:
+            self.train_dataset = retry(
+              lambda: make_gcs_pretokenized_dataset(
+                self.config.dataset_name,
+                data_files=self.config.all_data_files,
+                seed=self.config.seed,
+                checkpoint_dir=None
+              )
+            )
+          if isinstance(self.train_dataset, IterableDataset) and not isinstance(self.train_dataset, wds.WebDataset):
             try:
               logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
               self.train_dataset = split_dataset_by_node(self.train_dataset, xr.process_index(), xr.process_count())
@@ -481,6 +506,7 @@ class Trainer:
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
       else:
+        logger.info(f"DEBUG step: {step}, input_ids shape: {batch['input_ids'].shape}")
         batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
         if "attention_mask" in batch:
           batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
@@ -750,13 +776,27 @@ def main(config: DictConfig):
       gcs_prefix = "gs://sfr-text-diffusion-model-research/"
       if dataset_name.startswith(gcs_prefix):
         checkpoint_save_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_save_dir.split(gcs_prefix)[1])
+        per_replica_batch = config.global_batch_size // xr.process_count()  
+        use_webdataset = hasattr(config.data, 'use_webdataset') and config.data.use_webdataset
         dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
         if not config.resume_from_checkpoint:
           if is_main_process():
             logger.info(f"Training from scratch, loading all data files from {dataset_name}")
-          data = retry(
-            lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_save_dir)
-          )
+          if use_webdataset:
+            if is_main_process():
+              logger.info(f"Buliding webdataset using {config.data.dataset_name}, per replica batch size {per_replica_batch}")
+            data = retry(
+              lambda: make_webdataset(
+                config.data.dataset_name,
+                per_replica_batch=per_replica_batch,
+                seed=config.seed,
+                checkpoint_dir=checkpoint_save_dir
+              )
+            )
+          else:
+            data = retry(
+              lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_save_dir)
+            )
           # No additional steps to skip when starting fresh
           # Store dataset info for multi-epoch training
           config.all_data_files = None  # Will be set from data_files.json if exists
@@ -801,14 +841,27 @@ def main(config: DictConfig):
             logger.info(f"Remaining files after skipping: {len(remaining_files)}")
 
           # Load dataset starting from the appropriate files
-          data = retry(
-            lambda: make_gcs_pretokenized_dataset(
-              dataset_name,
-              data_files=remaining_files,
-              seed=config.seed,
-              checkpoint_dir=None  # Don't save data_files.json again
+          if use_webdataset:
+            if is_main_process():
+              logger.info(f"Buliding webdataset using {config.data.dataset_name}, per replica batch size {per_replica_batch}, loading remaining {len(remaining_files)} files from {remaining_files}")
+            data = retry(
+              lambda: make_webdataset(
+                config.data.dataset_name,
+                per_replica_batch=per_replica_batch,
+                shard_urls=remaining_files,
+                seed=config.seed,
+                checkpoint_dir=None
+              )
             )
-          )
+          else:
+            data = retry(
+              lambda: make_gcs_pretokenized_dataset(
+                dataset_name,
+                data_files=remaining_files,
+                seed=config.seed,
+                checkpoint_dir=None  # Don't save data_files.json again
+              )
+            )
       else:
         # Initialize multi-epoch training flags for non-GCS datasets
         config.is_resuming_epoch = False
@@ -837,7 +890,7 @@ def main(config: DictConfig):
       )
     else:
       raise ValueError("No dataset provided")
-  if isinstance(data, IterableDataset):
+  if isinstance(data, IterableDataset) and not isinstance(data, wds.WebDataset):
     try:
       logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
       data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
