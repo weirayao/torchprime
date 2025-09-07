@@ -301,9 +301,9 @@ class Trainer:
         self.train_dataset,
         collate_fn=webdataset_collate_fn,
         batch_size=per_worker_batch_size,
-        num_workers=32,
+        num_workers=8,
         persistent_workers=True,
-        prefetch_factor=32,
+        prefetch_factor=8,
         pin_memory=False,
         drop_last=True,
       )
