@@ -506,7 +506,9 @@ class Trainer:
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
       else:
-        logger.info(f"DEBUG step: {step}, input_ids shape: {batch['input_ids'].shape}")
+        if is_main_process():
+          logger.info(f"DEBUG step: {step}, input_ids shape: {batch['input_ids'].shape}")
+          logger.info(f"First 100 elements of input_ids: {batch['input_ids'][0, :100]}")
         batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
         if "attention_mask" in batch:
           batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
