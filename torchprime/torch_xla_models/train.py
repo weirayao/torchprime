@@ -765,7 +765,7 @@ def main(config: DictConfig):
           if is_main_process():
             logger.info(f"Resuming from checkpoint {config.checkpoint_load_step}, will recompute the data files to skip")
           # Calculate which files to skip based on checkpoint step and batch size
-          samples_per_file = config.data.samples_per_file if hasattr(config.data, 'samples_per_file') and config.data.samples_per_file is not None else 5000
+          samples_per_file = config.data.samples_per_file if hasattr(config.data, 'samples_per_file') and config.data.samples_per_file is not None else 100000
           total_samples_processed = config.checkpoint_load_step * config.global_batch_size
           files_to_skip, num_samples_processed_in_current_file = divmod(total_samples_processed, samples_per_file)
           if is_main_process():
