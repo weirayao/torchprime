@@ -78,7 +78,9 @@ def make_gcs_pretokenized_dataset(
   data = load_dataset(
     "parquet",
     data_files=data_files,
-    streaming=True,
+    streaming=False,
+    keep_in_memory=True,
+    num_proc=max(1, os.cpu_count() - 8),
     split="train",
   )
   if checkpoint_dir is not None and is_main_process():
@@ -90,7 +92,7 @@ def make_gcs_pretokenized_dataset(
   if isinstance(data, IterableDataset):
     data = data.shuffle(seed=seed, buffer_size=32768)
   else:
-    data = data.shuffle(seed=seed)
+    data = data.shuffle(seed=seed, keep_in_memory=True)
   return data
 
 def make_gcs_dataset(

@@ -3,7 +3,7 @@ export XLA_IR_DEBUG=1
 export XLA_HLO_DEBUG=1
 python torchprime/torch_xla_models/train.py \
     training_mode=pretrain \
-    data=test_data \
+    data=flex_v2 \
     model=flex-qwen-1b \
     model.block_masking_probability=1 \
     model.mask_block_sizes=[[2,4,8],[16,32,64]] \
@@ -14,11 +14,11 @@ python torchprime/torch_xla_models/train.py \
     optimizer.learning_rate=2e-4 \
     global_batch_size=32 \
     max_steps=30 \
-    checkpoint_load_dir=gs://sfr-text-diffusion-model-research/checkpoints/test_state_dict_2d/ \
-    checkpoint_load_step=20 \
-    resume_from_checkpoint=true \
-    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/test_state_dict_2d_resave/ \
-    save_steps=10 \
+    checkpoint_load_dir=null \
+    checkpoint_load_step=null \
+    resume_from_checkpoint=false \
+    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/test_loading_entire_dataset/ \
+    save_steps=100 \
     logging_steps=1 \
     ici_mesh.fsdp=4 \
     ici_mesh.tensor=2 \
