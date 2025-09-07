@@ -468,9 +468,9 @@ class Trainer:
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
       else:
-        # batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
-        # if "attention_mask" in batch:
-        #   batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
+        batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
+        if "attention_mask" in batch:
+          batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
 
         # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
         # Create segment_ids by looking at EOS_TOKEN_ID positions
@@ -498,13 +498,13 @@ class Trainer:
       if step % self.config.logging_steps == 0:
         def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
           loss = loss.detach().item()
-          logger.info(
-            f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
-            f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
-          )
           if math.isnan(loss):
             raise ValueError(f"Loss is NaN at step {step}")
           if is_main_process():
+            logger.info(
+              f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
+              f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
+            )
             wandb.log(
               {
                 "train/loss": loss,
@@ -535,7 +535,8 @@ class Trainer:
         try:
           # logger.info(f"model.state_dict().keys() before saving: {self.model.state_dict().keys()}")
           self.checkpoint_save_manager.save(step, state_dict, force=True)
-          logger.info(f"Checkpoint saved at step {step} to {self.checkpoint_save_dir}")
+          if is_main_process():
+            logger.info(f"Checkpoint saved at step {step} to {self.checkpoint_save_dir}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
         xm.wait_device_ops()
