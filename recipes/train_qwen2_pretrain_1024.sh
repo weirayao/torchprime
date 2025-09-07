@@ -1,13 +1,12 @@
 export LIBTPU_INIT_ARGS="--xla_tpu_scoped_vmem_limit_kib=98304 --xla_enable_async_all_gather=true --xla_tpu_overlap_compute_collective_tc=true --xla_tpu_enable_async_collective_fusion_multiple_steps=true --xla_tpu_enable_async_collective_fusion=true --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true"
 export XLA_IR_DEBUG=1
 export XLA_HLO_DEBUG=1
-export TPU_STDERR_LOG_LEVEL=0
 export TPU_PREMAPPED_BUFFER_SIZE=40000000000
 # export PT_XLA_DEBUG_LEVEL=2
 # export HYDRA_FULL_ERROR=1
 python torchprime/torch_xla_models/train.py \
     training_mode=pretrain \
-    data=validation \
+    data=flex_v2_consolidated \
     model=flex-qwen2-1b \
     model.block_masking_probability=0.05 \
     model.mask_block_sizes=[[2,4,8],[4,8,16],[8,16,32],[16,32,64]] \
@@ -15,14 +14,14 @@ python torchprime/torch_xla_models/train.py \
     model.prefix_probability=0.05 \
     model.masking_scheduler.schedule_type=linear \
     model.masking_scheduler.max_schedule_steps=1500 \
-    optimizer.learning_rate=1e-4 \
-    lr_scheduler.warmup_steps=50 \
+    optimizer.learning_rate=5e-4 \
+    lr_scheduler.warmup_steps=30 \
     global_batch_size=65536 \
-    max_steps=100 \
+    max_steps=3000 \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
     resume_from_checkpoint=false \
-    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen2_5_Coder_1_5b_flex_v2_test/ \
+    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_1b_flex_v2_consolidated/ \
     save_steps=100 \
     logging_steps=1 \
     ici_mesh.fsdp=128 \
