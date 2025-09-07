@@ -265,7 +265,8 @@ class Trainer:
     if isinstance(self.train_dataset, IterableDataset):
       # For IterableDataset, don't use DistributedSampler as it doesn't have len()
       sampler = None
-      logger.info("Using IterableDataset without DistributedSampler")
+      if is_main_process():
+        logger.info("Using IterableDataset without DistributedSampler")
     else:
       sampler = torch.utils.data.DistributedSampler(
         self.train_dataset,
@@ -397,12 +398,13 @@ class Trainer:
     train_iterator = iter(train_loader)
 
     metrics_logger = MetricsLogger(self.config.model)
-    logger.info("Starting training")
-    logger.info(f"    Max step: {max_step}")
-    logger.info(f"    Global batch size: {self.global_batch_size}")
-    if hasattr(self, 'start_step') and self.start_step > 0:
-      logger.info(f"    Resuming from step: {self.start_step}")
     if is_main_process():
+      logger.info("Starting training")
+      logger.info(f"    Max step: {max_step}")
+      logger.info(f"    Global batch size: {self.global_batch_size}")
+      if hasattr(self, 'start_step') and self.start_step > 0:
+        logger.info(f"    Resuming from step: {self.start_step}")
+
       wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
       wandb.init(project="text-diffusion-model-research-qwen2_5-1_5b-pretrain", name=self.config.model.model_class)
       # Log the configuration to wandb
@@ -430,12 +432,14 @@ class Trainer:
       try:
         batch = next(train_iterator)
       except StopIteration:
-        logger.warning(f"DataLoader exhausted at step {step}, reset iterator")
+        if is_main_process():
+          logger.warning(f"DataLoader exhausted at step {step}, reset iterator")
         epoch += 1
 
         # If we just finished the resuming epoch and have all_data_files, recreate dataset with full data
         if hasattr(self.config, 'is_resuming_epoch') and self.config.is_resuming_epoch and hasattr(self.config, 'all_data_files'):
-          logger.info("Finished resuming epoch, switching to full dataset for subsequent epochs")
+          if is_main_process():
+            logger.info("Finished resuming epoch, switching to full dataset for subsequent epochs")
           self.config.is_resuming_epoch = False
 
           # Recreate dataset with all files
@@ -468,9 +472,9 @@ class Trainer:
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
       else:
-        # batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
-        # if "attention_mask" in batch:
-        #   batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
+        batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
+        if "attention_mask" in batch:
+          batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
 
         # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
         # Create segment_ids by looking at EOS_TOKEN_ID positions
