@@ -70,11 +70,13 @@ def make_gcs_pretokenized_dataset(
   """
   random.seed(seed)
   if data_files is None:
-    logger.info(f"data_files is None, searching for all parquet files in {path}")
+    if is_main_process():
+      logger.info(f"data_files is None, searching for all parquet files in {path}")
     data_files = glob(f"{path}/**/*.parquet", recursive=True)
     random.shuffle(data_files)
-  logger.info(f"data_files: {data_files}")
-  logger.info(f"number of data_files: {len(data_files)}")
+  if is_main_process():
+    logger.info(f"data_files: {data_files}")
+    logger.info(f"number of data_files: {len(data_files)}")
   data = load_dataset(
     "parquet",
     data_files=data_files,
