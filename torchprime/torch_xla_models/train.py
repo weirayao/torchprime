@@ -108,13 +108,14 @@ class Trainer:
     # Set up SPMD mesh and shard the model
     mesh = get_mesh(self.config)
     xs.set_global_mesh(mesh)
-    logger.info(f"Logical mesh shape: {mesh.shape()}")
-    logger.info(f"Logical mesh device assignments: {mesh.device_ids}")
 
     # TODO(https://github.com/pytorch/xla/issues/8696): Minibatch only works in 1D sharding.
     minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
     self.minibatch = minibatch
-    logger.info(f"Minibatch dataloading: {minibatch}")
+    if is_main_process():
+      logger.info(f"Logical mesh shape: {mesh.shape()}")
+      logger.info(f"Logical mesh device assignments: {mesh.device_ids}")
+      logger.info(f"Minibatch dataloading: {minibatch}")
 
     # TODO(https://github.com/AI-Hypercomputer/torchprime/issues/66): Test this for multislice
     self.input_sharding_spec = xs.ShardingSpec(
@@ -210,11 +211,13 @@ class Trainer:
     }
     checkpoint_load_step = self.config.checkpoint_load_step
     if checkpoint_load_step in tracked_steps:
-      logger.info(f"Loading checkpoint from step {checkpoint_load_step}")
+      if is_main_process():
+        logger.info(f"Loading checkpoint from step {checkpoint_load_step}")
       self.checkpoint_load_manager.restore(checkpoint_load_step, state_dict)
     elif checkpoint_load_step == "latest":
       last_step = max(tracked_steps)
-      logger.warning(f"Checkpoint step {checkpoint_load_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
+      if is_main_process():
+        logger.warning(f"Checkpoint step {checkpoint_load_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
       self.checkpoint_load_manager.restore(last_step, state_dict)
     else:
       raise ValueError(f"Invalid checkpoint step: {checkpoint_load_step}. Must be one of {tracked_steps} or 'latest'.")
@@ -232,7 +235,8 @@ class Trainer:
       raise ValueError("Trainer: evaluation requires a eval_dataset.")
 
     num_replicas = xr.process_count()
-    logger.info(f"Num replicas: {num_replicas}")
+    if is_main_process():
+      logger.info(f"Num replicas: {num_replicas}")
     assert self.global_batch_size is not None
     if self.minibatch:
       # Each process loads the per-host batch size.
@@ -309,13 +313,15 @@ class Trainer:
     offload_tensors = self.config.model.remat.get("offload_tensors", [])
 
     # Checking preconditions and logging.
-    if remat_classes:
+    if remat_classes and is_main_process():
       logger.info(f"Enabling activation checkpointing on {remat_classes}")
     if layers_to_scan:
       assert isinstance(layers_to_scan, str)
-      logger.info(f"Compiling module `{layers_to_scan}` with scan")
+      if is_main_process():
+        logger.info(f"Compiling module `{layers_to_scan}` with scan")
     if len(offload_tensors):
-      logger.info(f"Will offload these tensors to host RAM: {offload_tensors}")
+      if is_main_process():
+        logger.info(f"Will offload these tensors to host RAM: {offload_tensors}")
       if layers_to_scan is None:
         raise NotImplementedError("Host offloading requires scan")
       if len(remat_classes) != 1:
@@ -364,7 +370,8 @@ class Trainer:
     if not classes:
       return model
 
-    logger.info(f"Adding backward optimization barriers to {classes}")
+    if is_main_process():
+      logger.info(f"Adding backward optimization barriers to {classes}")
 
     def maybe_add_barrier(mod, _name):
       if isinstance(mod, tuple(classes)):
@@ -416,10 +423,11 @@ class Trainer:
     epoch = 0
     start_step = self.start_step
     # Skip batches for partial file processing when resuming from checkpoint
-    if self.config.checkpoint_load_step is not None and self.config.steps_to_skip == 0:
+    if self.config.checkpoint_load_step is not None and self.config.steps_to_skip == 0 and is_main_process():
       logger.warning("steps_to_skip is 0, but checkpoint_load_step is not None. This will cause the trainer to start from the beginning of the dataset. Please check the logs to see if this is expected.")
     if self.config.steps_to_skip > 0:
-      logger.info(f"Skipping {self.config.steps_to_skip} batches for partial file processing...")
+      if is_main_process():
+        logger.info(f"Skipping {self.config.steps_to_skip} batches for partial file processing...")
       for _ in range(self.config.steps_to_skip):
         try:
           next(train_iterator)
@@ -743,7 +751,8 @@ def main(config: DictConfig):
         checkpoint_save_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_save_dir.split(gcs_prefix)[1])
         dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
         if not config.resume_from_checkpoint:
-          logger.info(f"Training from scratch, loading all data files from {dataset_name}")
+          if is_main_process():
+            logger.info(f"Training from scratch, loading all data files from {dataset_name}")
           data = retry(
             lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_save_dir)
           )
@@ -752,18 +761,21 @@ def main(config: DictConfig):
           config.all_data_files = None  # Will be set from data_files.json if exists
           config.is_resuming_epoch = False
         else:
-          logger.info(f"Resuming from checkpoint {config.checkpoint_load_step}, will recompute the data files to skip")
+          if is_main_process():
+            logger.info(f"Resuming from checkpoint {config.checkpoint_load_step}, will recompute the data files to skip")
           # Calculate which files to skip based on checkpoint step and batch size
           samples_per_file = config.data.samples_per_file if hasattr(config.data, 'samples_per_file') and config.data.samples_per_file is not None else 5000
           total_samples_processed = config.checkpoint_load_step * config.global_batch_size
           files_to_skip, num_samples_processed_in_current_file = divmod(total_samples_processed, samples_per_file)
-          logger.info(f"Resuming from checkpoint step {config.checkpoint_load_step}")
-          logger.info(f"Total samples processed: {total_samples_processed}")
-          logger.info(f"Remaining samples in current file: {num_samples_processed_in_current_file}")
+          if is_main_process():
+            logger.info(f"Resuming from checkpoint step {config.checkpoint_load_step}")
+            logger.info(f"Total samples processed: {total_samples_processed}")
+            logger.info(f"Remaining samples in current file: {num_samples_processed_in_current_file}")
 
           # Calculate additional steps to skip within the current file
           steps_to_skip = num_samples_processed_in_current_file // config.global_batch_size
-          logger.info(f"Additional steps to skip in current file: {steps_to_skip}")
+          if is_main_process():
+            logger.info(f"Additional steps to skip in current file: {steps_to_skip}")
           config.steps_to_skip = steps_to_skip
 
           # Read data files from checkpoint directory
@@ -781,11 +793,11 @@ def main(config: DictConfig):
 
           # Skip the appropriate number of files for the current epoch
           files_to_skip = files_to_skip % len(all_data_files)
-          logger.info(f"Files to skip: {files_to_skip}")
           remaining_files = all_data_files[files_to_skip:]
-          logger.info(f"Files to skip: {files_to_skip}")
-          logger.info(f"Total data files: {len(all_data_files)}")
-          logger.info(f"Remaining files after skipping: {len(remaining_files)}")
+          if is_main_process():
+            logger.info(f"Files to skip: {files_to_skip}")
+            logger.info(f"Total data files: {len(all_data_files)}")
+            logger.info(f"Remaining files after skipping: {len(remaining_files)}")
 
           # Load dataset starting from the appropriate files
           data = retry(

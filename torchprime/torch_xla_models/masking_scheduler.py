@@ -2,8 +2,14 @@
 
 import logging
 from typing import Dict, List, Optional, Union
+import torch_xla.runtime as xr
 
 logger = logging.getLogger(__name__)
+
+
+def is_main_process():
+    """Check if this is the main process (rank 0)."""
+    return xr.process_index() == 0
 
 
 class MaskingScheduler:
@@ -63,13 +69,15 @@ class MaskingScheduler:
                 self.block_size_boundaries = [
                     int(phase_length * (i + 1)) for i in range(num_phases - 1)
                 ]
-                logger.info(
-                    "Scheduled block sizes: %s with boundaries at steps: %s",
-                    mask_block_sizes,
-                    self.block_size_boundaries,
-                )
+                if is_main_process():
+                    logger.info(
+                        "Scheduled block sizes: %s with boundaries at steps: %s",
+                        mask_block_sizes,
+                        self.block_size_boundaries,
+                    )
             else:
-                logger.info("Using constant block sizes: %s", mask_block_sizes)
+                if is_main_process():
+                    logger.info("Using constant block sizes: %s", mask_block_sizes)
 
         # Validate configuration
         if schedule_type == "linear" and max_schedule_steps is None:
@@ -80,13 +88,14 @@ class MaskingScheduler:
         if schedule_type not in ["constant", "linear"]:
             raise ValueError(f"Unknown schedule type: {schedule_type}")
 
-        logger.info(
-            f"Initialized MaskingScheduler with {schedule_type} schedule. "
-            f"Target probabilities - prefix: {prefix_probability}, "
-            f"truncate: {truncate_probability},"
-            f"block_masking: {block_masking_probability}, masking_block_sizes: {mask_block_sizes}"
-        )
-        if schedule_type == "linear":
+        if is_main_process():
+            logger.info(
+                f"Initialized MaskingScheduler with {schedule_type} schedule. "
+                f"Target probabilities - prefix: {prefix_probability}, "
+                f"truncate: {truncate_probability},"
+                f"block_masking: {block_masking_probability}, masking_block_sizes: {mask_block_sizes}"
+            )
+        if schedule_type == "linear" and is_main_process():
             logger.info(
                 f"Linear schedule will reach targets in {max_schedule_steps} steps"
             )
@@ -192,4 +201,5 @@ class MaskingScheduler:
         self.scheduled_block_sizes = state_dict.get("scheduled_block_sizes", False)
         self.block_size_boundaries = state_dict.get("block_size_boundaries", [])
 
-        logger.info("Loaded MaskingScheduler state at step %s", self.current_step)
+        if is_main_process():
+            logger.info("Loaded MaskingScheduler state at step %s", self.current_step)
