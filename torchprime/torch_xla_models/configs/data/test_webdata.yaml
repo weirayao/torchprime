@@ -1,0 +1,13 @@
+defaults:
+  - _self_  # refers to this config file
+
+block_size: 8192
+cache_dir: null
+# Huggingface dataset name, will OVERRIDE gcs_dataset_names if provided
+use_webdataset: true
+dataset_name: gs://sfr-text-diffusion-model-research/data/sanity_check_webdataset
+samples_per_file: 10000
+dataset_config_name: null
+# GCS dataset names and mixing weights
+gcs_dataset_names: null
+weights: null

@@ -6,7 +6,7 @@ export TPU_PREMAPPED_BUFFER_SIZE=40000000000
 # export HYDRA_FULL_ERROR=1
 python torchprime/torch_xla_models/train.py \
     training_mode=pretrain \
-    data=flex_v2_consolidated \
+    data=flex_v2_webdataset \
     model=flex-qwen2-1b \
     model.block_masking_probability=0.05 \
     model.mask_block_sizes=[[2,4,8],[4,8,16],[8,16,32],[16,32,64]] \
@@ -14,14 +14,14 @@ python torchprime/torch_xla_models/train.py \
     model.prefix_probability=0.05 \
     model.masking_scheduler.schedule_type=linear \
     model.masking_scheduler.max_schedule_steps=1500 \
-    optimizer.learning_rate=5e-4 \
+    optimizer.learning_rate=7e-3 \
     lr_scheduler.warmup_steps=30 \
     global_batch_size=65536 \
     max_steps=3000 \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
     resume_from_checkpoint=false \
-    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_1b_flex_v2_consolidated/ \
+    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_1b_flex_v2_webdataset/ \
     save_steps=100 \
     logging_steps=1 \
     ici_mesh.fsdp=128 \

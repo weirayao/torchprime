@@ -507,8 +507,6 @@ class Trainer:
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
       else:
-        logger.info(f"DEBUG step: {step}, input_ids shape on worker {xr.process_index()}: {batch['input_ids'].shape}")
-        logger.info(f"First 100 elements of input_ids on worker {xr.process_index()}: {batch['input_ids'][0, :100]}")
         batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
         if "attention_mask" in batch:
           batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
@@ -544,7 +542,7 @@ class Trainer:
           if is_main_process():
             logger.info(
               f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
-              f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
+              f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms, "
               f"data load time: {(data_load_end_time - data_load_start_time) * 1000:0.2f} ms"
             )
             wandb.log(
