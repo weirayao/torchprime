@@ -193,9 +193,9 @@ class Qwen2Attention(nn.Module): # Shiyu: Completed
         self.attention_dropout = getattr(config, "attention_dropout", 0.0)
         # weiran: diffullama
         self.is_causal = False
-        self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=True)
-        self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=True)
-        self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=True)
+        self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=getattr(config, "attention_bias", False))
+        self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=getattr(config, "attention_bias", False))
+        self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=getattr(config, "attention_bias", False))
         self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
         # Handle sliding window - check if layer_types exists and if this layer should use sliding attention
         if not config.use_sliding_window:
