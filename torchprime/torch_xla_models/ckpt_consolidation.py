@@ -19,7 +19,7 @@ import torch.distributed.checkpoint as dist_cp
 from torch.distributed.checkpoint.format_utils import dcp_to_torch_save
 import torch_xla.experimental.distributed_checkpoint as xc
 import transformers
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, ListConfig
 from torch_xla._internal.jax_workarounds import jax_env_context
 from transformers import AutoTokenizer
 from transformers.utils import check_min_version
@@ -105,9 +105,8 @@ def main(config: DictConfig):
       checkpoint_steps = [step.strip() for step in config.checkpoint_load_step.split(',')]
     elif isinstance(config.checkpoint_load_step, list):
       checkpoint_steps = config.checkpoint_load_step
-    else:
-      print(config.checkpoint_load_step, type(config.checkpoint_load_step))
-      raise ValueError("checkpoint_load_step must be a string or list")
+    elif isinstance(config.checkpoint_load_step, ListConfig):
+      checkpoint_steps = list(config.checkpoint_load_step)
     
     if is_main_process():
       logger.info("Consolidating %d checkpoints: %s", len(checkpoint_steps), checkpoint_steps)
