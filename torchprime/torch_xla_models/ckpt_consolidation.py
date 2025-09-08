@@ -107,6 +107,8 @@ def main(config: DictConfig):
       checkpoint_steps = config.checkpoint_load_step
     elif isinstance(config.checkpoint_load_step, ListConfig):
       checkpoint_steps = list(config.checkpoint_load_step)
+    else:
+      checkpoint_steps = [config.checkpoint_load_step]
     
     if is_main_process():
       logger.info("Consolidating %d checkpoints: %s", len(checkpoint_steps), checkpoint_steps)
