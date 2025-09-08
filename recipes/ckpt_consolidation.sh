@@ -14,11 +14,12 @@ fi
 # Please only run this script on single-host TPU (v4-8/v5-8)
 
 # Assign arguments to variables
-CHECKPOINT_DIR=$1
-RESUME_FROM_CHECKPOINT=$2
+MODEL=$1
+CHECKPOINT_DIR=$2
+RESUME_FROM_CHECKPOINT=$3
 
 XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/ckpt_consolidation.py \
-    model=flex-qwen-1b \
+    model=${MODEL} \
     checkpoint_load_dir=${CHECKPOINT_DIR} \
     checkpoint_load_step=${RESUME_FROM_CHECKPOINT} \
     ici_mesh.fsdp=4 \
