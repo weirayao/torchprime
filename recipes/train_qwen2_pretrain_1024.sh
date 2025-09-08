@@ -14,12 +14,12 @@ python torchprime/torch_xla_models/train.py \
     training_mode=pretrain \
     data=flex_v2_webdataset \
     model=flex-qwen2-1b \
-    model.block_masking_probability=0.05 \
+    model.block_masking_probability=0.01 \
     model.mask_block_sizes=[[2,4,8],[4,8,16],[8,16,32],[16,32,64]] \
-    model.truncate_probability=0.05 \
-    model.prefix_probability=0.05 \
-    model.masking_scheduler.schedule_type=linear \
-    model.masking_scheduler.max_schedule_steps=1500 \
+    model.truncate_probability=0.01 \
+    model.prefix_probability=0.01 \
+    model.masking_scheduler.schedule_type=constant \
+    model.masking_scheduler.max_schedule_steps=null \
     optimizer.learning_rate=1e-3 \
     lr_scheduler.type=cosine \
     lr_scheduler.warmup_steps=15 \
@@ -28,7 +28,7 @@ python torchprime/torch_xla_models/train.py \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
     resume_from_checkpoint=false \
-    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_1b_flex_v2_webdataset_8192/ \
+    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_1b_flex_v2_webdataset_8192_fix_sharding/ \
     save_steps=100 \
     logging_steps=1 \
     ici_mesh.fsdp=128 \
