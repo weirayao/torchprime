@@ -23,7 +23,7 @@ python torchprime/torch_xla_models/train.py \
     optimizer.learning_rate=1e-3 \
     lr_scheduler.type=cosine \
     lr_scheduler.warmup_steps=15 \
-    global_batch_size=65536 \
+    global_batch_size=32768 \
     max_steps=3000 \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
