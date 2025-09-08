@@ -2,11 +2,11 @@ export LIBTPU_INIT_ARGS="--xla_tpu_scoped_vmem_limit_kib=98304 --xla_enable_asyn
 export XLA_IR_DEBUG=1
 export XLA_HLO_DEBUG=1
 export TPU_PREMAPPED_BUFFER_SIZE=40000000000
-export WDS_GOPEN="gcsfs"
+export WDS_GOPEN="fsspec" # gcsfs
 export GCSFS_DEFAULT_BLOCK_SIZE=$((3210241024))   # try 32 MiB; use 16 MiB if memory is tight
 export GCSFS_DEFAULT_RETRIES=12
 export GCSFS_DEFAULT_CACHE_TYPE=readahead
-export GCSFS_DEFAULT_FILL_CACHE=true
+export GCSFS_DEFAULT_FILL_CACHE=false
 
 # export PT_XLA_DEBUG_LEVEL=2
 # export HYDRA_FULL_ERROR=1
@@ -19,11 +19,11 @@ python torchprime/torch_xla_models/train.py \
     model.truncate_probability=0.05 \
     model.prefix_probability=0.05 \
     model.masking_scheduler.schedule_type=linear \
-    model.masking_scheduler.max_schedule_steps=1500 \
+    model.masking_scheduler.max_schedule_steps=8000 \
     optimizer.learning_rate=1e-3 \
     lr_scheduler.warmup_steps=15 \
     global_batch_size=65536 \
-    max_steps=3000 \
+    max_steps=17000 \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
     resume_from_checkpoint=false \
