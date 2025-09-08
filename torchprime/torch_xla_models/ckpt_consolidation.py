@@ -125,7 +125,7 @@ def main(config: DictConfig):
       
       reload_sd = {
         "model": {
-          name.replace("._orig_mod", ""): torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu")
+          name: torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu")
           for name, tensor in model_sd.items()
         }
       }
