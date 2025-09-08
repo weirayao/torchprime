@@ -32,7 +32,7 @@ python torchprime/torch_xla_models/train.py \
     save_steps=100 \
     logging_steps=1 \
     ici_mesh.fsdp=128 \
-    ici_mesh.tensor=4 \
+    ici_mesh.tensor=2 \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \
     model/remat=qwen2-scan
