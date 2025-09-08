@@ -106,7 +106,8 @@ def main(config: DictConfig):
     elif isinstance(config.checkpoint_load_step, list):
       checkpoint_steps = config.checkpoint_load_step
     else:
-      checkpoint_steps = [str(config.checkpoint_load_step)]
+      print(config.checkpoint_load_step, type(config.checkpoint_load_step))
+      raise ValueError("checkpoint_load_step must be a string or list")
     
     if is_main_process():
       logger.info("Consolidating %d checkpoints: %s", len(checkpoint_steps), checkpoint_steps)
