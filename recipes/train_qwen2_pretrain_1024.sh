@@ -15,7 +15,7 @@ python torchprime/torch_xla_models/train.py \
     model.masking_scheduler.schedule_type=linear \
     model.masking_scheduler.max_schedule_steps=1500 \
     optimizer.learning_rate=7e-3 \
-    lr_scheduler.warmup_steps=30 \
+    lr_scheduler.warmup_steps=15 \
     global_batch_size=65536 \
     max_steps=3000 \
     checkpoint_load_dir=null \
