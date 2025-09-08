@@ -99,39 +99,59 @@ def main(config: DictConfig):
   # TODO(https://github.com/pytorch/xla/issues/8954): Remove `jax_env_context`.
   with jax_env_context():
     gcs_prefix = "gs://sfr-text-diffusion-model-research/"
-    save_dir = Path(MOUNTED_GCS_DIR) / config.checkpoint_load_dir.split(gcs_prefix)[1].replace("checkpoints", "consolidated_checkpoints") / f"{config.checkpoint_load_step}"
-    model_sd = model.state_dict()
-    reload_sd = {
-      "model": {
-        name: torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu")
-        for name, tensor in model_sd.items()
-      }
-    }
-
-    trainer.checkpoint_load_manager.restore(config.checkpoint_load_step, reload_sd)
-    cpu_state = {k.replace("._orig_mod", ""): v for k, v in reload_sd["model"].items()}
-    # dist_cp.load(
-    #   state_dict=reload_sd,
-    #   storage_reader=dist_cp.FileSystemReader(str(save_dir)),
-    #   planner=xc.SPMDLoadPlanner(),
-    # )
-    # trainer._load_checkpoint()
-    logger.info("Checkpoint loaded, starting consolidation")
-    torch_xla.sync()
-    xm.wait_device_ops()
+    
+    # Parse checkpoint_load_step as comma-separated list
+    if isinstance(config.checkpoint_load_step, str):
+      checkpoint_steps = [step.strip() for step in config.checkpoint_load_step.split(',')]
+    else:
+      checkpoint_steps = [str(config.checkpoint_load_step)]
+    
     if is_main_process():
-      try:
-        tmp_dir = tempfile.mkdtemp(dir="/mnt/localssd")
-        logger.info("Using local SSD for safetensors shards: %s", tmp_dir)
-      except (FileNotFoundError, PermissionError):
-        tmp_dir = tempfile.mkdtemp()
-        logger.info("Using default temp directory for safetensors shards: %s", tmp_dir)
+      logger.info("Consolidating %d checkpoints: %s", len(checkpoint_steps), checkpoint_steps)
+    
+    model_sd = model.state_dict()
+    
+    # Consolidate each checkpoint separately
+    for i, checkpoint_step in enumerate(checkpoint_steps):
+      if is_main_process():
+        logger.info("Consolidating checkpoint %d/%d: step %s", i+1, len(checkpoint_steps), checkpoint_step)
+      
+      # Create separate output directory for each checkpoint
+      save_dir = Path(MOUNTED_GCS_DIR) / config.checkpoint_load_dir.split(gcs_prefix)[1].replace("checkpoints", "consolidated_checkpoints") / f"{checkpoint_step}"
+      
+      reload_sd = {
+        "model": {
+          name: torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu")
+          for name, tensor in model_sd.items()
+        }
+      }
+      
+      trainer.checkpoint_load_manager.restore(checkpoint_step, reload_sd)
+      cpu_state = {k.replace("._orig_mod", ""): v for k, v in reload_sd["model"].items()}
+      
+      if is_main_process():
+        logger.info("Checkpoint %s loaded, starting consolidation", checkpoint_step)
+      
+      torch_xla.sync()
+      xm.wait_device_ops()
+      
+      if is_main_process():
+        try:
+          tmp_dir = tempfile.mkdtemp(dir="/mnt/localssd")
+          logger.info("Using local SSD for safetensors shards: %s", tmp_dir)
+        except (FileNotFoundError, PermissionError):
+          tmp_dir = tempfile.mkdtemp()
+          logger.info("Using default temp directory for safetensors shards: %s", tmp_dir)
 
-      save_sharded_safetensors_by_layer(cpu_state, str(save_dir), tmp_dir=tmp_dir)
-      logger.info("Safetensors shards + index written to %s", save_dir)
-      tokenizer.save_pretrained(save_dir)
-    xm.rendezvous("checkpoint_consolidation_barrier")
-    logger.info("Checkpoint consolidation complete")
+        save_sharded_safetensors_by_layer(cpu_state, str(save_dir), tmp_dir=tmp_dir)
+        logger.info("Safetensors shards + index written to %s", save_dir)
+        tokenizer.save_pretrained(save_dir)
+        logger.info("Checkpoint %s consolidation complete", checkpoint_step)
+      
+      xm.rendezvous(f"checkpoint_consolidation_barrier_{checkpoint_step}")
+    
+    if is_main_process():
+      logger.info("All checkpoint consolidations complete")
 
 if __name__ == "__main__":
   logging.basicConfig(
