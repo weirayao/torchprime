@@ -107,6 +107,7 @@ def make_webdataset(
         shard_urls,
         nodesplitter=split_by_replica,
         workersplitter=split_by_datloader_worker,
+        shardshuffle=False,
         repeat=False,
     ).shuffle(sample_shuffle)
 
