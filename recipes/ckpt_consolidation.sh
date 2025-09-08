@@ -18,6 +18,12 @@ MODEL=$1
 CHECKPOINT_DIR=$2
 RESUME_FROM_CHECKPOINT=$3
 
+if [ "$MODEL" == "flex-qwen2-1b" ]; then
+    scan="qwen2-scan"
+else
+    scan="qwen-scan"
+fi
+
 XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/ckpt_consolidation.py \
     model=${MODEL} \
     checkpoint_load_dir=${CHECKPOINT_DIR} \
@@ -26,6 +32,6 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/ckpt_consolida
     ici_mesh.tensor=1 \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \
-    model/remat=qwen-scan
+    model/remat=${scan}
 # fsdp * tensor * data * expert == num_devices
 # global_batch_size mod num_devices == 0
