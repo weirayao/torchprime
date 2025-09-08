@@ -65,16 +65,16 @@ def split_by_datloader_worker(urls):
 
 def webdataset_collate_fn(batch):
     """Collate function for WebDataset samples.
-    
+
     When using to_tuple("npy"), WebDataset returns tuples of (numpy_array,).
     DataLoader passes a list of these tuples to the collate function.
     """
     # Extract numpy arrays from tuples
     arrays = [item[0] if isinstance(item, tuple) else item for item in batch]
-    
+
     # Stack into a batch tensor
     input_ids = torch.from_numpy(np.stack(arrays)).long()
-    
+
     return {"input_ids": input_ids}
 
 
