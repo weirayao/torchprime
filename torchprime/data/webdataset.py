@@ -109,6 +109,7 @@ def make_webdataset(
         workersplitter=split_by_datloader_worker,
         shardshuffle=False,
         repeat=False,
+        handler=wds.handlers.warn_and_continue
     ).shuffle(sample_shuffle)
 
     if checkpoint_dir is not None and is_main_process():
