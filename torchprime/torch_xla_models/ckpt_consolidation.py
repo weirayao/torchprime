@@ -103,6 +103,8 @@ def main(config: DictConfig):
     # Parse checkpoint_load_step as comma-separated list
     if isinstance(config.checkpoint_load_step, str):
       checkpoint_steps = [step.strip() for step in config.checkpoint_load_step.split(',')]
+    elif isinstance(config.checkpoint_load_step, list):
+      checkpoint_steps = config.checkpoint_load_step
     else:
       checkpoint_steps = [str(config.checkpoint_load_step)]
     
