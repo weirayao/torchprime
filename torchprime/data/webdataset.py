@@ -3,6 +3,7 @@
 import random
 import logging
 import os
+import sys
 import json
 import io
 import gcsfs
@@ -17,6 +18,10 @@ logger = logging.getLogger(__name__)
 def is_main_process():
     """Check if this is the main process (rank 0)."""
     return xr.process_index() == 0
+
+if not is_main_process():
+    sys.stdout = open(os.devnull, "w")
+    sys.stderr = open(os.devnull, "w")
 
 
 def list_gcs_shards(gs_prefix: str):

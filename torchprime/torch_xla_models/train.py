@@ -297,6 +297,11 @@ class Trainer:
       collate_fn = default_data_collator
 
     if isinstance(self.train_dataset, wds.WebDataset):
+      def slient_worker(_):
+        if not is_main_process():
+          sys.stdout = open(os.devnull, "w")
+          sys.stderr = open(os.devnull, "w")
+
       dataloader = wds.WebLoader(
         self.train_dataset,
         collate_fn=webdataset_collate_fn,
@@ -306,6 +311,7 @@ class Trainer:
         prefetch_factor=2,
         pin_memory=False,
         drop_last=True,
+        worker_init_fn=slient_worker,
       )
     else:
       dataloader = DataLoader(
