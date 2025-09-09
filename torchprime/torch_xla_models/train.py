@@ -205,7 +205,7 @@ class Trainer:
       return
     # self.optimizer = prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
     state_dict = {
-      "model": self.model.state_dict(),
+      # "model": self.model.state_dict(), # NOTE: torch_xla has problem loading state dict with 2d sharding
       # "optimizer": self.optimizer.state_dict(), # NOTE: torch_xla has problem loading optimizer state dict with 2d sharding
       "scheduler": self.lr_scheduler.state_dict(),
       "masking_scheduler": self.masking_scheduler.state_dict(),
@@ -215,16 +215,22 @@ class Trainer:
     if checkpoint_load_step in tracked_steps:
       if is_main_process():
         logger.info(f"Loading checkpoint from step {checkpoint_load_step}")
+      unsharded_state_dict = torch.load(os.path.join(self.checkpoint_save_dir, checkpoint_load_step, f"unsharded_state_dict_{checkpoint_load_step}.pt"))
+      self.model.load_state_dict(unsharded_state_dict, strict=False)
+      state_dict["model"] = {name: param for name, param in self.model.named_parameters() if name not in unsharded_state_dict}
       self.checkpoint_load_manager.restore(checkpoint_load_step, state_dict)
     elif checkpoint_load_step == "latest":
       last_step = max(tracked_steps)
       if is_main_process():
         logger.warning(f"Checkpoint step {checkpoint_load_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
+      unsharded_state_dict = torch.load(os.path.join(self.checkpoint_save_dir, last_step, f"unsharded_state_dict_{last_step}.pt"))
+      self.model.load_state_dict(unsharded_state_dict, strict=False)
+      state_dict["model"] = {name: param for name, param in self.model.named_parameters() if name not in unsharded_state_dict}
       self.checkpoint_load_manager.restore(last_step, state_dict)
     else:
       raise ValueError(f"Invalid checkpoint step: {checkpoint_load_step}. Must be one of {tracked_steps} or 'latest'.")
 
-    self.model.load_state_dict(state_dict["model"])
+    self.model.load_state_dict(state_dict["model"], strict=False)
     if self.config.resume_from_checkpoint:
       # self.optimizer.load_state_dict(state_dict["optimizer"])
       self.lr_scheduler.load_state_dict(state_dict["scheduler"])
@@ -576,8 +582,22 @@ class Trainer:
       if step > self.start_step and step % self.config.save_steps == 0:
         # NOTE: currently we save the checkpoint synchronously
         xm.wait_device_ops()  # Wait for all XLA operations to complete
+        if is_main_process():
+          logger.info(f"Processing unsharded tensors for checkpoint saving")
+        unsharded_state_dict = {}
+        for name, param in self.model.named_parameters():
+          # Example logic to identify unsharded parameters
+          # This may need to be adapted based on your specific sharding setup
+          if param.ndim == 1:  # Assuming 1D tensors are unsharded
+            unsharded_state_dict[name] = param.cpu() # Move to CPU for safety
+        if is_main_process():
+          logger.info(f"Unsharded state dict keys: {unsharded_state_dict.keys()}")
+          torch.save(unsharded_state_dict, os.path.join(self.checkpoint_save_dir, step, f"unsharded_state_dict_{step}.pt"))
+
+        if is_main_process():
+          logger.info(f"Processing sharded tensors for checkpoint saving")
         state_dict = {
-          "model": self.model.state_dict(),
+          "model": {name: param for name, param in self.model.named_parameters() if name not in unsharded_state_dict},
           "optimizer": self.optimizer.state_dict(),
           "scheduler": self.lr_scheduler.state_dict(),
           "masking_scheduler": self.masking_scheduler.state_dict(),
