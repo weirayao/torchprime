@@ -11,12 +11,11 @@ export GCSFS_DEFAULT_FILL_CACHE=false
 # export PT_XLA_DEBUG_LEVEL=2
 # export HYDRA_FULL_ERROR=1
 python torchprime/torch_xla_models/train.py \
-    seed=20250908 \
-    run_name=reshape_context_2048_segment_attn_small_batch_lr_3e-4 \
+    run_name=reshape_context_2048_segment_attn_small_batch_lr_1e-4 \
     training_mode=pretrain \
     reshape_context=true \
     seg_attn=true \
-    data=flex_v2_consolidated \
+    data=flex_v2_webdataset \
     model=flex-qwen2-1b \
     model.block_masking_probability=0.01 \
     model.mask_block_sizes=[[2,4,8],[4,8,16],[8,16,32],[16,32,64]] \
@@ -24,7 +23,7 @@ python torchprime/torch_xla_models/train.py \
     model.prefix_probability=0.01 \
     model.masking_scheduler.schedule_type=constant \
     model.masking_scheduler.max_schedule_steps=null \
-    optimizer.learning_rate=3e-4 \
+    optimizer.learning_rate=1e-4 \
     lr_scheduler.type=cosine \
     lr_scheduler.warmup_steps=250 \
     global_batch_size=512 \
@@ -32,7 +31,7 @@ python torchprime/torch_xla_models/train.py \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
     resume_from_checkpoint=false \
-    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_1b_flex_v2_context_2048_seg_attn_bsz_512_lr_3e-4/ \
+    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_1b_flex_v2_context_2048_seg_attn_bsz_512_lr_1e-4/ \
     save_steps=10000 \
     logging_steps=1 \
     ici_mesh.fsdp=32 \
