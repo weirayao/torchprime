@@ -86,6 +86,7 @@ def is_main_process():
 
 
 MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
+GCS_PREFIX = "gs://sfr-text-diffusion-model-research/"
 
 class Trainer:
   """The trainer."""
@@ -215,7 +216,8 @@ class Trainer:
     if checkpoint_load_step in tracked_steps:
       if is_main_process():
         logger.info(f"Loading checkpoint from step {checkpoint_load_step}")
-      unsharded_state_dict = torch.load(os.path.join(self.checkpoint_save_dir, checkpoint_load_step, f"unsharded_state_dict_{checkpoint_load_step}.pt"))
+      load_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1], str(checkpoint_load_step), f"unsharded_state_dict_{checkpoint_load_step}.pt")
+      unsharded_state_dict = torch.load(load_dir)
       self.model.load_state_dict(unsharded_state_dict, strict=False)
       state_dict["model"] = {name: param for name, param in self.model.named_parameters() if name not in unsharded_state_dict}
       self.checkpoint_load_manager.restore(checkpoint_load_step, state_dict)
@@ -223,7 +225,8 @@ class Trainer:
       last_step = max(tracked_steps)
       if is_main_process():
         logger.warning(f"Checkpoint step {checkpoint_load_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
-      unsharded_state_dict = torch.load(os.path.join(self.checkpoint_save_dir, last_step, f"unsharded_state_dict_{last_step}.pt"))
+      load_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1], str(last_step), f"unsharded_state_dict_{checkpoint_load_step}.pt")
+      unsharded_state_dict = torch.load(load_dir)
       self.model.load_state_dict(unsharded_state_dict, strict=False)
       state_dict["model"] = {name: param for name, param in self.model.named_parameters() if name not in unsharded_state_dict}
       self.checkpoint_load_manager.restore(last_step, state_dict)
@@ -592,7 +595,8 @@ class Trainer:
             unsharded_state_dict[name] = param.cpu() # Move to CPU for safety
         if is_main_process():
           logger.info(f"Unsharded state dict keys: {unsharded_state_dict.keys()}")
-          torch.save(unsharded_state_dict, os.path.join(self.checkpoint_save_dir, str(step), f"unsharded_state_dict_{step}.pt"))
+          save_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1], str(step), f"unsharded_state_dict_{step}.pt")
+          torch.save(unsharded_state_dict, save_dir)
 
         if is_main_process():
           logger.info(f"Processing sharded tensors for checkpoint saving")
@@ -751,9 +755,9 @@ def main(config: DictConfig):
     if config.data.dataset_name:
       # Load raw dataset from HuggingFace
       dataset_name = config.data.dataset_name
-      gcs_prefix = "gs://sfr-text-diffusion-model-research/"
-      if dataset_name.startswith(gcs_prefix):
-        dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
+      GCS_PREFIX = "gs://sfr-text-diffusion-model-research/"
+      if dataset_name.startswith(GCS_PREFIX):
+        dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(GCS_PREFIX)[1])
         raw_data = retry(
           lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
         )
@@ -805,11 +809,10 @@ def main(config: DictConfig):
     if config.data.dataset_name:
       # Downloading and loading a dataset from the hub.
       dataset_name = config.data.dataset_name
-      gcs_prefix = "gs://sfr-text-diffusion-model-research/"
-      if dataset_name.startswith(gcs_prefix):
-        checkpoint_save_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_save_dir.split(gcs_prefix)[1])
+      if dataset_name.startswith(GCS_PREFIX):
+        checkpoint_save_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_save_dir.split(GCS_PREFIX)[1])
         use_webdataset = hasattr(config.data, 'use_webdataset') and config.data.use_webdataset
-        dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
+        dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(GCS_PREFIX)[1])
         if not config.resume_from_checkpoint:
           if is_main_process():
             logger.info(f"Training from scratch, loading all data files from {dataset_name}")
@@ -850,7 +853,7 @@ def main(config: DictConfig):
           config.steps_to_skip = steps_to_skip
 
           # Read data files from checkpoint directory
-          checkpoint_load_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_load_dir.split(gcs_prefix)[1])
+          checkpoint_load_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_load_dir.split(GCS_PREFIX)[1])
           data_files_path = os.path.join(checkpoint_load_dir, "data_files.json")
 
           with open(data_files_path, "r") as f:
