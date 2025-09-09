@@ -594,7 +594,7 @@ class Trainer:
           if param.ndim == 1:  # Assuming 1D tensors are unsharded
             unsharded_state_dict[name] = param.cpu() # Move to CPU for safety
         if is_main_process():
-          logger.info(f"Unsharded state dict keys: {unsharded_state_dict.keys()}")
+          logger.info(f"Unsharded state dict: {unsharded_state_dict}")
           mounted_save_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1])
           os.makedirs(name=mounted_save_dir, exist_ok=True)
           torch.save(unsharded_state_dict, os.path.join(mounted_save_dir, f"unsharded_state_dict_{step}.pt"))
