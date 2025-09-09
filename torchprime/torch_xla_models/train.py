@@ -593,11 +593,6 @@ class Trainer:
           # This may need to be adapted based on your specific sharding setup
           if param.ndim == 1:  # Assuming 1D tensors are unsharded
             unsharded_state_dict[name] = param.cpu() # Move to CPU for safety
-        if is_main_process():
-          logger.info(f"Unsharded state dict: {unsharded_state_dict}")
-          mounted_save_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1])
-          os.makedirs(name=mounted_save_dir, exist_ok=True)
-          torch.save(unsharded_state_dict, os.path.join(mounted_save_dir, f"unsharded_state_dict_{step}.pt"))
 
         if is_main_process():
           logger.info(f"Processing sharded tensors for checkpoint saving")
@@ -612,6 +607,9 @@ class Trainer:
           # logger.info(f"model.state_dict().keys() before saving: {self.model.state_dict().keys()}")
           self.checkpoint_save_manager.save(step, state_dict, force=True)
           if is_main_process():
+            logger.info(f"Unsharded state dict: {unsharded_state_dict}")
+            mounted_save_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1])
+            torch.save(unsharded_state_dict, os.path.join(mounted_save_dir, f"unsharded_state_dict_{step}.pt"))
             logger.info(f"Checkpoint saved at step {step} to {self.checkpoint_save_dir}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
