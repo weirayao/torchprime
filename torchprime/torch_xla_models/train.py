@@ -596,7 +596,7 @@ class Trainer:
         if is_main_process():
           logger.info(f"Unsharded state dict keys: {unsharded_state_dict.keys()}")
           mounted_save_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1])
-          os.mkdir(mounted_save_dir, exist_ok=True)
+          os.makedirs(name=mounted_save_dir, exist_ok=True)
           torch.save(unsharded_state_dict, os.path.join(mounted_save_dir, f"unsharded_state_dict_{step}.pt"))
 
         if is_main_process():
