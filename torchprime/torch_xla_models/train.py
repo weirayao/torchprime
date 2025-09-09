@@ -592,7 +592,7 @@ class Trainer:
             unsharded_state_dict[name] = param.cpu() # Move to CPU for safety
         if is_main_process():
           logger.info(f"Unsharded state dict keys: {unsharded_state_dict.keys()}")
-          torch.save(unsharded_state_dict, os.path.join(self.checkpoint_save_dir, step, f"unsharded_state_dict_{step}.pt"))
+          torch.save(unsharded_state_dict, os.path.join(self.checkpoint_save_dir, str(step), f"unsharded_state_dict_{step}.pt"))
 
         if is_main_process():
           logger.info(f"Processing sharded tensors for checkpoint saving")
