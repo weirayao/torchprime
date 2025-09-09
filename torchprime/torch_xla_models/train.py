@@ -755,7 +755,6 @@ def main(config: DictConfig):
     if config.data.dataset_name:
       # Load raw dataset from HuggingFace
       dataset_name = config.data.dataset_name
-      GCS_PREFIX = "gs://sfr-text-diffusion-model-research/"
       if dataset_name.startswith(GCS_PREFIX):
         dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(GCS_PREFIX)[1])
         raw_data = retry(
