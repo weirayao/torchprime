@@ -40,7 +40,8 @@ from transformers import (
   set_seed,
 )
 from torch_xla.experimental.distributed_checkpoint import CheckpointManager, prime_optimizer
-from transformers.optimization import Adafactor
+# from transformers.optimization import Adafactor
+from torch.optim import AdamW
 from transformers.trainer_pt_utils import get_module_class_from_name
 from transformers.utils import check_min_version
 from transformers import PreTrainedTokenizerBase
@@ -143,12 +144,20 @@ class Trainer:
     self.model = model
 
     # Set up optimizers
-    self.optimizer = Adafactor(
+    # self.optimizer = Adafactor(
+    #   params=model.parameters(),
+    #   lr=self.config.optimizer.learning_rate,
+    #   relative_step=False,
+    #   scale_parameter=False,
+    # )
+    self.optimizer = AdamW(
       params=model.parameters(),
       lr=self.config.optimizer.learning_rate,
-      relative_step=False,
-      scale_parameter=False,
+      betas=(0.9, 0.95),
+      eps=1e-8,
+      weight_decay=0.1
     )
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
     self.lr_scheduler = get_scheduler(
       name=self.config.lr_scheduler.type,
