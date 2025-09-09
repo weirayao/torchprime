@@ -11,7 +11,7 @@ export GCSFS_DEFAULT_FILL_CACHE=false
 # export PT_XLA_DEBUG_LEVEL=2
 # export HYDRA_FULL_ERROR=1
 python torchprime/torch_xla_models/train.py \
-    run_name="reshape context 2048, segment attn, small batch, lr 3e-4" \
+    run_name=reshape_context_2048_segment_attn_small_batch_lr_3e-4 \
     training_mode=pretrain \
     reshape_context=true \
     seg_attn=true \
