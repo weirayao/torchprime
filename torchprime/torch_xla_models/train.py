@@ -434,7 +434,7 @@ class Trainer:
         logger.info(f"    Resuming from step: {self.start_step}")
 
       wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
-      run_name = getattr(self.config, "run_name", self.config.model.model_class)
+      run_name = self.config.run_name if hasattr(self.config, "run_name") and self.config.run_name is not None else self.config.model.model_class
       wandb.init(project="text-diffusion-model-research-qwen2_5-1_5b-pretrain", name=run_name)
       # Log the configuration to wandb
       wandb.config.update(OmegaConf.to_container(self.config, resolve=True))

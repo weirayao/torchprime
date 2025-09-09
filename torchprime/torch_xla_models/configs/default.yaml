@@ -12,6 +12,11 @@ global_batch_size: 4
 logging_steps: 10
 max_steps: 45000
 
+run_name: null
+
+reshape_context: false
+seg_attn: false
+
 # Training mode: "pretrain" or "midtrain" or "sft"
 training_mode: pretrain
 
