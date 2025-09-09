@@ -28,9 +28,9 @@ python torchprime/torch_xla_models/train.py \
     lr_scheduler.warmup_steps=250 \
     global_batch_size=512 \
     max_steps=10 \
-    checkpoint_load_dir=null \
-    checkpoint_load_step=null \
-    resume_from_checkpoint=false \
+    checkpoint_load_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_1b_flex_v2_context_8192_full_attn_bsz_512_lr_3e-4/ \
+    checkpoint_load_step=5 \
+    resume_from_checkpoint=true \
     checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_1b_flex_v2_context_8192_full_attn_bsz_512_lr_3e-4/ \
     save_steps=5 \
     logging_steps=1 \
