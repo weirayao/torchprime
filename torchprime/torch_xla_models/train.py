@@ -514,30 +514,32 @@ class Trainer:
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
       else:
-        # batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
-        # if "attention_mask" in batch:
-        #   batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
+        if self.config.reshape_context:
+          batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
+          if "attention_mask" in batch:
+            batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
 
         # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
         # Create segment_ids by looking at EOS_TOKEN_ID positions
         # NOTE: hardcode eos token id because the pretokenized dataset used this id
         EOS_TOKEN_ID = 151645 
-        # eos_mask = torch.where(batch["input_ids"] == EOS_TOKEN_ID, 1, 0).int().to(batch["input_ids"].device)
+        if self.config.seg_attn:
+          eos_mask = torch.where(batch["input_ids"] == EOS_TOKEN_ID, 1, 0).int().to(batch["input_ids"].device)
 
-        # # Compute cumulative sum of EOS tokens to get segment IDs
-        # # Each EOS token increments the segment ID for subsequent tokens
-        # segment_ids = eos_mask.cumsum(dim=1)
+          # Compute cumulative sum of EOS tokens to get segment IDs
+          # Each EOS token increments the segment ID for subsequent tokens
+          segment_ids = eos_mask.cumsum(dim=1)
 
-        # # Shift segment_ids to the right by 1 position so tokens before first EOS are segment 0
-        # # and tokens after each EOS get incremented segment IDs
-        # segment_ids = torch.cat(
-        #     [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
-        # )
-        # # NOTE: haolin
-        # # Convert to float to work around scan limitation with integer tensors
-        # # See: https://github.com/pytorch/xla/issues/8783
-        # segment_ids = segment_ids.float().requires_grad_(False)
-        # batch["segment_ids"] = segment_ids
+          # Shift segment_ids to the right by 1 position so tokens before first EOS are segment 0
+          # and tokens after each EOS get incremented segment IDs
+          segment_ids = torch.cat(
+              [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
+          )
+          # NOTE: haolin
+          # Convert to float to work around scan limitation with integer tensors
+          # See: https://github.com/pytorch/xla/issues/8783
+          segment_ids = segment_ids.float().requires_grad_(False)
+          batch["segment_ids"] = segment_ids
 
       loss = self.train_step(batch)
       trace_end_time = timer()
