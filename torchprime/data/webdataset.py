@@ -120,7 +120,7 @@ def make_webdataset(
     if checkpoint_dir is not None and is_main_process():
         logger.info(f"Saving shard_urls.json to {checkpoint_dir}")
         os.makedirs(checkpoint_dir, exist_ok=True)
-        with open(f"{checkpoint_dir}/shard_urls.json", "w") as f:
+        with open(f"{checkpoint_dir}/data_files.json", "w") as f:
             json.dump(shard_urls, f, indent=4)
 
     dataset = dataset.decode(numpy_decoder)
