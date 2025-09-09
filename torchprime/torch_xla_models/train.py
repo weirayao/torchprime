@@ -216,7 +216,7 @@ class Trainer:
     if checkpoint_load_step in tracked_steps:
       if is_main_process():
         logger.info(f"Loading checkpoint from step {checkpoint_load_step}")
-      load_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1], str(checkpoint_load_step), f"unsharded_state_dict_{checkpoint_load_step}.pt")
+      load_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1], f"unsharded_state_dict_{checkpoint_load_step}.pt")
       unsharded_state_dict = torch.load(load_dir)
       self.model.load_state_dict(unsharded_state_dict, strict=False)
       state_dict["model"] = {name: param for name, param in self.model.named_parameters() if name not in unsharded_state_dict}
@@ -225,7 +225,7 @@ class Trainer:
       last_step = max(tracked_steps)
       if is_main_process():
         logger.warning(f"Checkpoint step {checkpoint_load_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
-      load_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1], str(last_step), f"unsharded_state_dict_{checkpoint_load_step}.pt")
+      load_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1], f"unsharded_state_dict_{checkpoint_load_step}.pt")
       unsharded_state_dict = torch.load(load_dir)
       self.model.load_state_dict(unsharded_state_dict, strict=False)
       state_dict["model"] = {name: param for name, param in self.model.named_parameters() if name not in unsharded_state_dict}
@@ -595,8 +595,9 @@ class Trainer:
             unsharded_state_dict[name] = param.cpu() # Move to CPU for safety
         if is_main_process():
           logger.info(f"Unsharded state dict keys: {unsharded_state_dict.keys()}")
-          save_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1], str(step), f"unsharded_state_dict_{step}.pt")
-          torch.save(unsharded_state_dict, save_dir)
+          mounted_save_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1])
+          os.mkdir(mounted_save_dir, exist_ok=True)
+          torch.save(unsharded_state_dict, os.path.join(mounted_save_dir, f"unsharded_state_dict_{step}.pt"))
 
         if is_main_process():
           logger.info(f"Processing sharded tensors for checkpoint saving")
