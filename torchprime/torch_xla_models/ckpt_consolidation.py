@@ -123,16 +123,23 @@ def main(config: DictConfig):
       # Create separate output directory for each checkpoint
       save_dir = Path(MOUNTED_GCS_DIR) / config.checkpoint_load_dir.split(gcs_prefix)[1].replace("checkpoints", "consolidated_checkpoints") / f"{checkpoint_step}"
       
+      unsharded_model_sd = {}
+      for name, param in model_sd.items():
+        if param.ndim == 1:
+          unsharded_model_sd[name] = param.cpu()
+      if unsharded_model_sd:
+        unsharded_model_sd = torch.load(Path(MOUNTED_GCS_DIR) / config.checkpoint_load_dir.split(gcs_prefix)[1] / f"unsharded_state_dict_{checkpoint_step}.pt")
+
       reload_sd = {
         "model": {
           name: torch.empty(tensor.shape, dtype=tensor.dtype, device="cpu")
-          for name, tensor in model_sd.items()
+          for name, tensor in model_sd.items() if name not in unsharded_model_sd
         }
       }
-      
       trainer.checkpoint_load_manager.restore(checkpoint_step, reload_sd)
+      reload_sd["model"].update(unsharded_model_sd)
       cpu_state = {k.replace("._orig_mod", ""): v for k, v in reload_sd["model"].items()}
-      
+
       if is_main_process():
         logger.info("Checkpoint %s loaded, starting consolidation", checkpoint_step)
       
