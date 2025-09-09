@@ -22,7 +22,12 @@ import torch
 import torch.distributed.checkpoint as dist_cp
 IS_TPU = not torch.cuda.is_available()
 if IS_TPU:
+  import torch_xla.runtime as xr
   import torch_xla.experimental.distributed_checkpoint as xc
+
+def is_main_process():
+  """Check if this is the main process (rank 0)."""
+  return xr.process_index() == 0
 
 logger = logging.getLogger(__name__)
 
@@ -179,17 +184,18 @@ def initialize_model_class(model_config, load_from_hf=True):
     print(f"Error: Function '{model_class_name}' not found in module '{module_name}'")
     sys.exit(1)
   model = model_class(model_config)
-  logger.info(f"model.state_dict().keys() before loading: {model.state_dict().keys()}")
   # Load pretrained weights from HuggingFace model
   if load_from_hf:
     hf_model = load_hf_model(model_config)
-    logger.info("Loaded model from HuggingFace. Now loading state dict.")
+    if is_main_process():
+      logger.info("Loaded model from HuggingFace. Now loading state dict.")
     model.load_state_dict(hf_model.state_dict())
     del hf_model
   return model
 
 def load_hf_model(model_config):
-  logger.info(f"Loading HuggingFace model from {model_config.tokenizer_name}")
+  if is_main_process():
+    logger.info(f"Loading HuggingFace model from {model_config.tokenizer_name}")
   hf_model_class_name = HF_MODEL_CLASS_MAPPING.get(model_config.model_class)
   if hf_model_class_name is None:
     print(f"Error: No HuggingFace model mapping found for '{model_config.model_class}'")
@@ -269,7 +275,8 @@ def log_parameter_breakdown(model: torch.nn.Module, logger: logging.Logger) -> N
       logger: A logger instance to write the output to.
   """
   total_params = sum(p.numel() for p in model.parameters())
-  logger.info("Model total size: {} parameters".format(f"{total_params:,}"))
+  if is_main_process():
+    logger.info("Model total size: {} parameters".format(f"{total_params:,}"))
 
   param_groups = {
     "mlp": 0,
@@ -296,7 +303,8 @@ def log_parameter_breakdown(model: torch.nn.Module, logger: logging.Logger) -> N
 
   for k, v in param_groups.items():
     percentage = (v / total_params) * 100
-    logger.info("  {:10s}: {} params ({:.2f}%)".format(k, f"{v:,}", percentage))
+    if is_main_process():
+      logger.info("  {:10s}: {} params ({:.2f}%)".format(k, f"{v:,}", percentage))
 
 
 def get_param_group_key(param_name: str) -> str:

@@ -1,7 +1,7 @@
-TPU_VM_NAME="sfr-haolin-chen-v4-1024"
-TPU_ZONE="us-central2-b"
-BRANCH="haolin/ckpt_reload_v2"
-RECIPE="recipes/train_qwen3_1.7b_v2.sh"
+TPU_VM_NAME="sfr-haolin-chen-v5p-1024"
+TPU_ZONE="us-central1-a"
+BRANCH="haolin/pretrain_v5p_qwen2"
+RECIPE="recipes/train_qwen2_pretrain_1024.sh"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -36,3 +36,4 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     git pull; \
     source venv/bin/activate; \
     bash '"$RECIPE"'';
+# python torchprime/torch_xla_models/test_segment_ids_attention.py'

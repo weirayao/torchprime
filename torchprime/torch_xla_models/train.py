@@ -25,6 +25,7 @@ import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
 import transformers
 import wandb
+import webdataset as wds
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, IterableDataset
@@ -45,6 +46,7 @@ from transformers.utils import check_min_version
 from transformers import PreTrainedTokenizerBase
 
 from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset
+from torchprime.data.webdataset import make_webdataset, webdataset_collate_fn
 from torchprime.torch_xla_models.sft_data_collator import SFTDataCollator, create_sft_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
@@ -82,6 +84,7 @@ def is_main_process():
   """Check if this is the main process (rank 0)."""
   return xr.process_index() == 0
 
+
 MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
 
 class Trainer:
@@ -107,22 +110,14 @@ class Trainer:
     # Set up SPMD mesh and shard the model
     mesh = get_mesh(self.config)
     xs.set_global_mesh(mesh)
-    logger.info(f"Logical mesh shape: {mesh.shape()}")
-    logger.info(f"Logical mesh device assignments: {mesh.device_ids}")
 
     # TODO(https://github.com/pytorch/xla/issues/8696): Minibatch only works in 1D sharding.
     minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
     self.minibatch = minibatch
-    logger.info(f"Minibatch dataloading: {minibatch}")
-    # if not minibatch:
-      # NOTE(haolin): when minibatch is False, this will be the batch size per worker
-      # because
-      # 1. per worker will load the self.global_batch_size samples in a step
-      # 2. we did not use distributed sampler for IterableDataset, instead we split the dataset by workers
-      # so the effective global batch size is the global batch size * number of workers
-    #   self.effective_global_batch_size = self.global_batch_size * xr.process_count()
-    # else:
-    self.effective_global_batch_size = self.global_batch_size
+    if is_main_process():
+      logger.info(f"Logical mesh shape: {mesh.shape()}")
+      logger.info(f"Logical mesh device assignments: {mesh.device_ids}")
+      logger.info(f"Minibatch dataloading: {minibatch}")
 
     # TODO(https://github.com/AI-Hypercomputer/torchprime/issues/66): Test this for multislice
     self.input_sharding_spec = xs.ShardingSpec(
@@ -146,8 +141,7 @@ class Trainer:
     model = self._add_checkpoint_offload_scan_model(model)
     model = self._add_optimization_barrier_model(model)
     self.model = model
-    # self.hf_model = load_hf_model(self.config.model)
-    # logger.info(f"model.state_dict().keys() after sharding and trainer init: {model.state_dict().keys()}")
+
     # Set up optimizers
     self.optimizer = Adafactor(
       params=model.parameters(),
@@ -155,9 +149,6 @@ class Trainer:
       relative_step=False,
       scale_parameter=False,
     )
-
-    # TODO: this OOMs the TPU.
-    # self._prime_optimizer()
 
     self.lr_scheduler = get_scheduler(
       name=self.config.lr_scheduler.type,
@@ -205,13 +196,6 @@ class Trainer:
     # Execute all initialization work queued so far before starting training.
     torch_xla.sync()
 
-  def _prime_optimizer(self):
-    for group in self.optimizer.param_groups:
-      for p in group["params"]:
-        p.grad = torch.zeros_like(p)
-        p.grad.requires_grad_(False)
-    self.optimizer.step()
-    torch_xla.sync()
 
   def _load_checkpoint(self):
     """Load optimizer, scheduler, and training state from checkpoint."""
@@ -222,25 +206,27 @@ class Trainer:
     # self.optimizer = prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
     state_dict = {
       "model": self.model.state_dict(),
-      "optimizer": self.optimizer.state_dict(),
+      # "optimizer": self.optimizer.state_dict(), # NOTE: torch_xla has problem loading optimizer state dict with 2d sharding
       "scheduler": self.lr_scheduler.state_dict(),
       "masking_scheduler": self.masking_scheduler.state_dict(),
       "step": self.start_step,
     }
     checkpoint_load_step = self.config.checkpoint_load_step
     if checkpoint_load_step in tracked_steps:
-      logger.info(f"Loading checkpoint from step {checkpoint_load_step}")
+      if is_main_process():
+        logger.info(f"Loading checkpoint from step {checkpoint_load_step}")
       self.checkpoint_load_manager.restore(checkpoint_load_step, state_dict)
     elif checkpoint_load_step == "latest":
       last_step = max(tracked_steps)
-      logger.warning(f"Checkpoint step {checkpoint_load_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
+      if is_main_process():
+        logger.warning(f"Checkpoint step {checkpoint_load_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
       self.checkpoint_load_manager.restore(last_step, state_dict)
     else:
       raise ValueError(f"Invalid checkpoint step: {checkpoint_load_step}. Must be one of {tracked_steps} or 'latest'.")
 
     self.model.load_state_dict(state_dict["model"])
     if self.config.resume_from_checkpoint:
-      self.optimizer.load_state_dict(state_dict["optimizer"])
+      # self.optimizer.load_state_dict(state_dict["optimizer"])
       self.lr_scheduler.load_state_dict(state_dict["scheduler"])
       if "masking_scheduler" in state_dict:
         self.masking_scheduler.load_state_dict(state_dict["masking_scheduler"])
@@ -251,7 +237,8 @@ class Trainer:
       raise ValueError("Trainer: evaluation requires a eval_dataset.")
 
     num_replicas = xr.process_count()
-    logger.info(f"Num replicas: {num_replicas}")
+    if is_main_process():
+      logger.info(f"Num replicas: {num_replicas}")
     assert self.global_batch_size is not None
     if self.minibatch:
       # Each process loads the per-host batch size.
@@ -278,13 +265,15 @@ class Trainer:
       raise ValueError("Trainer: training requires a train_dataset.")
 
     num_replicas = xr.process_count()
-    logger.info(f"Num replicas: {num_replicas}") # 64 for v5p-512
+    if is_main_process():
+      logger.info(f"Num replicas: {num_replicas}") # 64 for v5p-512
 
     per_worker_batch_size = self.global_batch_size // num_replicas
-    if isinstance(self.train_dataset, IterableDataset):
+    if isinstance(self.train_dataset, IterableDataset) or isinstance(self.train_dataset, wds.WebDataset):
       # For IterableDataset, don't use DistributedSampler as it doesn't have len()
       sampler = None
-      logger.info("Using IterableDataset without DistributedSampler")
+      if is_main_process():
+        logger.info("Using IterableDataset or WebDataset without DistributedSampler")
     else:
       sampler = torch.utils.data.DistributedSampler(
         self.train_dataset,
@@ -306,14 +295,32 @@ class Trainer:
     else:
       # For pre-training, use default data collator
       collate_fn = default_data_collator
-    
-    dataloader = DataLoader(
-      self.train_dataset,
-      collate_fn=collate_fn,
-      batch_size=per_worker_batch_size, # <-- Use the smaller, per-worker batch size
-      sampler=sampler,
-      drop_last=True, # Sampler also has drop_last=True for safety
-    )
+
+    if isinstance(self.train_dataset, wds.WebDataset):
+      def slient_worker(_):
+        if not is_main_process():
+          sys.stdout = open(os.devnull, "w")
+          sys.stderr = open(os.devnull, "w")
+
+      dataloader = wds.WebLoader(
+        self.train_dataset,
+        collate_fn=webdataset_collate_fn,
+        batch_size=per_worker_batch_size,
+        num_workers=2,
+        persistent_workers=True,
+        prefetch_factor=2,
+        pin_memory=False,
+        drop_last=True,
+        worker_init_fn=slient_worker,
+      )
+    else:
+      dataloader = DataLoader(
+        self.train_dataset,
+        collate_fn=collate_fn,
+        batch_size=per_worker_batch_size, # <-- Use the smaller, per-worker batch size
+        sampler=sampler,
+        drop_last=True, # Sampler also has drop_last=True for safety
+      )
     loader = pl.MpDeviceLoader(
       dataloader, self.device, input_sharding=self.input_sharding_spec
     )
@@ -327,13 +334,15 @@ class Trainer:
     offload_tensors = self.config.model.remat.get("offload_tensors", [])
 
     # Checking preconditions and logging.
-    if remat_classes:
+    if remat_classes and is_main_process():
       logger.info(f"Enabling activation checkpointing on {remat_classes}")
     if layers_to_scan:
       assert isinstance(layers_to_scan, str)
-      logger.info(f"Compiling module `{layers_to_scan}` with scan")
+      if is_main_process():
+        logger.info(f"Compiling module `{layers_to_scan}` with scan")
     if len(offload_tensors):
-      logger.info(f"Will offload these tensors to host RAM: {offload_tensors}")
+      if is_main_process():
+        logger.info(f"Will offload these tensors to host RAM: {offload_tensors}")
       if layers_to_scan is None:
         raise NotImplementedError("Host offloading requires scan")
       if len(remat_classes) != 1:
@@ -382,7 +391,8 @@ class Trainer:
     if not classes:
       return model
 
-    logger.info(f"Adding backward optimization barriers to {classes}")
+    if is_main_process():
+      logger.info(f"Adding backward optimization barriers to {classes}")
 
     def maybe_add_barrier(mod, _name):
       if isinstance(mod, tuple(classes)):
@@ -411,37 +421,35 @@ class Trainer:
       self._load_checkpoint()
     self.model.train()
     self.model.zero_grad()
-    # logger.info("DEBUG: 1")
-    # For now we assume that we wil never train for mor than one epoch
     max_step = self.config.max_steps
     train_loader = self._get_train_dataloader()
     train_iterator = iter(train_loader)
 
     metrics_logger = MetricsLogger(self.config.model)
-    logger.info("Starting training")
-    logger.info(f"    Max step: {max_step}")
-    logger.info(f"    Global batch size: {self.global_batch_size}")
-    logger.info(f"    Effective global batch size: {self.effective_global_batch_size}")
-    if hasattr(self, 'start_step') and self.start_step > 0:
-      logger.info(f"    Resuming from step: {self.start_step}")
     if is_main_process():
+      logger.info("Starting training")
+      logger.info(f"    Max step: {max_step}")
+      logger.info(f"    Global batch size: {self.global_batch_size}")
+      if hasattr(self, 'start_step') and self.start_step > 0:
+        logger.info(f"    Resuming from step: {self.start_step}")
+
       wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
-      wandb.init(project="text-diffusion-model-research-qwen2_5-1_5b-pretrain", name=self.config.model.model_class)
+      run_name = getattr(self.config, "run_name", self.config.model.model_class)
+      wandb.init(project="text-diffusion-model-research-qwen2_5-1_5b-pretrain", name=run_name)
       # Log the configuration to wandb
       wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
       # Set wandb step to start_step if resuming from checkpoint
       if self.start_step > 0:
         wandb.log({}, step=self.start_step-1)  # Set the initial step counter
-    # logger.info("DEBUG: 2")
     # Initialize epoch and step counters, accounting for checkpoint loading
     epoch = 0
     start_step = self.start_step
-    # logger.info("DEBUG: 3")
     # Skip batches for partial file processing when resuming from checkpoint
-    if self.config.checkpoint_load_step is not None and self.config.steps_to_skip == 0:
+    if self.config.checkpoint_load_step is not None and self.config.steps_to_skip == 0 and is_main_process():
       logger.warning("steps_to_skip is 0, but checkpoint_load_step is not None. This will cause the trainer to start from the beginning of the dataset. Please check the logs to see if this is expected.")
     if self.config.steps_to_skip > 0:
-      logger.info(f"Skipping {self.config.steps_to_skip} batches for partial file processing...")
+      if is_main_process():
+        logger.info(f"Skipping {self.config.steps_to_skip} batches for partial file processing...")
       for _ in range(self.config.steps_to_skip):
         try:
           next(train_iterator)
@@ -451,27 +459,41 @@ class Trainer:
           next(train_iterator)
 
     for step in range(start_step, max_step):
+      data_load_start_time = timer()
       try:
         batch = next(train_iterator)
       except StopIteration:
-        logger.warning(f"DataLoader exhausted at step {step}, reset iterator")
+        if is_main_process():
+          logger.warning(f"DataLoader exhausted at step {step}, reset iterator")
         epoch += 1
 
         # If we just finished the resuming epoch and have all_data_files, recreate dataset with full data
         if hasattr(self.config, 'is_resuming_epoch') and self.config.is_resuming_epoch and hasattr(self.config, 'all_data_files'):
-          logger.info("Finished resuming epoch, switching to full dataset for subsequent epochs")
+          if is_main_process():
+            logger.info("Finished resuming epoch, switching to full dataset for subsequent epochs")
           self.config.is_resuming_epoch = False
 
           # Recreate dataset with all files
-          self.train_dataset = retry(
-            lambda: make_gcs_pretokenized_dataset(
-              self.config.dataset_name,
-              data_files=self.config.all_data_files,
-              seed=self.config.seed,
-              checkpoint_dir=None
+          use_webdataset = hasattr(self.config.data, 'use_webdataset') and self.config.data.use_webdataset
+          if use_webdataset:
+            self.train_dataset = retry(
+              lambda: make_webdataset(
+                self.config.data.dataset_name,
+                shard_urls=self.config.all_data_files,
+                seed=self.config.seed,
+                checkpoint_dir=None
+              )
             )
-          )
-          if isinstance(self.train_dataset, IterableDataset):
+          else:
+            self.train_dataset = retry(
+              lambda: make_gcs_pretokenized_dataset(
+                self.config.dataset_name,
+                data_files=self.config.all_data_files,
+                seed=self.config.seed,
+                checkpoint_dir=None
+              )
+            )
+          if isinstance(self.train_dataset, IterableDataset) and not isinstance(self.train_dataset, wds.WebDataset):
             try:
               logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
               self.train_dataset = split_dataset_by_node(self.train_dataset, xr.process_index(), xr.process_count())
@@ -481,57 +503,74 @@ class Trainer:
 
           # Recreate dataloader with the full dataset
           train_loader = self._get_train_dataloader()
-          # logger.info("DEBUG: 4")
           xm.wait_device_ops()
           torch_xla.sync()
 
         train_iterator = iter(train_loader)
         batch = next(train_iterator)
-
+      data_load_end_time = timer()
       trace_start_time = timer()
       # Validate batch for SFT mode
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
-      # logger.info("DEBUG: 5")
+      else:
+        # batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
+        # if "attention_mask" in batch:
+        #   batch["attention_mask"] = batch["attention_mask"].reshape(-1, 2048)
+
+        # Create segment_ids from input_ids if in pretrain mode and segment_ids is None
+        # Create segment_ids by looking at EOS_TOKEN_ID positions
+        # NOTE: hardcode eos token id because the pretokenized dataset used this id
+        EOS_TOKEN_ID = 151645 
+        # eos_mask = torch.where(batch["input_ids"] == EOS_TOKEN_ID, 1, 0).int().to(batch["input_ids"].device)
+
+        # # Compute cumulative sum of EOS tokens to get segment IDs
+        # # Each EOS token increments the segment ID for subsequent tokens
+        # segment_ids = eos_mask.cumsum(dim=1)
+
+        # # Shift segment_ids to the right by 1 position so tokens before first EOS are segment 0
+        # # and tokens after each EOS get incremented segment IDs
+        # segment_ids = torch.cat(
+        #     [torch.zeros_like(segment_ids[:, :1]), segment_ids[:, :-1]], dim=1
+        # )
+        # # NOTE: haolin
+        # # Convert to float to work around scan limitation with integer tensors
+        # # See: https://github.com/pytorch/xla/issues/8783
+        # segment_ids = segment_ids.float().requires_grad_(False)
+        # batch["segment_ids"] = segment_ids
+
       loss = self.train_step(batch)
-      # logger.info("DEBUG: 6")
       trace_end_time = timer()
 
       if step % self.config.logging_steps == 0:
-        # logger.info("DEBUG: 7")
-        def step_closure(epoch, step, loss, trace_start_time, trace_end_time):
-          # logger.info("DEBUG: 8")
+        def step_closure(epoch, step, loss, trace_start_time, trace_end_time, data_load_start_time, data_load_end_time):
           loss = loss.detach().item()
-          # logger.info(
-          #   f"Epoch: {epoch}, step: {step}, "
-          #   f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
-          # )
-          logger.info(
-            f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
-            f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms"
-          )
           if math.isnan(loss):
             raise ValueError(f"Loss is NaN at step {step}")
           if is_main_process():
+            logger.info(
+              f"Epoch: {epoch}, step: {step}, loss: {loss:0.4f}, "
+              f"trace time: {(trace_end_time - trace_start_time) * 1000:0.2f} ms, "
+              f"data load time: {(data_load_end_time - data_load_start_time) * 1000:0.2f} ms"
+            )
             wandb.log(
               {
                 "train/loss": loss,
                 "train/ppl": math.exp(loss),
                 "train/step_time": (trace_end_time - trace_start_time) * 1000,
+                "train/data_load_time": (data_load_end_time - data_load_start_time) * 1000,
                 "train/epoch": epoch,
                 "train/step": step,
                 "train/lr": self.lr_scheduler.get_last_lr()[0],
-                "train/total_tokens": self.config.data.block_size * (step + 1) * self.effective_global_batch_size,
+                "train/total_tokens": self.config.data.block_size * (step + 1) * self.global_batch_size,
               },
               step=step  # Explicitly set the wandb global step
             )
-        # logger.info("DEBUG: 9")
         xm.add_step_closure(
           step_closure,
-          args=(epoch, step, loss, trace_start_time, trace_end_time),
+          args=(epoch, step, loss, trace_start_time, trace_end_time, data_load_start_time, data_load_end_time),
           run_async=True,
         )
-        # logger.info("DEBUG: 10")
       if step > self.start_step and step % self.config.save_steps == 0:
         # NOTE: currently we save the checkpoint synchronously
         xm.wait_device_ops()  # Wait for all XLA operations to complete
@@ -545,7 +584,8 @@ class Trainer:
         try:
           # logger.info(f"model.state_dict().keys() before saving: {self.model.state_dict().keys()}")
           self.checkpoint_save_manager.save(step, state_dict, force=True)
-          logger.info(f"Checkpoint saved at step {step} to {self.checkpoint_save_dir}")
+          if is_main_process():
+            logger.info(f"Checkpoint saved at step {step} to {self.checkpoint_save_dir}")
         except Exception as e:
           logger.error(f"Failed to save checkpoint at step with ckpt_mgr {step}: {e}")
         xm.wait_device_ops()
@@ -676,7 +716,6 @@ def main(config: DictConfig):
   with set_default_dtype(torch.bfloat16), torch_xla.device():
     model = initialize_model_class(config.model, load_from_hf=not load_from_checkpoint)
     
-  logger.info(f"model.state_dict().keys() after loading: {model.state_dict().keys()}")
 
   n_params = sum([p.numel() for p in model.parameters()])
   if is_main_process():
@@ -747,35 +786,45 @@ def main(config: DictConfig):
       gcs_prefix = "gs://sfr-text-diffusion-model-research/"
       if dataset_name.startswith(gcs_prefix):
         checkpoint_save_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_save_dir.split(gcs_prefix)[1])
+        use_webdataset = hasattr(config.data, 'use_webdataset') and config.data.use_webdataset
         dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(gcs_prefix)[1])
         if not config.resume_from_checkpoint:
-          logger.info(f"Training from scratch, loading all data files from {dataset_name}")
-          data = retry(
-            lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_save_dir)
-          )
+          if is_main_process():
+            logger.info(f"Training from scratch, loading all data files from {dataset_name}")
+          if use_webdataset:
+             if is_main_process():
+               logger.info(f"Building webdataset using {config.data.dataset_name}")
+             data = retry(
+               lambda: make_webdataset(
+                 config.data.dataset_name,
+                 seed=config.seed,
+                 checkpoint_dir=checkpoint_save_dir
+               )
+             )
+          else:
+            data = retry(
+              lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed, checkpoint_dir=checkpoint_save_dir)
+            )
           # No additional steps to skip when starting fresh
           # Store dataset info for multi-epoch training
           config.all_data_files = None  # Will be set from data_files.json if exists
           config.is_resuming_epoch = False
         else:
-          logger.info(f"Resuming from checkpoint {config.checkpoint_load_step}, will recompute the data files to skip")
+          if is_main_process():
+            logger.info(f"Resuming from checkpoint {config.checkpoint_load_step}, will recompute the data files to skip")
           # Calculate which files to skip based on checkpoint step and batch size
-          samples_per_file = config.data.samples_per_file if hasattr(config.data, 'samples_per_file') and config.data.samples_per_file is not None else 5000
-          minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
-          # if minibatch:
-          #   effective_global_batch_size = config.global_batch_size
-          # else:
-          #   effective_global_batch_size = config.global_batch_size * xr.process_count()
-          effective_global_batch_size = config.global_batch_size
-          total_samples_processed = config.checkpoint_load_step * effective_global_batch_size
+          samples_per_file = config.data.samples_per_file if hasattr(config.data, 'samples_per_file') and config.data.samples_per_file is not None else 100000
+          total_samples_processed = config.checkpoint_load_step * config.global_batch_size
           files_to_skip, num_samples_processed_in_current_file = divmod(total_samples_processed, samples_per_file)
-          logger.info(f"Resuming from checkpoint step {config.checkpoint_load_step}")
-          logger.info(f"Total samples processed: {total_samples_processed}")
-          logger.info(f"Remaining samples in current file: {num_samples_processed_in_current_file}")
+          if is_main_process():
+            logger.info(f"Resuming from checkpoint step {config.checkpoint_load_step}")
+            logger.info(f"Total samples processed: {total_samples_processed}")
+            logger.info(f"Remaining samples in current file: {num_samples_processed_in_current_file}")
 
           # Calculate additional steps to skip within the current file
-          steps_to_skip = num_samples_processed_in_current_file // effective_global_batch_size
-          logger.info(f"Additional steps to skip in current file: {steps_to_skip}")
+          steps_to_skip = num_samples_processed_in_current_file // config.global_batch_size
+          if is_main_process():
+            logger.info(f"Additional steps to skip in current file: {steps_to_skip}")
           config.steps_to_skip = steps_to_skip
 
           # Read data files from checkpoint directory
@@ -794,19 +843,32 @@ def main(config: DictConfig):
           # Skip the appropriate number of files for the current epoch
           files_to_skip = files_to_skip % len(all_data_files)
           remaining_files = all_data_files[files_to_skip:]
-          logger.info(f"Files to skip: {files_to_skip}")
-          logger.info(f"Total data files: {len(all_data_files)}")
-          logger.info(f"Remaining files after skipping: {len(remaining_files)}")
+          if is_main_process():
+            logger.info(f"Files to skip: {files_to_skip}")
+            logger.info(f"Total data files: {len(all_data_files)}")
+            logger.info(f"Remaining files after skipping: {len(remaining_files)}")
 
           # Load dataset starting from the appropriate files
-          data = retry(
-            lambda: make_gcs_pretokenized_dataset(
-              dataset_name,
-              data_files=remaining_files,
-              seed=config.seed,
-              checkpoint_dir=None  # Don't save data_files.json again
+          if use_webdataset:
+            if is_main_process():
+              logger.info(f"Building webdataset using {config.data.dataset_name}, loading remaining {len(remaining_files)} files from {remaining_files}")
+            data = retry(
+              lambda: make_webdataset(
+                config.data.dataset_name,
+                shard_urls=remaining_files,
+                seed=config.seed,
+                checkpoint_dir=None
+              )
             )
-          )
+          else:
+            data = retry(
+              lambda: make_gcs_pretokenized_dataset(
+                dataset_name,
+                data_files=remaining_files,
+                seed=config.seed,
+                checkpoint_dir=None  # Don't save data_files.json again
+              )
+            )
       else:
         # Initialize multi-epoch training flags for non-GCS datasets
         config.is_resuming_epoch = False
@@ -835,8 +897,7 @@ def main(config: DictConfig):
       )
     else:
       raise ValueError("No dataset provided")
-  # minibatch = is_1d_sharding(tuple(config.ici_mesh.values()))
-  if isinstance(data, IterableDataset):
+  if isinstance(data, IterableDataset) and not isinstance(data, wds.WebDataset):
     try:
       logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
       data = split_dataset_by_node(data, xr.process_index(), xr.process_count())
