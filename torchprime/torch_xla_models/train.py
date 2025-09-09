@@ -607,7 +607,7 @@ class Trainer:
           # logger.info(f"model.state_dict().keys() before saving: {self.model.state_dict().keys()}")
           self.checkpoint_save_manager.save(step, state_dict, force=True)
           if is_main_process():
-            logger.info(f"Unsharded state dict: {unsharded_state_dict}")
+            logger.info(f"Unsharded state dict: {unsharded_state_dict.keys()}")
             mounted_save_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1])
             torch.save(unsharded_state_dict, os.path.join(mounted_save_dir, f"unsharded_state_dict_{step}.pt"))
             logger.info(f"Checkpoint saved at step {step} to {self.checkpoint_save_dir}")
