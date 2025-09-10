@@ -77,17 +77,18 @@ class ValidationTrainer(Trainer):
   def validation_loop(self):
     if self.config.checkpoint_load_step is not None:
       self._load_checkpoint()
-    self.model.eval()
+    self.model.train()
     self.model.zero_grad()
 
     max_step = self.config.max_steps
     eval_loader = self._get_eval_dataloader()
     eval_iterator = iter(eval_loader)
 
-    wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
-    run_name = self.config.run_name if hasattr(self.config, "run_name") and self.config.run_name is not None else f"{self.config.model.model_class}_validation"
-    wandb.init(project="text-diffusion-model-research-qwen2_5-1_5b-pretrain", name=run_name)
-    wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
+    if is_main_process():
+      wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
+      run_name = self.config.run_name if hasattr(self.config, "run_name") and self.config.run_name is not None else f"{self.config.model.model_class}_validation"
+      wandb.init(project="text-diffusion-model-research-qwen2_5-1_5b-pretrain", name=run_name)
+      wandb.config.update(OmegaConf.to_container(self.config, resolve=True))
 
     epoch = 0
     accumulated_loss = 0
