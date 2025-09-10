@@ -15,7 +15,7 @@ python torchprime/torch_xla_models/pretrain_validation.py \
     training_mode=pretrain \
     reshape_context=false \
     seg_attn=true \
-    data=validation_v2 \
+    data=validation \
     model=flex-qwen2-1b \
     global_batch_size=2048 \
     max_steps=1000 \
