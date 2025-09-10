@@ -10,7 +10,7 @@ export GCSFS_DEFAULT_FILL_CACHE=false
 
 # export PT_XLA_DEBUG_LEVEL=2
 # export HYDRA_FULL_ERROR=1
-checkpoints=(5000 15000 20000 25000 30000)
+checkpoints=30000
 for checkpoint in "${checkpoints[@]}"; do
     python torchprime/torch_xla_models/pretrain_validation.py \
         run_name=validation_qwen25_coder_1b_flex_v2_mask0_01_256_context_8192_seg_attn_bsz_2048_lr_3e-4_${checkpoint} \
