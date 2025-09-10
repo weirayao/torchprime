@@ -241,51 +241,20 @@ class Trainer:
         self.masking_scheduler.load_state_dict(state_dict["masking_scheduler"])
       self.start_step = state_dict["step"]
 
-  def _get_eval_dataloader(self):
-    if self.eval_dataset is None:
-      raise ValueError("Trainer: evaluation requires a eval_dataset.")
-
-    num_replicas = xr.process_count()
-    if is_main_process():
-      logger.info(f"Num replicas: {num_replicas}")
-    assert self.global_batch_size is not None
-    if self.minibatch:
-      # Each process loads the per-host batch size.
-      batch_size = self.global_batch_size // num_replicas
-    else:
-      # Each process will load the global batch, then discard the unneeded parts.
-      batch_size = self.global_batch_size
-    dataloader = DataLoader(
-      self.eval_dataset,
-      # Data collator will default to DataCollatorWithPadding, so we change it.
-      collate_fn=default_data_collator,
-      batch_size=batch_size,
-      sampler=None,
-      drop_last=True,
-    )
-    loader = pl.MpDeviceLoader(
-      dataloader, self.device, input_sharding=self.input_sharding_spec
-    )
-    return loader
-
-
-  def _get_train_dataloader(self):
-    if self.train_dataset is None:
-      raise ValueError("Trainer: training requires a train_dataset.")
-
+  def _get_dataloader(self, dataset: IterableDataset | wds.WebDataset | Dataset) -> pl.MpDeviceLoader:
     num_replicas = xr.process_count()
     if is_main_process():
       logger.info(f"Num replicas: {num_replicas}") # 64 for v5p-512
 
     per_worker_batch_size = self.global_batch_size // num_replicas
-    if isinstance(self.train_dataset, IterableDataset) or isinstance(self.train_dataset, wds.WebDataset):
+    if isinstance(dataset, IterableDataset) or isinstance(dataset, wds.WebDataset):
       # For IterableDataset, don't use DistributedSampler as it doesn't have len()
       sampler = None
       if is_main_process():
         logger.info("Using IterableDataset or WebDataset without DistributedSampler")
     else:
       sampler = torch.utils.data.DistributedSampler(
-        self.train_dataset,
+        dataset,
         num_replicas=num_replicas,
         rank=xr.process_index(),
         drop_last=True, # It's crucial to drop last to ensure all batches are even
@@ -305,14 +274,11 @@ class Trainer:
       # For pre-training, use default data collator
       collate_fn = default_data_collator
 
-    if isinstance(self.train_dataset, wds.WebDataset):
-      def slient_worker(_):
-        if not is_main_process():
-          sys.stdout = open(os.devnull, "w")
-          sys.stderr = open(os.devnull, "w")
-
+    if isinstance(dataset, wds.WebDataset):
+      if self.config.training_mode == "sft":
+        raise NotImplementedError("SFT is not supported for WebDataset")
       dataloader = wds.WebLoader(
-        self.train_dataset,
+        dataset,
         collate_fn=webdataset_collate_fn,
         batch_size=per_worker_batch_size,
         num_workers=2,
@@ -320,11 +286,10 @@ class Trainer:
         prefetch_factor=2,
         pin_memory=False,
         drop_last=True,
-        worker_init_fn=slient_worker,
       )
     else:
       dataloader = DataLoader(
-        self.train_dataset,
+        dataset,
         collate_fn=collate_fn,
         batch_size=per_worker_batch_size, # <-- Use the smaller, per-worker batch size
         sampler=sampler,
@@ -334,6 +299,16 @@ class Trainer:
       dataloader, self.device, input_sharding=self.input_sharding_spec
     )
     return loader
+
+  def _get_eval_dataloader(self):
+    if self.eval_dataset is None:
+      raise ValueError("Trainer: evaluation requires a eval_dataset.")
+    return self._get_dataloader(self.eval_dataset)
+
+  def _get_train_dataloader(self):
+    if self.train_dataset is None:
+      raise ValueError("Trainer: training requires a train_dataset.")
+    return self._get_dataloader(self.train_dataset)
 
   def _add_checkpoint_offload_scan_model(self, model: nn.Module):
     remat_classes = self._get_classes_by_names(
