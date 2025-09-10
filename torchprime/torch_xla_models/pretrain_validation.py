@@ -131,11 +131,11 @@ class ValidationTrainer(Trainer):
         batch["segment_ids"] = segment_ids
 
       loss = self.validation_step(batch)
+      accumulated_loss += loss.detach().item()
 
       if step % self.config.logging_steps == 0:
         def step_closure(epoch, step, loss):
           loss = loss.detach().item()
-          accumulated_loss += loss
           if math.isnan(loss):
             raise ValueError(f"Loss is NaN at step {step}")
           if is_main_process():
