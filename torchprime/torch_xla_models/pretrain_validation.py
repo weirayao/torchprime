@@ -36,6 +36,7 @@ from torchprime.data.webdataset import make_webdataset, webdataset_collate_fn
 
 
 MOUNTED_GCS_DIR = os.environ.get("MOUNTED_GCS_DIR", None)
+GCS_PREFIX = "gs://sfr-text-diffusion-model-research/"
 
 check_min_version("4.39.3")
 logger = logging.getLogger(__name__)
@@ -80,7 +81,7 @@ class ValidationTrainer(Trainer):
     self.model.zero_grad()
 
     max_step = self.config.max_steps
-    eval_loader = self._get_eval_dataloader(self.eval_dataset)
+    eval_loader = self._get_eval_dataloader()
     eval_iterator = iter(eval_loader)
 
     wandb.login(key=os.environ.get("WANDB_API_KEY"), host="https://salesforceairesearch.wandb.io")
