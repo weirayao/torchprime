@@ -217,7 +217,7 @@ class Trainer:
     if checkpoint_load_step in tracked_steps:
       if is_main_process():
         logger.info(f"Loading checkpoint from step {checkpoint_load_step}")
-      load_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1], f"unsharded_state_dict_{checkpoint_load_step}.pt")
+      load_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_load_dir.split(GCS_PREFIX)[1], f"unsharded_state_dict_{checkpoint_load_step}.pt")
       unsharded_state_dict = torch.load(load_dir)
       self.model.load_state_dict(unsharded_state_dict, strict=False)
       state_dict["model"] = {name: param for name, param in self.model.named_parameters() if name not in unsharded_state_dict}
@@ -226,7 +226,7 @@ class Trainer:
       last_step = max(tracked_steps)
       if is_main_process():
         logger.warning(f"Checkpoint step {checkpoint_load_step} not found in tracked steps {tracked_steps}. Loading from latest checkpoint {last_step}.")
-      load_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_save_dir.split(GCS_PREFIX)[1], f"unsharded_state_dict_{checkpoint_load_step}.pt")
+      load_dir = os.path.join(MOUNTED_GCS_DIR, self.checkpoint_load_dir.split(GCS_PREFIX)[1], f"unsharded_state_dict_{checkpoint_load_step}.pt")
       unsharded_state_dict = torch.load(load_dir)
       self.model.load_state_dict(unsharded_state_dict, strict=False)
       state_dict["model"] = {name: param for name, param in self.model.named_parameters() if name not in unsharded_state_dict}
