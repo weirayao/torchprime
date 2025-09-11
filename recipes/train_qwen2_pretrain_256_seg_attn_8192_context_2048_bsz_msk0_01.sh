@@ -24,13 +24,13 @@ python torchprime/torch_xla_models/train.py \
     model.prefix_probability=0.01 \
     model.masking_scheduler.schedule_type=linear \
     model.masking_scheduler.max_schedule_steps=10000 \
-    optimizer.learning_rate=0.00013 \
+    optimizer.learning_rate=0.00009 \
     lr_scheduler.type=cosine \
     lr_scheduler.warmup_steps=1 \
     global_batch_size=2048 \
     max_steps=55000 \
     checkpoint_load_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_1b_flex_v2_mask0_01_256_context_8192_seg_attn_bsz_2048_lr_3e-4/ \
-    checkpoint_load_step=30000 \
+    checkpoint_load_step=35000 \
     resume_from_checkpoint=true \
     checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_1b_flex_v2_mask0_01_256_context_8192_seg_attn_bsz_2048_lr_3e-4/ \
     save_steps=2500 \
