@@ -6,10 +6,11 @@ import torch
 import logging
 
 from typing import Dict, List, Optional, Union
+
+import torch_xla.runtime as xr
 from transformers import PreTrainedTokenizerBase
 from transformers.data.data_collator import DataCollatorMixin
 from datasets import Dataset, load_dataset, concatenate_datasets
-from torch_xla.runtime import xr
 
 def is_main_process():
     """Check if this is the main process (rank 0)."""
