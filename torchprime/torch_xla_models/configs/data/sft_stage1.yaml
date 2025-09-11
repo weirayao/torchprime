@@ -5,7 +5,9 @@ block_size: 1024
 
 # For SFT, we typically use instruction-following datasets
 # Huggingface dataset name, will OVERRIDE gcs_dataset_names if provided
-dataset_name: [opencoder_filtered_infinity_instruct,opencoder_realuser_instruct,opencoder_largescale_diverse_instruct]
+dataset_name: gs://sfr-text-diffusion-model-research/data/sft_opc_stage1_webdataset
+use_webdataset: true
+samples_per_file: 10000
 dataset_config_name: null
 
 # GCS dataset names and mixing weights for SFT datasets
