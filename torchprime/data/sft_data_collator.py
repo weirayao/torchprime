@@ -293,14 +293,7 @@ def create_sft_dataset(
     ):
         model_inputs = {"input_ids": [], "src_mask": []}
 
-        examples_prompt = [
-            messages[0]["content"] for messages in examples[prompt_column]
-        ]
-        examples_response = [
-            messages[0]["content"] for messages in examples[response_column]
-        ]
-
-        for prompt, response in zip(examples_prompt, examples_response):
+        for prompt, response in zip(examples[prompt_column], examples[response_column]):
             # Create conversation format for chat template
             messages = [
                 {"role": "user", "content": prompt},
