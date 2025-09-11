@@ -26,9 +26,10 @@ import torch_xla.runtime as xr
 import transformers
 import wandb
 import webdataset as wds
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import ListConfig, DictConfig, OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, IterableDataset
+from datasets import Dataset as HuggingFaceDataset
 from datasets.distributed import split_dataset_by_node
 from torch_xla._internal.jax_workarounds import jax_env_context
 from torch_xla.distributed.fsdp import checkpoint_module
@@ -47,7 +48,7 @@ from transformers import PreTrainedTokenizerBase
 
 from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset
 from torchprime.data.webdataset import make_webdataset, webdataset_collate_fn
-from torchprime.torch_xla_models.sft_data_collator import SFTDataCollator, create_sft_dataset
+from torchprime.data.sft_data_collator import SFTDataCollator, make_sft_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
 from torchprime.metrics.mfu import compute_mfu
@@ -260,23 +261,10 @@ class Trainer:
         drop_last=True, # It's crucial to drop last to ensure all batches are even
       )
     # Choose appropriate data collator based on training mode
-    if self.config.training_mode == "sft":
-      # For SFT, we need to use the SFT data collator
-      sft_config = self.config.data.get("sft", {})
-      collate_fn = SFTDataCollator(
-        tokenizer=self.tokenizer,
-        format=sft_config.get("format", "alpaca"),
-        include_system_prompt=sft_config.get("include_system_prompt", True),
-        instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-        custom_format=sft_config.get("custom_format"),
-      )
-    else:
-      # For pre-training, use default data collator
-      collate_fn = default_data_collator
+    # For pre-training, use default data collator
+    collate_fn = default_data_collator
 
     if isinstance(dataset, wds.WebDataset):
-      if self.config.training_mode == "sft":
-        raise NotImplementedError("SFT is not supported for WebDataset")
       dataloader = wds.WebLoader(
         dataset,
         collate_fn=webdataset_collate_fn,
@@ -442,6 +430,12 @@ class Trainer:
           train_iterator = iter(train_loader)
           next(train_iterator)
 
+    if self.config.training_mode == "sft" and self.config.progress_src_mask:
+      progress_src_mask_ratio = self.config.progress_src_mask_ratio
+      progress_src_mask_steps = max(1.0, float(max_step) * progress_src_mask_ratio)
+    else:
+      progress_src_mask_steps = 0
+
     for step in range(start_step, max_step):
       data_load_start_time = timer()
       try:
@@ -493,10 +487,28 @@ class Trainer:
         train_iterator = iter(train_loader)
         batch = next(train_iterator)
       data_load_end_time = timer()
+
+      if step == 0 and is_main_process():
+        logger.info(f"Batch shape: {batch['input_ids'].shape}")
+
       trace_start_time = timer()
-      # Validate batch for SFT mode
+      # Preprocess batch
       if self.config.training_mode == "sft":
         self._validate_sft_batch(batch)
+        if self.config.progress_src_mask:
+          ratio = step / progress_src_mask_steps
+          ratio = max(0.0, min(1.0, ratio))
+          if ratio <= 0.0:
+            # All False at the very beginning
+            batch["src_mask"] = torch.zeros_like(batch["src_mask"], dtype=torch.bool)
+          elif ratio < 1.0:
+            # Keep only the first floor(ratio * original_true_count) Trues per row,
+            # turning the trailing Trues into False.
+            batch_sz, seq_len_mask = batch["src_mask"].shape
+            true_counts = batch["src_mask"].sum(dim=1)  # [batch]
+            keep_len = torch.floor(true_counts.to(torch.float32) * ratio).to(torch.long)  # [batch]
+            idx = torch.arange(seq_len_mask, device=batch["src_mask"].device).unsqueeze(0).expand(batch_sz, -1)
+            batch["src_mask"] = idx < keep_len.unsqueeze(1)
       else:
         if self.config.reshape_context:
           batch["input_ids"] = batch["input_ids"].reshape(-1, 2048)
@@ -661,7 +673,6 @@ class Trainer:
       # For SFT, src_mask should already be in the batch from data collator
       _logits, loss = self.model(
         input_ids=batch["input_ids"],
-        attention_mask=batch["attention_mask"],
         src_mask=batch["src_mask"],
         training_mode="sft",
         masking_schedule=masking_schedule
@@ -727,56 +738,18 @@ def main(config: DictConfig):
   if config.training_mode == "sft":
     # SFT mode: load instruction-response dataset
     if config.data.dataset_name:
-      # Load raw dataset from HuggingFace
-      dataset_name = config.data.dataset_name
-      if dataset_name.startswith(GCS_PREFIX):
-        dataset_name = os.path.join(MOUNTED_GCS_DIR, dataset_name.split(GCS_PREFIX)[1])
-        raw_data = retry(
-          lambda: make_gcs_pretokenized_dataset(dataset_name, seed=config.seed)
-        )
+      if isinstance(config.data.dataset_name, ListConfig):
+        dataset_names = OmegaConf.to_container(config.data.dataset_name)
       else:
-        raw_data = retry(
-          lambda: make_huggingface_dataset(
-            name=config.data.dataset_name,
-            config_name=config.data.dataset_config_name,
-            split="train",
-            cache_dir=config.data.cache_dir,
-            tokenizer=tokenizer,
-            block_size=config.data.block_size,
-          )
-        )
-    elif config.data.gcs_dataset_names:
-      # Load raw dataset from GCS
-      raw_data = retry(
-        lambda: make_gcs_dataset(
-          names=config.data.gcs_dataset_names,
-          weights=config.data.weights,
-          tokenizer=tokenizer,
-          seed=config.seed,
-          block_size=config.data.block_size,
-        )
+        dataset_names = config.data.dataset_name
+      data = make_sft_dataset(
+        dataset_names=dataset_names,
+        tokenizer=tokenizer,
+        block_size=config.data.block_size,
+        seed=config.seed,
       )
     else:
       raise ValueError("No dataset provided for SFT")
-    
-    # Process raw dataset for SFT
-    sft_config = config.data.get("sft", {})
-    
-    # Check if the dataset already has src_mask (from create_sft_dataset)
-    if hasattr(raw_data, 'features') and 'src_mask' in raw_data.features:
-      # Dataset already processed, use as is
-      data = raw_data
-    else:
-      # Process raw dataset for SFT
-      data = create_sft_dataset(
-        dataset=raw_data,
-        tokenizer=tokenizer,
-        format=sft_config.get("format", "alpaca"),
-        include_system_prompt=sft_config.get("include_system_prompt", True),
-        instruction_response_separator=sft_config.get("instruction_response_separator", "\n\n### Response:\n"),
-        custom_format=sft_config.get("custom_format"),
-        block_size=config.data.block_size,
-      )
   else:
     # Pre-training mode (original behavior)
     if config.data.dataset_name:
@@ -895,6 +868,7 @@ def main(config: DictConfig):
       )
     else:
       raise ValueError("No dataset provided")
+
   if isinstance(data, IterableDataset) and not isinstance(data, wds.WebDataset):
     try:
       logger.info(f"Applying split_dataset_by_node for device {xr.process_index()}/{xr.process_count()}")
@@ -902,6 +876,7 @@ def main(config: DictConfig):
       logger.info(f"Dataset split successful for device {xr.process_index()}")
     except Exception as e:
       logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")
+
   trainer = Trainer(
     model=model,
     tokenizer=tokenizer,

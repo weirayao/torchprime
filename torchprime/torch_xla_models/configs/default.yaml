@@ -20,6 +20,10 @@ seg_attn: false
 # Training mode: "pretrain" or "midtrain" or "sft"
 training_mode: pretrain
 
+# SFT related
+progress_src_mask: false
+progress_src_mask_ratio: 0
+
 seed: 42
 profile_step: -1
 
