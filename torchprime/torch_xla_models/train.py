@@ -742,7 +742,9 @@ def main(config: DictConfig):
   if config.training_mode == "sft":
     # SFT mode: load instruction-response dataset
     if config.data.dataset_name:
-      if config.data.use_webdataset:
+      checkpoint_save_dir = os.path.join(MOUNTED_GCS_DIR, config.checkpoint_save_dir.split(GCS_PREFIX)[1])
+      use_webdataset = hasattr(config.data, 'use_webdataset') and config.data.use_webdataset
+      if use_webdataset:
         data = make_webdataset(config.data.dataset_name, seed=config.seed, checkpoint_dir=checkpoint_save_dir)
       else:
         if isinstance(config.data.dataset_name, ListConfig):
