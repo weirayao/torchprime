@@ -47,7 +47,7 @@ from transformers.utils import check_min_version
 from transformers import PreTrainedTokenizerBase
 
 from torchprime.data.dataset import make_huggingface_dataset, make_gcs_dataset, make_gcs_pretokenized_dataset
-from torchprime.data.webdataset import make_webdataset, webdataset_collate_fn
+from torchprime.data.webdataset import make_webdataset, create_webdataset_collate_fn
 from torchprime.data.sft_data_collator import SFTDataCollator, make_sft_dataset
 from torchprime.layers.sequential import HomogeneousSequential
 from torchprime.metrics.metrics import MetricsLogger
@@ -265,9 +265,13 @@ class Trainer:
     collate_fn = default_data_collator
 
     if isinstance(dataset, wds.WebDataset):
+      if self.config.training_mode == "sft":
+        columns = ["input_ids", "src_mask"]
+      else:
+        columns = None
       dataloader = wds.WebLoader(
         dataset,
-        collate_fn=webdataset_collate_fn,
+        collate_fn=create_webdataset_collate_fn(columns),
         batch_size=per_worker_batch_size,
         num_workers=2,
         persistent_workers=True,
@@ -738,16 +742,19 @@ def main(config: DictConfig):
   if config.training_mode == "sft":
     # SFT mode: load instruction-response dataset
     if config.data.dataset_name:
-      if isinstance(config.data.dataset_name, ListConfig):
-        dataset_names = OmegaConf.to_container(config.data.dataset_name)
+      if config.data.use_webdataset:
+        data = make_webdataset(config.data.dataset_name, seed=config.seed, checkpoint_dir=checkpoint_save_dir)
       else:
-        dataset_names = config.data.dataset_name
-      data = make_sft_dataset(
-        dataset_names=dataset_names,
-        tokenizer=tokenizer,
-        block_size=config.data.block_size,
-        seed=config.seed,
-      )
+        if isinstance(config.data.dataset_name, ListConfig):
+          dataset_names = OmegaConf.to_container(config.data.dataset_name)
+        else:
+          dataset_names = config.data.dataset_name
+        data = make_sft_dataset(
+          dataset_names=dataset_names,
+          tokenizer=tokenizer,
+          block_size=config.data.block_size,
+          seed=config.seed,
+        )
     else:
       raise ValueError("No dataset provided for SFT")
   else:

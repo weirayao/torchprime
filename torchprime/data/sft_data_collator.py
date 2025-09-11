@@ -338,6 +338,8 @@ def create_sft_dataset(
         remove_columns=dataset.column_names,
         desc="Processing SFT dataset",
         batched=True,
+        batch_size=1000,
+        num_proc=min(64, os.cpu_count() - 4),
     )
 
     return processed_dataset
@@ -443,3 +445,14 @@ def make_sft_dataset(
     if is_main_process():
         logger.info(f"Final combined dataset: {len(final_dataset)} samples")
     return final_dataset
+
+if __name__ == "__main__":
+    from transformers import AutoTokenizer
+    from datasets import load_from_disk, DatasetDict
+    # dataset_names = ["opencoder_filtered_infinity_instruct", "opencoder_realuser_instruct", "opencoder_largescale_diverse_instruct"]
+    # tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-Coder-1.5B-Instruct")
+    # block_size = 1024
+    # seed = 42
+    # dataset = make_sft_dataset(dataset_names, tokenizer, block_size, seed)
+    # dataset.save_to_disk("/export/agentstudio-family-2/haolin/data/sft_opc_stage1", max_shard_size="2GB", num_proc=64)
+    dataset = load_from_disk("/export/agentstudio-family-2/haolin/data/sft_opc_stage1")

@@ -68,19 +68,53 @@ def split_by_datloader_worker(urls):
         return urls
 
 
-def webdataset_collate_fn(batch):
+def webdataset_collate_fn(batch, column_names=None):
     """Collate function for WebDataset samples.
 
-    When using to_tuple("npy"), WebDataset returns tuples of (numpy_array,).
+    When using to_tuple(), WebDataset returns tuples of numpy arrays.
     DataLoader passes a list of these tuples to the collate function.
+    Each tuple contains multiple numpy arrays (one per column).
+    
+    Args:
+        batch: List of tuples, each containing numpy arrays
+        column_names: Optional list of column names. If None, uses defaults.
     """
-    # Extract numpy arrays from tuples
-    arrays = [item[0] if isinstance(item, tuple) else item for item in batch]
+    if not batch:
+        return {}
+    
+    # Get the number of columns from the first sample
+    num_columns = len(batch[0]) if isinstance(batch[0], tuple) else 1
+    
+    # If only one column (backward compatibility)
+    if num_columns == 1:
+        arrays = [item[0] if isinstance(item, tuple) else item for item in batch]
+        input_ids = torch.from_numpy(np.stack(arrays)).long()
+        return {"input_ids": input_ids}
+    
+    # Multiple columns case
+    result = {}    
+    for col_idx in range(num_columns):
+        # Extract the col_idx-th array from each sample
+        arrays = [item[col_idx] for item in batch]
+        # Stack into a batch tensor
+        column_tensor = torch.from_numpy(np.stack(arrays)).long()
+        result[column_names[col_idx]] = column_tensor
+    
+    return result
 
-    # Stack into a batch tensor
-    input_ids = torch.from_numpy(np.stack(arrays)).long()
 
-    return {"input_ids": input_ids}
+def create_webdataset_collate_fn(column_names=None):
+    """Create a collate function with specified column names.
+    
+    Args:
+        column_names: List of column names to use in the output dictionary
+        
+    Returns:
+        A collate function that can be used with DataLoader
+    """
+    def collate_fn(batch):
+        return webdataset_collate_fn(batch, column_names)
+    return collate_fn
 
 
 def make_webdataset(
@@ -89,6 +123,7 @@ def make_webdataset(
     sample_shuffle=65536,  # sample-level shuffle buffer
     checkpoint_dir: str = None,
     seed: int = 42,
+    columns: list[str] = None,  # List of column names to extract (e.g., ["input_ids", "attention_mask"])
 ):
     """
     Builds a WebDataset pipeline that:
@@ -96,6 +131,38 @@ def make_webdataset(
     - reads samples from tar
     - shuffles samples
     - returns individual samples for DataLoader to batch
+    
+    Args:
+        path: GCS path prefix to search for tar files
+        shard_urls: Optional explicit list of shard URLs
+        sample_shuffle: Size of sample-level shuffle buffer
+        checkpoint_dir: Directory to save data files list
+        seed: Random seed for shuffling
+        columns: List of column names to extract from tar files. 
+                Each column should be stored as "{column_name}.npy" in the tar files.
+                If None, defaults to single column mode for backward compatibility.
+                Example: ["input_ids", "attention_mask", "labels"]
+    
+    Returns:
+        WebDataset that yields tuples of numpy arrays (one per column)
+        
+    Usage:
+        # Single column (backward compatible)
+        dataset = make_webdataset("gs://bucket/data/")
+        dataloader = DataLoader(dataset, batch_size=32, collate_fn=webdataset_collate_fn)
+        
+        # Multiple columns
+        columns = ["input_ids", "attention_mask", "labels"]
+        dataset = make_webdataset("gs://bucket/data/", columns=columns)
+        collate_fn = create_webdataset_collate_fn(columns)
+        dataloader = DataLoader(dataset, batch_size=32, collate_fn=collate_fn)
+        
+    Note:
+        Your TAR files should contain files named like:
+        - 000000000001.input_ids.npy
+        - 000000000001.attention_mask.npy  
+        - 000000000001.labels.npy
+        Where "000000000001" is the sample key and "input_ids.npy" is the extension.
     """
     # Pipeline definition
     random.seed(seed)
@@ -124,7 +191,19 @@ def make_webdataset(
             json.dump(shard_urls, f, indent=4)
 
     dataset = dataset.decode(numpy_decoder)
-    dataset = dataset.to_tuple("npy")
+    
+    # Handle multiple columns or default to single column
+    if columns is None:
+        # Default behavior: single column (backward compatibility)
+        dataset = dataset.to_tuple("npy")
+    else:
+        # Multiple columns: extract each specified column
+        # WebDataset to_tuple works with file extensions/suffixes after the key
+        # For files named like "000000000001.input_ids.npy", we need to specify 
+        # the extensions that come after the sample key
+        column_extensions = [f"{col}.npy" for col in columns]
+        dataset = dataset.to_tuple(*column_extensions)
+    
     return dataset
 
 
