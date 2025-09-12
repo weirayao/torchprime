@@ -34,7 +34,7 @@ python torchprime/torch_xla_models/train.py \
     checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/sft_from_midtrain_qwen25_coder_1b_opc_stage1_context_1024_bsz_512_lr_2e-5/ \
     save_steps=1500 \
     logging_steps=1 \
-    ici_mesh.fsdp=32 \
+    ici_mesh.fsdp=64 \
     ici_mesh.tensor=2 \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \
