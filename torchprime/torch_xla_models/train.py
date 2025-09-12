@@ -462,7 +462,7 @@ class Trainer:
               lambda: make_webdataset(
                 self.config.data.dataset_name,
                 shard_urls=self.config.all_data_files,
-                seed=self.config.seed,
+                seed=self.config.seed + epoch + step + start_step,
                 checkpoint_dir=None
               )
             )
@@ -471,7 +471,7 @@ class Trainer:
               lambda: make_gcs_pretokenized_dataset(
                 self.config.dataset_name,
                 data_files=self.config.all_data_files,
-                seed=self.config.seed,
+                seed=self.config.seed + epoch + step + start_step,
                 checkpoint_dir=None
               )
             )
@@ -482,11 +482,17 @@ class Trainer:
               logger.info(f"Dataset split successful for device {xr.process_index()}")
             except Exception as e:
               logger.warning(f"Dataset splitting failed: {e}. This may cause data duplication across devices.")  
-
-          # Recreate dataloader with the full dataset
-          train_loader = self._get_train_dataloader()
-          xm.wait_device_ops()
-          torch_xla.sync()
+        else:
+          if isinstance(self.train_dataset, IterableDataset):
+            self.train_dataset = self.train_dataset.shuffle(buffer_size=32768, seed=self.config.seed + epoch + step + start_step)
+          elif isinstance(self.train_dataset, wds.WebDataset):
+            self.train_dataset = self.train_dataset.shuffle(size=32768, seed=self.config.seed + epoch + step + start_step)
+          elif isinstance(self.train_dataset, HuggingFaceDataset):
+            self.train_dataset = self.train_dataset.shuffle(seed=self.config.seed + epoch + step + start_step)
+        # Recreate dataloader with the full dataset
+        train_loader = self._get_train_dataloader()
+        xm.wait_device_ops()
+        torch_xla.sync()
 
         train_iterator = iter(train_loader)
         batch = next(train_iterator)
