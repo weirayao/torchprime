@@ -29,7 +29,7 @@ python torchprime/torch_xla_models/train.py \
     global_batch_size=2048 \
     max_steps=18000 \
     checkpoint_load_dir=gs://sfr-text-diffusion-model-research/checkpoints/sft_from_midtrain_qwen25_coder_1b_opc_stage1_context_1024_bsz_2048_lr_2e-5/ \
-    checkpoint_load_step=1350 \
+    checkpoint_load_step=2700 \
     resume_from_checkpoint=true \
     checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/sft_from_midtrain_qwen25_coder_1b_opc_stage1_context_1024_bsz_2048_lr_2e-5/ \
     save_steps=450 \
