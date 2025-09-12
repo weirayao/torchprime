@@ -10,7 +10,7 @@ export GCSFS_DEFAULT_FILL_CACHE=false
 # export PT_XLA_DEBUG_LEVEL=2
 # export HYDRA_FULL_ERROR=1
 python torchprime/torch_xla_models/train.py \
-    run_name=sft_from_midtrain_qwen25_coder_1b_opc_stage1_context_1024_bsz_512_lr_2e-5 \
+    run_name=sft_from_midtrain_qwen25_coder_1b_opc_stage1_context_1024_bsz_2048_lr_2e-5 \
     training_mode=sft \
     progress_src_mask=true \
     progress_src_mask_ratio=0.1 \
@@ -31,7 +31,7 @@ python torchprime/torch_xla_models/train.py \
     checkpoint_load_dir=gs://sfr-text-diffusion-model-research/checkpoints/midtrain_qwen25_coder_1b_flex_v2_mask0_20_256_context_8192_seg_attn_bsz_2048_lr_1e-4/ \
     checkpoint_load_step=1500 \
     resume_from_checkpoint=false \
-    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/sft_from_midtrain_qwen25_coder_1b_opc_stage1_context_1024_bsz_512_lr_2e-5/ \
+    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/sft_from_midtrain_qwen25_coder_1b_opc_stage1_context_1024_bsz_2048_lr_2e-5/ \
     save_steps=450 \
     logging_steps=1 \
     ici_mesh.fsdp=64 \
