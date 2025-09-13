@@ -12,7 +12,7 @@ export GCSFS_DEFAULT_FILL_CACHE=false
 # export PT_XLA_DEBUG_LEVEL=2
 # export HYDRA_FULL_ERROR=1
 python torchprime/torch_xla_models/train.py \
-    run_name=reshape_tpu256_context_8192_full_attn_large_batch_2048_lr_3e-4 \
+    run_name=pretrain_tpu256_context_8192_full_attn_large_batch_2048_lr_3e-4 \
     training_mode=pretrain \
     reshape_context=false \
     seg_attn=false \
