@@ -20,7 +20,7 @@ for checkpoint in "${checkpoints[@]}"; do
         data=validation \
         model=flex-qwen2-1b \
         global_batch_size=2048 \
-        max_steps=350 \
+        max_steps=150 \
         checkpoint_load_dir=gs://sfr-text-diffusion-model-research/checkpoints/midtrain_qwen25_coder_1b_flex_v2_mask0_20_256_context_8192_seg_attn_bsz_2048_lr_1e-4 \
         checkpoint_load_step=${checkpoint} \
         resume_from_checkpoint=false \
