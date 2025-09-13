@@ -10,10 +10,10 @@ export GCSFS_DEFAULT_FILL_CACHE=false
 
 # export PT_XLA_DEBUG_LEVEL=2
 # export HYDRA_FULL_ERROR=1
-checkpoints=(12500 15000 17500 20000 22500 25000 27500 30000 32500 35000)
+checkpoints=(1000 2000 3000 4000 5000 6000 7000)
 for checkpoint in "${checkpoints[@]}"; do
     python torchprime/torch_xla_models/pretrain_validation.py \
-        run_name=validation_qwen25_coder_1b_flex_v2_mask0_01_256_context_8192_seg_attn_bsz_2048_lr_3e-4_${checkpoint} \
+        run_name=validation_midtrain_qwen25_coder_1b_flex_v2_mask0_20_256_context_8192_seg_attn_bsz_2048_lr_1e-4_${checkpoint} \
         training_mode=pretrain \
         reshape_context=false \
         seg_attn=true \
@@ -21,7 +21,7 @@ for checkpoint in "${checkpoints[@]}"; do
         model=flex-qwen2-1b \
         global_batch_size=2048 \
         max_steps=350 \
-        checkpoint_load_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_1b_flex_v2_mask0_01_256_context_8192_seg_attn_bsz_2048_lr_3e-4 \
+        checkpoint_load_dir=gs://sfr-text-diffusion-model-research/checkpoints/midtrain_qwen25_coder_1b_flex_v2_mask0_20_256_context_8192_seg_attn_bsz_2048_lr_1e-4 \
         checkpoint_load_step=${checkpoint} \
         resume_from_checkpoint=false \
         logging_steps=1 \
