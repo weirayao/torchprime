@@ -11,7 +11,7 @@ export GCSFS_DEFAULT_FILL_CACHE=false
 # export PT_XLA_DEBUG_LEVEL=2
 # export HYDRA_FULL_ERROR=1
 python torchprime/torch_xla_models/train.py \
-    run_name=context_8192_segment_attn_small_batch_lr_3e-4 \
+    run_name=tpu_128context_8192_segment_attn_small_batch_lr_3e-4 \
     training_mode=pretrain \
     reshape_context=false \
     seg_attn=true \
@@ -25,14 +25,14 @@ python torchprime/torch_xla_models/train.py \
     model.masking_scheduler.max_schedule_steps=null \
     optimizer.learning_rate=3e-4 \
     lr_scheduler.type=cosine \
-    lr_scheduler.warmup_steps=250 \
+    lr_scheduler.warmup_steps=2000 \
     global_batch_size=512 \
     max_steps=210000 \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
     resume_from_checkpoint=false \
     checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_1b_flex_v2_context_8192_seg_attn_bsz_512_lr_3e-4/ \
-    save_steps=10000 \
+    save_steps=5000 \
     logging_steps=1 \
     ici_mesh.fsdp=32 \
     ici_mesh.tensor=2 \
