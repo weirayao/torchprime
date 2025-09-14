@@ -210,7 +210,7 @@ class Trainer:
       # "model": self.model.state_dict(), # NOTE: torch_xla has problem loading state dict with 2d sharding
       # "optimizer": self.optimizer.state_dict(), # NOTE: torch_xla has problem loading optimizer state dict with 2d sharding
       "scheduler": self.lr_scheduler.state_dict(),
-      "masking_scheduler": self.masking_scheduler.state_dict(),
+      # "masking_scheduler": self.masking_scheduler.state_dict(), # NOTE: masking scheduler state dict is not saved for qwen2, reenable when saving checkpoint for qwen2
       "step": self.start_step,
     }
     checkpoint_load_step = self.config.checkpoint_load_step
