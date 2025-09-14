@@ -1,6 +1,6 @@
 defaults:
   - _self_  # refers to this config file
-  - sharding: qwen-fsdp  # refers to sharding/qwen-fsdp.yaml
+  - sharding: qwen-fsdp-2d  # refers to sharding/qwen-fsdp.yaml
   - remat: qwen  # refers to remat/qwen.yaml
 
 model_class: flex.Qwen3ForCausalLM  # Used to import the model from this class

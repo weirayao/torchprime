@@ -17,7 +17,6 @@ python torchprime/torch_xla_models/train.py \
     seg_attn=false \
     data=flex_v2_webdataset \
     model=flex-qwen-1b \
-    model.sharding=qwen-fsdp-2d \
     model.block_masking_probability=0.01 \
     model.mask_block_sizes=[[2,4,8],[4,8,16],[8,16,32],[16,32,64]] \
     model.truncate_probability=0.01 \
