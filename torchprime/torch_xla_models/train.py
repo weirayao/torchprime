@@ -205,14 +205,19 @@ class Trainer:
     if not tracked_steps:
       logger.warning("No checkpoint steps found. Starting from scratch.")
       return
-    # self.optimizer = prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
     state_dict = {
-      # "model": self.model.state_dict(), # NOTE: torch_xla has problem loading state dict with 2d sharding
-      # "optimizer": self.optimizer.state_dict(), # NOTE: torch_xla has problem loading optimizer state dict with 2d sharding
-      "scheduler": self.lr_scheduler.state_dict(),
-      # "masking_scheduler": self.masking_scheduler.state_dict(), # NOTE: masking scheduler state dict is not saved for qwen2, reenable when saving checkpoint for qwen2
-      "step": self.start_step,
+      "model": self.model.state_dict(), # NOTE: torch_xla has problem loading state dict with 2d sharding
     }
+    if self.config.resume_from_checkpoint:
+      # self.optimizer = prime_optimizer(self.optimizer) # NOTE: needed to create the dummy state dict for the optimizer
+      state_dict.update(
+        {
+          # "optimizer": self.optimizer.state_dict(), # NOTE: torch_xla has problem loading optimizer state dict with 2d sharding
+          "scheduler": self.lr_scheduler.state_dict(),
+          "masking_scheduler": self.masking_scheduler.state_dict(),
+          "step": self.start_step,
+        }
+      )
     checkpoint_load_step = self.config.checkpoint_load_step
     if checkpoint_load_step in tracked_steps:
       if is_main_process():
