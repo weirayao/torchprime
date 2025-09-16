@@ -11,12 +11,12 @@ export GCSFS_DEFAULT_FILL_CACHE=false
 # export PT_XLA_DEBUG_LEVEL=2
 # export HYDRA_FULL_ERROR=1
 python torchprime/torch_xla_models/train.py \
-    run_name=pretrain_qwen25_coder_tpu_128_context_8192_segment_attn_small_batch_lr_3e-4 \
+    run_name=pretrain_qwen3_tpu_64_context_8192_full_attn_small_batch_lr_3e-4 \
     training_mode=pretrain \
     reshape_context=false \
     seg_attn=true \
     data=flex_v2_webdataset \
-    model=flex-qwen2-1b \
+    model=flex-qwen-1b \
     model.block_masking_probability=0.01 \
     model.mask_block_sizes=[[2,4,8],[4,8,16],[8,16,32],[16,32,64]] \
     model.truncate_probability=0.01 \
@@ -31,12 +31,12 @@ python torchprime/torch_xla_models/train.py \
     checkpoint_load_dir=null \
     checkpoint_load_step=null \
     resume_from_checkpoint=false \
-    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen25_coder_tpu_128_context_8192_segment_attn_small_batch_lr_3e-4/ \
+    checkpoint_save_dir=gs://sfr-text-diffusion-model-research/checkpoints/pretrain_qwen3_tpu_64_context_8192_full_attn_small_batch_lr_3e-4 \
     save_steps=5000 \
     logging_steps=1 \
-    ici_mesh.fsdp=32 \
+    ici_mesh.fsdp=16 \
     ici_mesh.tensor=2 \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \
-    model/remat=qwen2-scan
+    model/remat=qwen-scan
 # fsdp * tensor * data * expert == num_devices
