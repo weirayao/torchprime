@@ -1,13 +1,16 @@
 #! /bin/bash
-TPU_VM_NAME="sfr-haolin-chen-v5p-128-0" # Change with your TPU VM name
-BRANCH="haolin/pretrain_qwen25_coder_hyperparam_tuning"
-TPU_ZONE="us-central1-a"
+TPU_VM_NAME="<TPU_VM_NAME>" # Change with your TPU VM name
+TPU_ZONE="<TPU_ZONE>"
+PROJECT="<PROJECT>"
+BRANCH="<BRANCH>"
 WORKER="all"
+REPO_URL="<REPO_URL>" # e.g. https://github.com/SalesforceAIResearch/CoDA.git
+GCS_BUCKET_NAME="<GCS_BUCKET_NAME>" # e.g. sfr-text-diffusion-model-research
 
 # Install python with venv
 gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --zone=$TPU_ZONE \
-    --project=salesforce-research-internal \
+    --project=$PROJECT \
     --tunnel-through-iap \
     --worker=$WORKER \
     --command='
@@ -17,12 +20,12 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
 # Install torchprime and other dependencies
 gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --zone=$TPU_ZONE \
-    --project=salesforce-research-internal \
+    --project=$PROJECT \
     --tunnel-through-iap \
     --worker=$WORKER \
     --command='
-    git clone https://github.com/weirayao/torchprime.git; \
-    cd torchprime; \
+    git clone '"$REPO_URL"'; \
+    cd CoDA; \
     git fetch; \
     git checkout '"$BRANCH"'; \
     git pull; \
@@ -31,14 +34,14 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     pip install --upgrade pip setuptools==69.5.1; \
     pip install torch==2.8.0 torch_xla[tpu]==2.8.0; \
     pip install --pre torch_xla[pallas] --index-url https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/ --find-links https://storage.googleapis.com/jax-releases/libtpu_releases.html; \
-    pip install -e ".[dev]"; \
+    pip install -e "torchprime[dev]"; \
     pip install gcsfs wandb python-dotenv webdataset'
 
 
 # Install gcsfuse and mount GCS bucket to TPU VM
 gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     --zone=$TPU_ZONE \
-    --project=salesforce-research-internal \
+    --project=$PROJECT \
     --tunnel-through-iap \
     --worker=$WORKER \
     --command='
@@ -50,20 +53,6 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     sudo apt-get update; \
     sudo apt-get install gcsfuse -y; \
     which gcsfuse || echo "ERROR: gcsfuse not found in PATH"; \
-    mkdir -p ~/sfr-text-diffusion-model-research; \
-    umount ~/sfr-text-diffusion-model-research; \
-    gcsfuse --implicit-dirs --metadata-cache-ttl-secs=60 --max-conns-per-host=64 sfr-text-diffusion-model-research ~/sfr-text-diffusion-model-research;'
-
-
-
-# # Install gcsfuse and mount GCS bucket to TPU VM
-# gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
-#     --zone=$TPU_ZONE \
-#     --project=salesforce-research-internal \
-#     --tunnel-through-iap \
-#     --worker=$WORKER \
-#     --command='
-#     which gcsfuse || echo "ERROR: gcsfuse not found in PATH"; \
-#     mkdir -p ~/sfr-text-diffusion-model-research; \
-#     umount ~/sfr-text-diffusion-model-research; \
-#     gcsfuse --implicit-dirs --metadata-cache-ttl-secs=60 --max-conns-per-host=64 sfr-text-diffusion-model-research ~/sfr-text-diffusion-model-research;'
+    mkdir -p ~/'"$GCS_BUCKET_NAME"'"; \
+    umount ~/'"$GCS_BUCKET_NAME"'"; \
+    gcsfuse --implicit-dirs --metadata-cache-ttl-secs=60 --max-conns-per-host=64 '"$GCS_BUCKET_NAME"' ~/'"$GCS_BUCKET_NAME"';'
