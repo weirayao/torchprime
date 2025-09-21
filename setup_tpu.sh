@@ -1,6 +1,6 @@
 #! /bin/bash
-TPU_VM_NAME="sfr-haolin-chen-v5p-8" # Change with your TPU VM name
-BRANCH="haolin/pretrain_v5p_qwen2"
+TPU_VM_NAME="sfr-haolin-chen-v5p-128-0" # Change with your TPU VM name
+BRANCH="haolin/pretrain_qwen25_coder_hyperparam_tuning"
 TPU_ZONE="us-central1-a"
 WORKER="all"
 
@@ -52,4 +52,18 @@ gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
     which gcsfuse || echo "ERROR: gcsfuse not found in PATH"; \
     mkdir -p ~/sfr-text-diffusion-model-research; \
     umount ~/sfr-text-diffusion-model-research; \
-    gcsfuse --implicit-dirs --metadata-cache-ttl-secs=86400 --max-conns-per-host=64 sfr-text-diffusion-model-research ~/sfr-text-diffusion-model-research;'
+    gcsfuse --implicit-dirs --metadata-cache-ttl-secs=60 --max-conns-per-host=64 sfr-text-diffusion-model-research ~/sfr-text-diffusion-model-research;'
+
+
+
+# # Install gcsfuse and mount GCS bucket to TPU VM
+# gcloud alpha compute tpus tpu-vm ssh $TPU_VM_NAME \
+#     --zone=$TPU_ZONE \
+#     --project=salesforce-research-internal \
+#     --tunnel-through-iap \
+#     --worker=$WORKER \
+#     --command='
+#     which gcsfuse || echo "ERROR: gcsfuse not found in PATH"; \
+#     mkdir -p ~/sfr-text-diffusion-model-research; \
+#     umount ~/sfr-text-diffusion-model-research; \
+#     gcsfuse --implicit-dirs --metadata-cache-ttl-secs=60 --max-conns-per-host=64 sfr-text-diffusion-model-research ~/sfr-text-diffusion-model-research;'

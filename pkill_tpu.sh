@@ -1,5 +1,5 @@
 COMMAND="ps -aux | grep python | grep -v grep |  awk '{print \$2}' | xargs kill -9"
-TPU_NAME="sfr-haolin-chen-v5p-1024"
+TPU_NAME="sfr-haolin-chen-v5p-128-0"
 
 gcloud alpha compute tpus tpu-vm ssh root@$TPU_NAME \
     --zone=us-central1-a \

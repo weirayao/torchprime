@@ -1,4 +1,4 @@
-TPU_VM_NAME="sfr-haolin-chen-v5p-1024" # Change with your TPU VM name
+TPU_VM_NAME="sfr-haolin-chen-v5p-128-0" # Change with your TPU VM name
 TPU_ZONE="us-central1-a"
 WORKER="all"
 

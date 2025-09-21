@@ -1,4 +1,4 @@
-TPU_VM_NAME="sfr-haolin-chen-v5p-1024"
+TPU_VM_NAME="sfr-haolin-chen-v5p-128-0"
 TPU_ZONE="us-central1-a"
 
 # Copy .env file to TPU VM
