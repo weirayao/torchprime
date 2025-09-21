@@ -34,9 +34,7 @@ logger = logging.getLogger(__name__)
 # Map torchprime model classes to their corresponding HuggingFace model classes
 HF_MODEL_CLASS_MAPPING = {
   "llama.LlamaForCausalLM": "LlamaForCausalLM",
-  "flex.LlamaForCausalLM": "LlamaForCausalLM", 
-  "flex.Qwen3ForCausalLM": "Qwen3ForCausalLM",
-  "flex.Qwen2ForCausalLM": "Qwen2ForCausalLM",
+  "coda.Qwen3ForCausalLM": "Qwen3ForCausalLM",
   "mixtral.MixtralForCausalLM": "MixtralForCausalLM",
   "llama4.Llama4TextForCausalLM": "Llama4ForCausalLM",
   "qwen.Qwen3ForCausalLM": "Qwen3ForCausalLM",

@@ -1,5 +1,0 @@
-defaults:
-  - qwen2-scan
-
-offload_tensors:
-  - decoder_input

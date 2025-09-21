@@ -16,7 +16,7 @@ declare -A CHECKPOINT_CONFIG
 # Configure each checkpoint directory with its model and resume checkpoints
 # Format: MODEL_CONFIG["checkpoint_dir"]="model_name"
 #         CHECKPOINT_CONFIG["checkpoint_dir"]="[step1 step2 step3]"
-MODEL_CONFIG["checkpoint_dir"]="flex-qwen-1b"
+MODEL_CONFIG["checkpoint_dir"]="coda-qwen-1b-tpu-v5p"
 CHECKPOINT_CONFIG["checkpoint_dir"]="[]"
 
 for checkpoint_dir in "${!CHECKPOINT_CONFIG[@]}"; do

@@ -6,8 +6,8 @@ if [ $# -lt 2 ]; then
     echo "       checkpoint_load_step can be a single step or comma-separated list of steps"
     echo "       Each checkpoint will be consolidated separately into its own directory"
     echo "Examples:"
-    echo "  Single checkpoint: $0 gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b_512_split_datafix 32000"
-    echo "  Multiple checkpoints: $0 gs://sfr-text-diffusion-model-research/checkpoints/flex_processed_v1_qw1_7b_512_split_datafix \"16000,24000,32000\""
+    echo "  Single checkpoint: $0 gs://sfr-text-diffusion-model-research/checkpoints/coda-qwen-1b-tpu-v5p 32000"
+    echo "  Multiple checkpoints: $0 gs://sfr-text-diffusion-model-research/checkpoints/coda-qwen-1b-tpu-v5p \"16000,24000,32000\""
     exit 1
 fi
 
@@ -18,11 +18,6 @@ MODEL=$1
 CHECKPOINT_DIR=$2
 RESUME_FROM_CHECKPOINT=$3
 
-if [ "$MODEL" == "flex-qwen2-1b" ]; then
-    scan="qwen2-scan"
-else
-    scan="qwen-scan"
-fi
 
 XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/ckpt_consolidation.py \
     model=${MODEL} \
@@ -32,6 +27,6 @@ XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1 python torchprime/torch_xla_models/ckpt_consolida
     ici_mesh.tensor=1 \
     ici_mesh.data=1 \
     ici_mesh.expert=1 \
-    model/remat=${scan}
+    model/remat=qwen-scan
 # fsdp * tensor * data * expert == num_devices
 # global_batch_size mod num_devices == 0
